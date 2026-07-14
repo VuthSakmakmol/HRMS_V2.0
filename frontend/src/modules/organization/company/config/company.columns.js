@@ -1,0 +1,72 @@
+export function createCompanyColumns(t) {
+    return [
+        {
+            field: "code",
+            header: t("organization.company.code"),
+            sortable: true,
+            frozen: true,
+            alignFrozen: "left",
+            width: "8rem",
+            minWidth: "8rem",
+            maxWidth: "8rem",
+            headerClass: "enterprise-table__code-header",
+            bodyClass: "enterprise-table__code-cell",
+        },
+        {
+            field: "displayName",
+            header: t("organization.company.displayName"),
+            sortable: true,
+            width: "13rem",
+            minWidth: "13rem",
+        },
+        {
+            field: "legalName",
+            header: t("organization.company.legalName"),
+            sortable: true,
+            width: "15rem",
+            minWidth: "15rem",
+        },
+        {
+            field: "phone",
+            header: t("organization.company.phone"),
+            sortable: false,
+            width: "10rem",
+            minWidth: "10rem",
+        },
+        {
+            field: "email",
+            header: t("organization.company.email"),
+            sortable: false,
+            width: "14rem",
+            minWidth: "14rem",
+        },
+        {
+            field: "city",
+            header: t("organization.company.city"),
+            sortable: false,
+            width: "11rem",
+            minWidth: "11rem",
+        },
+        {
+            field: "countryCode",
+            header: t("organization.company.countryCode"),
+            sortable: false,
+            width: "9rem",
+            minWidth: "9rem",
+        },
+        {
+            field: "status",
+            header: t("common.status"),
+            sortable: true,
+            width: "8rem",
+            minWidth: "8rem",
+        },
+        {
+            field: "updatedAt",
+            header: t("common.updatedAt"),
+            sortable: true,
+            width: "11rem",
+            minWidth: "11rem",
+        },
+    ]
+}

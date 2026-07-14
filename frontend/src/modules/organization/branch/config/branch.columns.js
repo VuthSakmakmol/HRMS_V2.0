@@ -1,0 +1,72 @@
+export function createBranchColumns(t) {
+    return [
+        {
+            field: "code",
+            header: t("organization.branch.code"),
+            sortable: true,
+            frozen: true,
+            alignFrozen: "left",
+            width: "8rem",
+            minWidth: "8rem",
+            maxWidth: "8rem",
+            headerClass: "enterprise-table__code-header",
+            bodyClass: "enterprise-table__code-cell",
+        },
+        {
+            field: "company",
+            header: t("organization.branch.company"),
+            sortable: false,
+            width: "13rem",
+            minWidth: "13rem",
+        },
+        {
+            field: "name",
+            header: t("organization.branch.name"),
+            sortable: true,
+            width: "13rem",
+            minWidth: "13rem",
+        },
+        {
+            field: "shortName",
+            header: t("organization.branch.shortName"),
+            sortable: true,
+            width: "9rem",
+            minWidth: "9rem",
+        },
+        {
+            field: "isHeadOffice",
+            header: t("organization.branch.headOffice"),
+            sortable: true,
+            width: "8rem",
+            minWidth: "8rem",
+        },
+        {
+            field: "phone",
+            header: t("organization.branch.phone"),
+            sortable: false,
+            width: "10rem",
+            minWidth: "10rem",
+        },
+        {
+            field: "email",
+            header: t("organization.branch.email"),
+            sortable: false,
+            width: "14rem",
+            minWidth: "14rem",
+        },
+        {
+            field: "status",
+            header: t("common.status"),
+            sortable: true,
+            width: "8rem",
+            minWidth: "8rem",
+        },
+        {
+            field: "updatedAt",
+            header: t("common.updatedAt"),
+            sortable: true,
+            width: "11rem",
+            minWidth: "11rem",
+        },
+    ]
+}

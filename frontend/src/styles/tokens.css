@@ -1,0 +1,35 @@
+:root {
+    --hrms-radius-xs: 0.25rem;
+    --hrms-radius-sm: 0.375rem;
+    --hrms-radius-md: 0.5rem;
+    --hrms-radius-lg: 0.75rem;
+
+    --hrms-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+    --hrms-shadow-md: 0 8px 24px rgb(15 23 42 / 0.08);
+
+    --hrms-space-1: 0.25rem;
+    --hrms-space-2: 0.5rem;
+    --hrms-space-3: 0.75rem;
+    --hrms-space-4: 1rem;
+    --hrms-space-5: 1.25rem;
+    --hrms-space-6: 1.5rem;
+
+    --hrms-control-height-sm: 1.75rem;
+    --hrms-control-height: 2rem;
+    --hrms-control-height-lg: 2.25rem;
+    --hrms-action-size: 1.75rem;
+
+    --hrms-font-size-xs: 0.6875rem;
+    --hrms-font-size-sm: 0.75rem;
+    --hrms-font-size-md: 0.8125rem;
+    --hrms-font-size-lg: 0.9375rem;
+
+    --hrms-table-font-size: 0.75rem;
+    --hrms-table-header-height: 2.125rem;
+    --hrms-table-row-height: 2.25rem;
+
+    --hrms-page-gap: 0.625rem;
+    --hrms-card-padding: 0.75rem;
+    --hrms-filter-gap: 0.5rem;
+    --hrms-transition-fast: 150ms ease;
+}

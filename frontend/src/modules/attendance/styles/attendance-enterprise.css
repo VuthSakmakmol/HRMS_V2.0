@@ -1,0 +1,131 @@
+.attendance-enterprise-page {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    gap: var(--hrms-page-gap);
+}
+
+.attendance-native-control {
+    width: 100%;
+    min-height: var(--hrms-control-height);
+    padding: 0.35rem 0.55rem;
+    color: var(--hrms-text);
+    background: var(--hrms-surface);
+    border: 1px solid var(--hrms-border);
+    border-radius: var(--hrms-radius-sm);
+    font: inherit;
+    outline: none;
+}
+
+.attendance-native-control:focus {
+    border-color: var(--p-primary-color);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--p-primary-color) 24%, transparent);
+}
+
+.attendance-cell-primary {
+    display: block;
+    overflow: hidden;
+    color: var(--hrms-text);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attendance-cell-muted {
+    display: block;
+    overflow: hidden;
+    color: var(--hrms-text-muted);
+    font-size: var(--hrms-font-size-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attendance-metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--hrms-page-gap);
+}
+
+.attendance-metric-card {
+    display: grid;
+    min-width: 0;
+    gap: 0.2rem;
+    padding: 0.75rem;
+    background: var(--hrms-surface);
+    border: 1px solid var(--hrms-border);
+    border-radius: var(--hrms-radius-md);
+    box-shadow: var(--hrms-shadow-sm);
+}
+
+.attendance-metric-card strong {
+    color: var(--hrms-text);
+    font-size: 1.2rem;
+    line-height: 1.1;
+}
+
+.attendance-metric-card span {
+    overflow: hidden;
+    color: var(--hrms-text-muted);
+    font-size: var(--hrms-font-size-sm);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.attendance-upload-box {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.8rem;
+    background: var(--hrms-surface-muted);
+    border: 1px dashed var(--hrms-border-strong, var(--hrms-border));
+    border-radius: var(--hrms-radius-md);
+}
+
+.attendance-upload-box input[type="file"] {
+    width: 100%;
+    min-width: 0;
+    font-size: var(--hrms-font-size-sm);
+}
+
+.attendance-progress-copy {
+    margin: 0;
+    color: var(--hrms-text-muted);
+    font-size: var(--hrms-font-size-sm);
+}
+
+.attendance-dialog-note {
+    margin: 0;
+    color: var(--hrms-text-muted);
+    font-size: var(--hrms-font-size-sm);
+    line-height: 1.5;
+}
+
+.attendance-checkbox-row {
+    display: flex;
+    min-height: var(--hrms-control-height);
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.attendance-checkbox-row label {
+    color: var(--hrms-text);
+    font-size: var(--hrms-font-size-sm);
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.attendance-table-status {
+    min-width: 6.25rem;
+}
+
+@media (max-width: 1050px) {
+    .attendance-metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .attendance-metric-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
