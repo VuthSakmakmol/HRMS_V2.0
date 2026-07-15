@@ -17,7 +17,6 @@ const TEMPLATE_HEADERS = [
     "departmentCode",
     "lineCode",
     "lineName",
-    "shortName",
     "allowedPositionCodes",
     "leaderPositionCode",
     "status",
@@ -135,7 +134,6 @@ function buildWorkbookBase(title) {
         { header: "departmentCode", key: "departmentCode", width: 20 },
         { header: "lineCode", key: "lineCode", width: 18 },
         { header: "lineName", key: "lineName", width: 30 },
-        { header: "shortName", key: "shortName", width: 18 },
         {
             header: "allowedPositionCodes",
             key: "allowedPositionCodes",
@@ -180,7 +178,6 @@ export async function buildLineImportTemplateWorkbook() {
         departmentCode: "SEWING",
         lineCode: "LINE_A",
         lineName: "Sewing Line A",
-        shortName: "Line A",
         allowedPositionCodes: "SEWER, LOADER, LINE_LEADER, QC",
         leaderPositionCode: "LINE_LEADER",
         status: "ACTIVE",
@@ -193,7 +190,6 @@ export async function buildLineImportTemplateWorkbook() {
         departmentCode: "SEWING",
         lineCode: "LINE_B",
         lineName: "Sewing Line B",
-        shortName: "Line B",
         allowedPositionCodes: "",
         leaderPositionCode: "",
         status: "ACTIVE",
@@ -236,11 +232,6 @@ export async function buildLineImportTemplateWorkbook() {
             rule: "Line display name.",
         },
         {
-            field: "shortName",
-            required: "No",
-            rule: "Optional short name.",
-        },
-        {
             field: "allowedPositionCodes",
             required: "No",
             rule: "Comma, semicolon, or new-line separated position codes in the same department. Blank means all active positions are allowed.",
@@ -279,7 +270,6 @@ export async function buildLineExportWorkbook({ lines }) {
             departmentCode: line.department?.code || "",
             lineCode: line.code || "",
             lineName: line.name || "",
-            shortName: line.shortName || "",
             allowedPositionCodes:
                 line.allowedPositions
                     ?.map((position) => position.code)
@@ -334,7 +324,6 @@ export async function parseLineImportWorkbook(buffer) {
             departmentCode: normalizeCode(raw.departmentCode),
             lineCode: normalizeCode(raw.lineCode),
             lineName: normalizeText(raw.lineName),
-            shortName: normalizeText(raw.shortName),
             allowedPositionCodes: normalizeCodeList(raw.allowedPositionCodes),
             leaderPositionCode: normalizeCode(raw.leaderPositionCode),
             status: normalizeStatus(raw.status),
@@ -694,7 +683,6 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
                 {
                     $set: {
                         name: row.lineName,
-                        shortName: row.shortName,
                         allowedPositionIds: row.allowedPositionIds,
                         leaderPositionId: row.leaderPositionId,
                         status: row.status,
@@ -718,7 +706,6 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
                 departmentId: row.department._id,
                 code: row.lineCode,
                 name: row.lineName,
-                shortName: row.shortName,
                 allowedPositionIds: row.allowedPositionIds,
                 leaderPositionId: row.leaderPositionId,
                 status: row.status,

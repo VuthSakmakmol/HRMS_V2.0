@@ -4,13 +4,10 @@ import { useI18n } from "vue-i18n"
 
 import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue"
 import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue"
-import PositionForm from "./PositionForm.vue"
+import LineForm from "./LineForm.vue"
 
 const props = defineProps({
-    visible: {
-        type: Boolean,
-        default: false,
-    },
+    visible: Boolean,
     mode: {
         type: String,
         default: "create",
@@ -35,14 +32,11 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    reportsToPositions: {
+    positions: {
         type: Array,
         default: () => [],
     },
-    saving: {
-        type: Boolean,
-        default: false,
-    },
+    saving: Boolean,
 })
 
 const emit = defineEmits([
@@ -53,14 +47,15 @@ const emit = defineEmits([
     "company-change",
     "branch-change",
     "department-change",
+    "positions-change",
 ])
 
 const { t } = useI18n()
 
 const title = computed(() =>
     props.mode === "edit"
-        ? t("organization.position.editTitle")
-        : t("organization.position.createTitle"),
+        ? t("organization.line.editTitle")
+        : t("organization.line.createTitle"),
 )
 </script>
 
@@ -71,13 +66,13 @@ const title = computed(() =>
         width="52rem"
         @update:visible="emit('update:visible', $event)"
     >
-        <PositionForm
+        <LineForm
             :form="form"
             :errors="errors"
             :companies="companies"
             :branches="branches"
             :departments="departments"
-            :reports-to-positions="reportsToPositions"
+            :positions="positions"
             :disabled="saving"
             :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
@@ -85,6 +80,7 @@ const title = computed(() =>
             @company-change="emit('company-change')"
             @branch-change="emit('branch-change')"
             @department-change="emit('department-change')"
+            @positions-change="emit('positions-change')"
         />
 
         <template #footer>

@@ -2,6 +2,13 @@ import { z } from "zod"
 
 const LINE_STATUSES = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 const LINE_MUTATION_STATUSES = ["ACTIVE", "INACTIVE"]
+const LINE_SORT_FIELDS = [
+    "code",
+    "name",
+    "status",
+    "createdAt",
+    "updatedAt",
+]
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
     message: "Invalid MongoDB ObjectId.",
@@ -38,10 +45,7 @@ const codeSchema = z
             .string()
             .min(2)
             .max(30)
-            .regex(/^[A-Z0-9_-]+$/, {
-                message:
-                    "Code can contain uppercase letters, numbers, underscore, and dash only.",
-            }),
+            .regex(/^[A-Z0-9_-]+$/),
     )
 
 const textSchema = (min, max) =>
@@ -72,6 +76,8 @@ export const lineListQuerySchema = z.object({
     positionId: objectIdSchema.optional(),
     status: z.enum(["ALL", ...LINE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
+    sortBy: z.enum(LINE_SORT_FIELDS).default("name"),
+    sortOrder: z.enum(["asc", "desc"]).default("asc"),
 })
 
 export const lineCreateSchema = z.object({
@@ -80,19 +86,17 @@ export const lineCreateSchema = z.object({
     departmentId: objectIdSchema,
     code: codeSchema,
     name: textSchema(2, 160),
-    shortName: optionalTextSchema(80),
     allowedPositionIds: objectIdArraySchema.optional(),
     leaderPositionId: nullableObjectIdSchema.optional(),
     description: optionalTextSchema(500),
-    status: z.enum(LINE_MUTATION_STATUSES).optional(),
+    status: z.enum(LINE_MUTATION_STATUSES).default("ACTIVE"),
 })
 
 export const lineUpdateSchema = z
     .object({
         code: codeSchema.optional(),
         name: textSchema(2, 160).optional(),
-        shortName: optionalTextSchema(80),
-        allowedPositionIds: objectIdArraySchema.optional(),
+            allowedPositionIds: objectIdArraySchema.optional(),
         leaderPositionId: nullableObjectIdSchema.optional(),
         description: optionalTextSchema(500),
         status: z.enum(LINE_MUTATION_STATUSES).optional(),

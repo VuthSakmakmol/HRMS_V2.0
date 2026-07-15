@@ -57,14 +57,6 @@ const lineSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 80,
-            set: normalizeText,
-            default: "",
-        },
-
         allowedPositionIds: [
             {
                 type: Schema.Types.ObjectId,

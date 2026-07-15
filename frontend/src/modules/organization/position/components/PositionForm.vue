@@ -4,51 +4,38 @@ import InputNumber from "primevue/inputnumber"
 import InputText from "primevue/inputtext"
 import Select from "primevue/select"
 import Textarea from "primevue/textarea"
-
-import {
-    computed,
-} from "vue"
-
-import {
-    useI18n,
-} from "vue-i18n"
+import { computed } from "vue"
+import { useI18n } from "vue-i18n"
 
 const props = defineProps({
     form: {
         type: Object,
         required: true,
     },
-
     errors: {
         type: Object,
         default: () => ({}),
     },
-
     companies: {
         type: Array,
         default: () => [],
     },
-
     branches: {
         type: Array,
         default: () => [],
     },
-
     departments: {
         type: Array,
         default: () => [],
     },
-
     reportsToPositions: {
         type: Array,
         default: () => [],
     },
-
     disabled: {
         type: Boolean,
         default: false,
     },
-
     editing: {
         type: Boolean,
         default: false,
@@ -63,9 +50,7 @@ const emit = defineEmits([
     "department-change",
 ])
 
-const {
-    t,
-} = useI18n()
+const { t } = useI18n()
 
 const statusOptions = computed(() => [
     {
@@ -86,7 +71,7 @@ const reportsToOptions = computed(() => [
     ...props.reportsToPositions,
 ])
 
-function getErrorMessage(field) {
+function message(field) {
     const value = props.errors?.[field]
 
     if (!value) {
@@ -99,29 +84,24 @@ function getErrorMessage(field) {
         ? value
         : translated
 }
-
-function clearError(field) {
-    emit("clear-error", field)
-}
 </script>
 
 <template>
     <form
-        class="position-enterprise-form"
+        class="position-form"
         @submit.prevent
     >
-        <section class="position-enterprise-form__section">
-            <div class="position-enterprise-form__section-header">
+        <section class="position-form__section">
+            <div class="position-form__heading">
                 <h3>
-                    {{ t("organization.position.organizationInformation") }}
+                    {{ t("organization.position.basicInfo") }}
                 </h3>
             </div>
 
-            <div class="position-enterprise-form__grid">
-                <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.company") }}
-                        <strong>*</strong>
+            <div class="position-form__grid">
+                <label class="enterprise-form-field enterprise-form-field--wide">
+                    <span>
+                        {{ t("organization.position.company") }} *
                     </span>
 
                     <Select
@@ -130,23 +110,18 @@ function clearError(field) {
                         option-label="displayName"
                         option-value="id"
                         filter
-                        fluid
                         :disabled="disabled || editing"
                         @change="emit('company-change')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('companyId')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("companyId") }}
+                    <small v-if="message('companyId')">
+                        {{ message("companyId") }}
                     </small>
                 </label>
 
-                <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.branch") }}
-                        <strong>*</strong>
+                <label class="enterprise-form-field enterprise-form-field--wide">
+                    <span>
+                        {{ t("organization.position.branch") }} *
                     </span>
 
                     <Select
@@ -155,27 +130,18 @@ function clearError(field) {
                         option-label="name"
                         option-value="id"
                         filter
-                        fluid
-                        :disabled="
-                            disabled ||
-                            editing ||
-                            !form.companyId
-                        "
+                        :disabled="disabled || editing || !form.companyId"
                         @change="emit('branch-change')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('branchId')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("branchId") }}
+                    <small v-if="message('branchId')">
+                        {{ message("branchId") }}
                     </small>
                 </label>
 
-                <label class="enterprise-form-field enterprise-form-field--full">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.department") }}
-                        <strong>*</strong>
+                <label class="enterprise-form-field enterprise-form-field--wide">
+                    <span>
+                        {{ t("organization.position.department") }} *
                     </span>
 
                     <Select
@@ -184,79 +150,17 @@ function clearError(field) {
                         option-label="name"
                         option-value="id"
                         filter
-                        fluid
-                        :disabled="
-                            disabled ||
-                            editing ||
-                            !form.branchId
-                        "
+                        :disabled="disabled || editing || !form.branchId"
                         @change="emit('department-change')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('departmentId')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("departmentId") }}
-                    </small>
-                </label>
-            </div>
-        </section>
-
-        <section class="position-enterprise-form__section">
-            <div class="position-enterprise-form__section-header">
-                <h3>
-                    {{ t("organization.position.positionInformation") }}
-                </h3>
-            </div>
-
-            <div class="position-enterprise-form__grid">
-                <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.code") }}
-                        <strong>*</strong>
-                    </span>
-
-                    <InputText
-                        v-model="form.code"
-                        fluid
-                        maxlength="30"
-                        :disabled="disabled"
-                        @input="emit('normalize-code')"
-                    />
-
-                    <small
-                        v-if="getErrorMessage('code')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("code") }}
+                    <small v-if="message('departmentId')">
+                        {{ message("departmentId") }}
                     </small>
                 </label>
 
-                <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.titleField") }}
-                        <strong>*</strong>
-                    </span>
-
-                    <InputText
-                        v-model="form.title"
-                        fluid
-                        maxlength="160"
-                        :disabled="disabled"
-                        @input="clearError('title')"
-                    />
-
-                    <small
-                        v-if="getErrorMessage('title')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("title") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
+                <label class="enterprise-form-field enterprise-form-field--wide">
+                    <span>
                         {{ t("organization.position.reportsTo") }}
                     </span>
 
@@ -266,49 +170,71 @@ function clearError(field) {
                         option-label="title"
                         option-value="id"
                         filter
-                        fluid
-                        :disabled="
-                            disabled ||
-                            !form.departmentId
-                        "
-                        @change="clearError('reportsToPositionId')"
+                        :disabled="disabled || !form.departmentId"
+                        @change="emit('clear-error', 'reportsToPositionId')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('reportsToPositionId')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("reportsToPositionId") }}
+                    <small v-if="message('reportsToPositionId')">
+                        {{ message("reportsToPositionId") }}
                     </small>
                 </label>
 
                 <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
+                    <span>
+                        {{ t("organization.position.code") }} *
+                    </span>
+
+                    <InputText
+                        v-model="form.code"
+                        :disabled="disabled"
+                        maxlength="30"
+                        @input="emit('normalize-code')"
+                    />
+
+                    <small v-if="message('code')">
+                        {{ message("code") }}
+                    </small>
+                </label>
+
+                <label class="enterprise-form-field enterprise-form-field--wide">
+                    <span>
+                        {{ t("organization.position.titleField") }} *
+                    </span>
+
+                    <InputText
+                        v-model="form.title"
+                        :disabled="disabled"
+                        maxlength="160"
+                        @input="emit('clear-error', 'title')"
+                    />
+
+                    <small v-if="message('title')">
+                        {{ message("title") }}
+                    </small>
+                </label>
+
+                <label class="enterprise-form-field">
+                    <span>
                         {{ t("organization.position.level") }}
                     </span>
 
                     <InputNumber
                         v-model="form.level"
-                        fluid
+                        :disabled="disabled"
                         :min="0"
                         :max="99"
                         :use-grouping="false"
-                        :disabled="disabled"
-                        @input="clearError('level')"
+                        @input="emit('clear-error', 'level')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('level')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("level") }}
+                    <small v-if="message('level')">
+                        {{ message("level") }}
                     </small>
                 </label>
 
                 <label class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
+                    <span>
                         {{ t("organization.position.status") }}
-                        <strong>*</strong>
                     </span>
 
                     <Select
@@ -316,69 +242,43 @@ function clearError(field) {
                         :options="statusOptions"
                         option-label="label"
                         option-value="value"
-                        fluid
                         :disabled="disabled"
-                        @change="clearError('status')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('status')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("status") }}
+                    <small v-if="message('status')">
+                        {{ message("status") }}
                     </small>
                 </label>
 
-                <div class="enterprise-form-field">
-                    <span class="enterprise-form-field__label">
-                        {{ t("organization.position.managerPosition") }}
+                <label class="enterprise-form-field position-form__checkbox">
+                    <Checkbox
+                        v-model="form.isManager"
+                        binary
+                        :disabled="disabled"
+                        input-id="position-is-manager"
+                    />
+
+                    <span>
+                        {{ t("organization.position.markAsManager") }}
                     </span>
-
-                    <label
-                        class="position-enterprise-form__checkbox"
-                        for="position-is-manager"
-                    >
-                        <Checkbox
-                            v-model="form.isManager"
-                            input-id="position-is-manager"
-                            binary
-                            :disabled="disabled"
-                            @change="clearError('isManager')"
-                        />
-
-                        <span>
-                            {{ t("organization.position.markAsManager") }}
-                        </span>
-                    </label>
-
-                    <small
-                        v-if="getErrorMessage('isManager')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("isManager") }}
-                    </small>
-                </div>
+                </label>
 
                 <label class="enterprise-form-field enterprise-form-field--full">
-                    <span class="enterprise-form-field__label">
+                    <span>
                         {{ t("organization.position.descriptionLabel") }}
                     </span>
 
                     <Textarea
                         v-model="form.description"
-                        fluid
+                        :disabled="disabled"
                         rows="3"
                         maxlength="500"
                         auto-resize
-                        :disabled="disabled"
-                        @input="clearError('description')"
+                        @input="emit('clear-error', 'description')"
                     />
 
-                    <small
-                        v-if="getErrorMessage('description')"
-                        class="enterprise-form-field__error"
-                    >
-                        {{ getErrorMessage("description") }}
+                    <small v-if="message('description')">
+                        {{ message("description") }}
                     </small>
                 </label>
             </div>
@@ -387,127 +287,43 @@ function clearError(field) {
 </template>
 
 <style scoped>
-.position-enterprise-form {
+.position-form {
     display: grid;
     gap: 1rem;
 }
 
-.position-enterprise-form__section {
+.position-form__section {
     display: grid;
     gap: 0.75rem;
 }
 
-.position-enterprise-form__section + .position-enterprise-form__section {
-    padding-top: 1rem;
-    border-top: 1px solid var(--p-content-border-color, #e2e8f0);
-}
-
-.position-enterprise-form__section-header {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-}
-
-.position-enterprise-form__section-header h3 {
+.position-form__heading h3 {
     margin: 0;
-    color: var(--p-text-color, #0f172a);
-    font-size: 0.82rem;
+    font-size: 0.88rem;
     font-weight: 700;
-    line-height: 1.25rem;
 }
 
-.position-enterprise-form__grid {
+.position-form__grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
 }
 
-.enterprise-form-field {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.3rem;
-}
-
-.enterprise-form-field--full {
-    grid-column: 1 / -1;
-}
-
-.enterprise-form-field__label {
-    min-height: 1rem;
-    color: var(--p-text-color, #334155);
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1rem;
-}
-
-.enterprise-form-field__label strong {
-    color: var(--p-red-500, #ef4444);
-    font-weight: 700;
-}
-
-.enterprise-form-field__error {
-    color: var(--p-red-500, #ef4444);
-    font-size: 0.68rem;
-    line-height: 1rem;
-}
-
-.position-enterprise-form__checkbox {
-    display: flex;
+.position-form__checkbox {
     min-height: 2.25rem;
+    flex-direction: row;
     align-items: center;
+    align-self: end;
     gap: 0.5rem;
-    padding: 0 0.65rem;
-    border: 1px solid var(--p-form-field-border-color, #cbd5e1);
-    border-radius: var(--p-form-field-border-radius, 6px);
-    background: var(--p-form-field-background, #fff);
-    cursor: pointer;
 }
 
-.position-enterprise-form__checkbox span {
-    color: var(--p-text-color, #334155);
-    font-size: 0.75rem;
-    line-height: 1;
-}
-
-.position-enterprise-form :deep(.p-inputtext),
-.position-enterprise-form :deep(.p-select),
-.position-enterprise-form :deep(.p-inputnumber-input) {
-    width: 100%;
-    min-height: 2.25rem;
-    height: 2.25rem;
-    font-size: 0.78rem;
-}
-
-.position-enterprise-form :deep(.p-select-label) {
-    display: flex;
-    min-height: 2.25rem;
-    height: 2.25rem;
-    align-items: center;
-    padding-block: 0;
-    font-size: 0.78rem;
-}
-
-.position-enterprise-form :deep(.p-select-dropdown) {
-    width: 2rem;
-    min-width: 2rem;
-    height: 2.25rem;
-}
-
-.position-enterprise-form :deep(.p-textarea) {
-    width: 100%;
-    min-height: 5rem;
-    font-size: 0.78rem;
-    resize: vertical;
+.position-form__checkbox > span {
+    margin: 0;
 }
 
 @media (max-width: 680px) {
-    .position-enterprise-form__grid {
+    .position-form__grid {
         grid-template-columns: minmax(0, 1fr);
-    }
-
-    .enterprise-form-field--full {
-        grid-column: auto;
     }
 }
 </style>

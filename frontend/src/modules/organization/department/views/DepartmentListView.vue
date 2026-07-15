@@ -21,13 +21,17 @@ import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPag
 import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
 
 import {
+    downloadDepartmentTemplate,
+    exportDepartments,
     lookupBranches,
     lookupCompanies,
     lookupDepartments,
 } from "../api/department.api.js"
 import DepartmentArchiveDialog from "../components/DepartmentArchiveDialog.vue"
 import DepartmentFormDialog from "../components/DepartmentFormDialog.vue"
+import DepartmentImportDialog from "../components/DepartmentImportDialog.vue"
 import { useDepartmentForm } from "../composables/useDepartmentForm.js"
+import { useDepartmentImport } from "../composables/useDepartmentImport.js"
 import { useDepartmentList } from "../composables/useDepartmentList.js"
 import { createDepartmentColumns } from "../config/department.columns.js"
 import { createDepartmentStatusOptions } from "../config/department.filters.js"
@@ -40,13 +44,17 @@ const uiStore = useUiStore()
 
 const list = useDepartmentList()
 const formState = useDepartmentForm()
+const importState = useDepartmentImport()
 
 const companies = ref([])
 const branches = ref([])
 const parentDepartments = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
+const importVisible = ref(false)
 const archiveCandidate = ref(null)
+const downloadingTemplate = ref(false)
+const exporting = ref(false)
 
 const columns = computed(() => createDepartmentColumns(t))
 const statusOptions = computed(() =>
@@ -180,6 +188,11 @@ async function openEdit(row) {
     formVisible.value = true
 }
 
+function openImport() {
+    importState.reset()
+    importVisible.value = true
+}
+
 function onFormCompanyChange() {
     formState.form.branchId = ""
     formState.form.parentDepartmentId = ""
@@ -214,6 +227,89 @@ async function saveDepartment() {
         toast.add({
             severity: "error",
             summary: t("organization.department.saveFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    }
+}
+
+async function downloadTemplate() {
+    if (downloadingTemplate.value) {
+        return
+    }
+
+    downloadingTemplate.value = true
+
+    try {
+        await downloadDepartmentTemplate()
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.department.templateDownloadFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    } finally {
+        downloadingTemplate.value = false
+    }
+}
+
+async function exportCurrentDepartments() {
+    if (exporting.value) {
+        return
+    }
+
+    exporting.value = true
+
+    try {
+        await exportDepartments({
+            search: list.query.search || undefined,
+            companyId: list.query.companyId || undefined,
+            branchId: list.query.branchId || undefined,
+            status: list.query.status,
+            sortBy: list.query.sortBy,
+            sortOrder: list.query.sortOrder,
+        })
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.department.exportFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    } finally {
+        exporting.value = false
+    }
+}
+
+async function importDepartmentFile() {
+    try {
+        const result = await importState.submit()
+
+        if (!result) {
+            return
+        }
+
+        toast.add({
+            severity:
+                Number(result.failed ?? result.errors?.length ?? 0) > 0
+                    ? "warn"
+                    : "success",
+            summary: t("organization.department.importSuccess"),
+            detail: t("organization.department.importSuccessDetail"),
+            life: 4000,
+        })
+
+        await Promise.all([
+            list.load({
+                page: 1,
+            }),
+            loadLookups(),
+        ])
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.department.importFailed"),
             detail: translatedError(error),
             life: 5000,
         })
@@ -361,6 +457,35 @@ onMounted(load)
                         :label="t('common.refresh')"
                         :loading="list.loading.value"
                         @click="list.load"
+                    />
+
+                    <PermissionButton
+                        :permission="DEPARTMENT_PERMISSIONS.EXPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-download"
+                        :label="t('organization.department.downloadTemplate')"
+                        :loading="downloadingTemplate"
+                        @click="downloadTemplate"
+                    />
+
+                    <PermissionButton
+                        :permission="DEPARTMENT_PERMISSIONS.IMPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-upload"
+                        :label="t('organization.department.import')"
+                        @click="openImport"
+                    />
+
+                    <PermissionButton
+                        :permission="DEPARTMENT_PERMISSIONS.EXPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-file-export"
+                        :label="t('organization.department.export')"
+                        :loading="exporting"
+                        @click="exportCurrentDepartments"
                     />
                 </template>
 
@@ -551,6 +676,22 @@ onMounted(load)
         @normalize-code="formState.normalizeCode"
         @company-change="onFormCompanyChange"
         @branch-change="onFormBranchChange"
+    />
+
+    <DepartmentImportDialog
+        v-model:visible="importVisible"
+        :importing="importState.importing.value"
+        :progress="importState.progress.value"
+        :result="importState.result.value"
+        :error-message="
+            importState.error.value
+                ? translatedError(importState.error.value)
+                : ''
+        "
+        @file-change="importState.setFile"
+        @download-template="downloadTemplate"
+        @import="importDepartmentFile"
+        @close="importState.reset"
     />
 
     <DepartmentArchiveDialog

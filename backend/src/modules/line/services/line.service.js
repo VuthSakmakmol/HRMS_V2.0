@@ -155,7 +155,6 @@ function buildLineSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { name: searchRegex },
-            { shortName: searchRegex },
             { description: searchRegex },
         ],
     }
@@ -212,7 +211,6 @@ function serializeDepartment(department) {
         branchId: department.branchId?.toString?.() || department.branchId,
         code: department.code,
         name: department.name,
-        shortName: department.shortName,
         status: department.status,
     }
 }
@@ -230,7 +228,6 @@ function serializePosition(position) {
             position.departmentId?.toString?.() || position.departmentId,
         code: position.code,
         title: position.title,
-        shortName: position.shortName,
         level: Number(position.level || 0),
         isManager: Boolean(position.isManager),
         status: position.status,
@@ -291,7 +288,6 @@ export function serializeLine(line) {
 
         code: raw.code,
         name: raw.name,
-        shortName: raw.shortName || "",
         description: raw.description || "",
         status: raw.status,
 
@@ -330,7 +326,6 @@ function buildUpdatePayload(payload, accountId) {
     for (const field of [
         "code",
         "name",
-        "shortName",
         "allowedPositionIds",
         "leaderPositionId",
         "description",
@@ -626,17 +621,20 @@ export async function listLines({ query, user }) {
             })
             .populate({
                 path: "departmentId",
-                select: "companyId branchId code name shortName status",
+                select: "companyId branchId code name status",
             })
             .populate({
                 path: "allowedPositionIds",
-                select: "companyId branchId departmentId code title shortName level isManager status",
+                select: "companyId branchId departmentId code title level isManager status",
             })
             .populate({
                 path: "leaderPositionId",
-                select: "companyId branchId departmentId code title shortName level isManager status",
+                select: "companyId branchId departmentId code title level isManager status",
             })
-            .sort({ name: 1, code: 1 })
+            .sort({
+                [query.sortBy]: query.sortOrder === "desc" ? -1 : 1,
+                _id: 1,
+            })
             .skip(skip)
             .limit(limit)
             .lean(),
@@ -649,7 +647,9 @@ export async function listLines({ query, user }) {
             page,
             limit,
             total,
-            totalPages: Math.max(1, Math.ceil(total / limit)),
+            totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+            hasNext: page * limit < total,
+            hasPrevious: page > 1,
         },
     }
 
@@ -677,15 +677,15 @@ export async function getLineById({ lineId, user }) {
         })
         .populate({
             path: "departmentId",
-            select: "companyId branchId code name shortName status",
+            select: "companyId branchId code name status",
         })
         .populate({
             path: "allowedPositionIds",
-            select: "companyId branchId departmentId code title shortName level isManager status",
+            select: "companyId branchId departmentId code title level isManager status",
         })
         .populate({
             path: "leaderPositionId",
-            select: "companyId branchId departmentId code title shortName level isManager status",
+            select: "companyId branchId departmentId code title level isManager status",
         })
         .lean()
 
@@ -735,7 +735,6 @@ export async function createLine({ payload, user }) {
             departmentId: payload.departmentId,
             code: payload.code,
             name: payload.name,
-            shortName: payload.shortName || "",
             allowedPositionIds: positionPayload.allowedPositionIds,
             leaderPositionId: positionPayload.leaderPositionId,
             description: payload.description || "",
