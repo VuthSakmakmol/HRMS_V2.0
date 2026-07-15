@@ -5,7 +5,6 @@ const DEPARTMENT_UPDATE_STATUSES = ["ACTIVE", "INACTIVE"]
 const DEPARTMENT_SORT_FIELDS = [
     "code",
     "name",
-    "shortName",
     "status",
     "createdAt",
     "updatedAt",
@@ -81,7 +80,6 @@ export const departmentCreateSchema = z.object({
     parentDepartmentId: nullableObjectIdSchema.optional(),
     code: normalizedCodeSchema,
     name: normalizedTextSchema(2, 160),
-    shortName: optionalTextSchema(60),
     description: optionalTextSchema(500),
     status: z.enum(DEPARTMENT_UPDATE_STATUSES).optional(),
 })
@@ -91,8 +89,7 @@ export const departmentUpdateSchema = z
         parentDepartmentId: nullableObjectIdSchema.optional(),
         code: normalizedCodeSchema.optional(),
         name: normalizedTextSchema(2, 160).optional(),
-        shortName: optionalTextSchema(60),
-        description: optionalTextSchema(500),
+            description: optionalTextSchema(500),
         status: z.enum(DEPARTMENT_UPDATE_STATUSES).optional(),
     })
     .refine((value) => Object.keys(value).length > 0, {

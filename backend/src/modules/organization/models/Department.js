@@ -57,14 +57,6 @@ const departmentSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 60,
-            set: normalizeText,
-            default: "",
-        },
-
         description: {
             type: String,
             trim: true,

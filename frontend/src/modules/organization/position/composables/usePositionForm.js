@@ -5,17 +5,20 @@ import {
 } from "vue"
 
 import {
-    createDepartment,
-    updateDepartment,
-} from "../api/department.api.js"
+    createPosition,
+    updatePosition,
+} from "../api/position.api.js"
 
-export function createEmptyDepartmentForm() {
+export function createEmptyPositionForm() {
     return {
         companyId: "",
         branchId: "",
-        parentDepartmentId: "",
+        departmentId: "",
+        reportsToPositionId: "",
         code: "",
-        name: "",
+        title: "",
+        level: 0,
+        isManager: false,
         description: "",
         status: "ACTIVE",
     }
@@ -39,36 +42,42 @@ function mapFieldErrors(error) {
     )
 }
 
-export function useDepartmentForm() {
+export function usePositionForm() {
     const mode = ref("create")
-    const departmentId = ref(null)
+    const positionId = ref(null)
     const saving = ref(false)
     const errors = ref({})
-    const form = reactive(createEmptyDepartmentForm())
+    const form = reactive(createEmptyPositionForm())
     const isEdit = computed(() => mode.value === "edit")
 
-    function replaceForm(department = {}) {
-        const empty = createEmptyDepartmentForm()
+    function replaceForm(position = {}) {
+        const empty = createEmptyPositionForm()
 
         Object.assign(
             form,
             clone({
                 ...empty,
-                ...department,
+                ...position,
                 companyId:
-                    department.companyId ??
-                    department.company?.id ??
+                    position.companyId ??
+                    position.company?.id ??
                     "",
                 branchId:
-                    department.branchId ??
-                    department.branch?.id ??
+                    position.branchId ??
+                    position.branch?.id ??
                     "",
-                parentDepartmentId:
-                    department.parentDepartmentId ??
-                    department.parentDepartment?.id ??
+                departmentId:
+                    position.departmentId ??
+                    position.department?.id ??
                     "",
+                reportsToPositionId:
+                    position.reportsToPositionId ??
+                    position.reportsToPosition?.id ??
+                    "",
+                level: Number(position.level ?? 0),
+                isManager: Boolean(position.isManager),
                 status:
-                    department.status === "INACTIVE"
+                    position.status === "INACTIVE"
                         ? "INACTIVE"
                         : "ACTIVE",
             }),
@@ -77,16 +86,16 @@ export function useDepartmentForm() {
 
     function openCreate() {
         mode.value = "create"
-        departmentId.value = null
+        positionId.value = null
         errors.value = {}
         replaceForm()
     }
 
-    function openEdit(department) {
+    function openEdit(position) {
         mode.value = "edit"
-        departmentId.value = department.id ?? department._id
+        positionId.value = position.id ?? position._id
         errors.value = {}
-        replaceForm(department)
+        replaceForm(position)
     }
 
     function clearError(field) {
@@ -121,17 +130,20 @@ export function useDepartmentForm() {
             if (isEdit.value) {
                 delete payload.companyId
                 delete payload.branchId
+                delete payload.departmentId
             }
 
-            payload.parentDepartmentId =
-                payload.parentDepartmentId || null
+            payload.reportsToPositionId =
+                payload.reportsToPositionId || null
+            payload.level = Number(payload.level || 0)
+            payload.isManager = Boolean(payload.isManager)
 
             const result = isEdit.value
-                ? await updateDepartment(
-                      departmentId.value,
+                ? await updatePosition(
+                      positionId.value,
                       payload,
                   )
-                : await createDepartment(payload)
+                : await createPosition(payload)
 
             replaceForm(result)
 
@@ -146,7 +158,7 @@ export function useDepartmentForm() {
 
     return {
         mode,
-        departmentId,
+        positionId,
         saving,
         errors,
         form,

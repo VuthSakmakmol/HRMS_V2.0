@@ -160,7 +160,6 @@ function buildPositionSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { title: searchRegex },
-            { shortName: searchRegex },
             { description: searchRegex },
         ],
     }
@@ -190,7 +189,6 @@ function serializeBranch(branch) {
         companyId: branch.companyId?.toString?.() || branch.companyId,
         code: branch.code,
         name: branch.name,
-        shortName: branch.shortName,
         status: branch.status,
         isHeadOffice: Boolean(branch.isHeadOffice),
     }
@@ -207,7 +205,6 @@ function serializeDepartment(department) {
         branchId: department.branchId?.toString?.() || department.branchId,
         code: department.code,
         name: department.name,
-        shortName: department.shortName,
         status: department.status,
     }
 }
@@ -221,7 +218,6 @@ function serializeReportsToPosition(position) {
         id: position._id?.toString?.() || position.id,
         code: position.code,
         title: position.title,
-        shortName: position.shortName,
         level: position.level,
         isManager: Boolean(position.isManager),
         status: position.status,
@@ -286,7 +282,6 @@ function serializePosition(position) {
         reportsToPosition: populatedReportsTo,
         code: raw.code,
         title: raw.title,
-        shortName: raw.shortName || "",
         level: Number(raw.level || 0),
         isManager: Boolean(raw.isManager),
         description: raw.description || "",
@@ -305,7 +300,6 @@ function buildPositionUpdatePayload(payload, accountId) {
         "reportsToPositionId",
         "code",
         "title",
-        "shortName",
         "level",
         "isManager",
         "description",
@@ -573,15 +567,15 @@ export async function listPositions({ query, user }) {
             })
             .populate({
                 path: "branchId",
-                select: "companyId code name shortName status isHeadOffice",
+                select: "companyId code name status isHeadOffice",
             })
             .populate({
                 path: "departmentId",
-                select: "companyId branchId code name shortName status",
+                select: "companyId branchId code name status",
             })
             .populate({
                 path: "reportsToPositionId",
-                select: "code title shortName level isManager status",
+                select: "code title level isManager status",
             })
             .sort(sort)
             .skip(skip)
@@ -622,7 +616,6 @@ export async function lookupPositions({ query, user }) {
         code: position.code,
         name: position.title,
         title: position.title,
-        shortName: position.shortName || "",
         level: position.level,
         isManager: Boolean(position.isManager),
         status: position.status,
@@ -646,15 +639,15 @@ export async function getPositionById({ positionId, user }) {
         })
         .populate({
             path: "branchId",
-            select: "companyId code name shortName status isHeadOffice",
+            select: "companyId code name status isHeadOffice",
         })
         .populate({
             path: "departmentId",
-            select: "companyId branchId code name shortName status",
+            select: "companyId branchId code name status",
         })
         .populate({
             path: "reportsToPositionId",
-            select: "code title shortName level isManager status",
+            select: "code title level isManager status",
         })
 
     if (!position) {
@@ -769,15 +762,15 @@ export async function updatePosition({ positionId, payload, user }) {
             })
             .populate({
                 path: "branchId",
-                select: "companyId code name shortName status isHeadOffice",
+                select: "companyId code name status isHeadOffice",
             })
             .populate({
                 path: "departmentId",
-                select: "companyId branchId code name shortName status",
+                select: "companyId branchId code name status",
             })
             .populate({
                 path: "reportsToPositionId",
-                select: "code title shortName level isManager status",
+                select: "code title level isManager status",
             })
 
         if (!position) {
@@ -845,15 +838,15 @@ export async function archivePosition({ positionId, user }) {
         })
         .populate({
             path: "branchId",
-            select: "companyId code name shortName status isHeadOffice",
+            select: "companyId code name status isHeadOffice",
         })
         .populate({
             path: "departmentId",
-            select: "companyId branchId code name shortName status",
+            select: "companyId branchId code name status",
         })
         .populate({
             path: "reportsToPositionId",
-            select: "code title shortName level isManager status",
+            select: "code title level isManager status",
         })
 
     if (!position) {

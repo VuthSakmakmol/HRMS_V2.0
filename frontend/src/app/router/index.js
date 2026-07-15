@@ -80,7 +80,7 @@ const router = createRouter({
                 {
                     path: "organization/positions",
                     name: "organization-positions",
-                    component: () => import("@/modules/organization/views/PositionListView.vue"),
+                    component: () => import("@/modules/organization/position/views/PositionListView.vue"),
                     meta: {
                         titleKey: "nav.positions",
                         permissionCode: "ORGANIZATION.POSITION.VIEW",

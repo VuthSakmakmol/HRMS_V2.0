@@ -166,18 +166,6 @@ function message(field) {
                     </small>
                 </label>
 
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.department.shortName") }}
-                    </span>
-
-                    <InputText
-                        v-model="form.shortName"
-                        :disabled="disabled"
-                        maxlength="60"
-                    />
-                </label>
-
                 <label class="enterprise-form-field enterprise-form-field--wide">
                     <span>
                         {{ t("organization.department.parentDepartment") }}

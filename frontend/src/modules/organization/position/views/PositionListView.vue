@@ -24,33 +24,35 @@ import {
     lookupBranches,
     lookupCompanies,
     lookupDepartments,
-} from "../api/department.api.js"
-import DepartmentArchiveDialog from "../components/DepartmentArchiveDialog.vue"
-import DepartmentFormDialog from "../components/DepartmentFormDialog.vue"
-import { useDepartmentForm } from "../composables/useDepartmentForm.js"
-import { useDepartmentList } from "../composables/useDepartmentList.js"
-import { createDepartmentColumns } from "../config/department.columns.js"
-import { createDepartmentStatusOptions } from "../config/department.filters.js"
-import { DEPARTMENT_PERMISSIONS } from "../config/department.permissions.js"
+    lookupPositions,
+} from "../api/position.api.js"
+import PositionArchiveDialog from "../components/PositionArchiveDialog.vue"
+import PositionFormDialog from "../components/PositionFormDialog.vue"
+import { usePositionForm } from "../composables/usePositionForm.js"
+import { usePositionList } from "../composables/usePositionList.js"
+import { createPositionColumns } from "../config/position.columns.js"
+import { createPositionStatusOptions } from "../config/position.filters.js"
+import { POSITION_PERMISSIONS } from "../config/position.permissions.js"
 
 const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
 
-const list = useDepartmentList()
-const formState = useDepartmentForm()
+const list = usePositionList()
+const formState = usePositionForm()
 
 const companies = ref([])
 const branches = ref([])
-const parentDepartments = ref([])
+const departments = ref([])
+const reportsToPositions = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const archiveCandidate = ref(null)
 
-const columns = computed(() => createDepartmentColumns(t))
+const columns = computed(() => createPositionColumns(t))
 const statusOptions = computed(() =>
-    createDepartmentStatusOptions(t),
+    createPositionStatusOptions(t),
 )
 
 const activeFilterCount = computed(() => {
@@ -68,6 +70,10 @@ const activeFilterCount = computed(() => {
         count += 1
     }
 
+    if (list.query.departmentId) {
+        count += 1
+    }
+
     if (list.query.status !== "ALL") {
         count += 1
     }
@@ -78,7 +84,7 @@ const activeFilterCount = computed(() => {
 const companyOptions = computed(() => [
     {
         id: "",
-        displayName: t("organization.department.allCompanies"),
+        displayName: t("organization.position.allCompanies"),
     },
     ...companies.value,
 ])
@@ -86,12 +92,26 @@ const companyOptions = computed(() => [
 const branchOptions = computed(() => [
     {
         id: "",
-        name: t("organization.department.allBranches"),
+        name: t("organization.position.allBranches"),
     },
     ...branches.value.filter(
         (branch) =>
             !list.query.companyId ||
             branch.companyId === list.query.companyId,
+    ),
+])
+
+const departmentOptions = computed(() => [
+    {
+        id: "",
+        name: t("organization.position.allDepartments"),
+    },
+    ...departments.value.filter(
+        (department) =>
+            (!list.query.companyId ||
+                department.companyId === list.query.companyId) &&
+            (!list.query.branchId ||
+                department.branchId === list.query.branchId),
     ),
 ])
 
@@ -103,12 +123,22 @@ const formBranchOptions = computed(() =>
     ),
 )
 
+const formDepartmentOptions = computed(() =>
+    departments.value.filter(
+        (department) =>
+            (!formState.form.companyId ||
+                department.companyId === formState.form.companyId) &&
+            (!formState.form.branchId ||
+                department.branchId === formState.form.branchId),
+    ),
+)
+
 const canUpdate = computed(() =>
-    authStore.hasPermission(DEPARTMENT_PERMISSIONS.UPDATE),
+    authStore.hasPermission(POSITION_PERMISSIONS.UPDATE),
 )
 
 const canArchive = computed(() =>
-    authStore.hasPermission(DEPARTMENT_PERMISSIONS.ARCHIVE),
+    authStore.hasPermission(POSITION_PERMISSIONS.ARCHIVE),
 )
 
 function translatedError(error) {
@@ -126,13 +156,16 @@ function translatedError(error) {
 }
 
 async function loadLookups() {
-    const [companyRows, branchRows] = await Promise.all([
-        lookupCompanies(),
-        lookupBranches(),
-    ])
+    const [companyRows, branchRows, departmentRows] =
+        await Promise.all([
+            lookupCompanies(),
+            lookupBranches(),
+            lookupDepartments(),
+        ])
 
     companies.value = companyRows
     branches.value = branchRows
+    departments.value = departmentRows
 }
 
 async function load() {
@@ -144,54 +177,62 @@ async function load() {
     } catch (error) {
         toast.add({
             severity: "error",
-            summary: t("organization.department.loadFailed"),
+            summary: t("organization.position.loadFailed"),
             detail: translatedError(error),
             life: 4500,
         })
     }
 }
 
-async function loadParentDepartments() {
-    if (!formState.form.branchId) {
-        parentDepartments.value = []
+async function loadReportsToPositions() {
+    if (!formState.form.departmentId) {
+        reportsToPositions.value = []
         return
     }
 
-    parentDepartments.value = await lookupDepartments({
+    reportsToPositions.value = await lookupPositions({
         companyId: formState.form.companyId,
         branchId: formState.form.branchId,
+        departmentId: formState.form.departmentId,
     })
 
-    parentDepartments.value = parentDepartments.value.filter(
-        (department) =>
-            department.id !== formState.departmentId.value,
+    reportsToPositions.value = reportsToPositions.value.filter(
+        (position) =>
+            position.id !== formState.positionId.value,
     )
 }
 
 async function openCreate() {
     formState.openCreate()
-    parentDepartments.value = []
+    reportsToPositions.value = []
     formVisible.value = true
 }
 
 async function openEdit(row) {
     formState.openEdit(row)
-    await loadParentDepartments()
+    await loadReportsToPositions()
     formVisible.value = true
 }
 
 function onFormCompanyChange() {
     formState.form.branchId = ""
-    formState.form.parentDepartmentId = ""
-    parentDepartments.value = []
+    formState.form.departmentId = ""
+    formState.form.reportsToPositionId = ""
+    reportsToPositions.value = []
 }
 
-async function onFormBranchChange() {
-    formState.form.parentDepartmentId = ""
-    await loadParentDepartments()
+function onFormBranchChange() {
+    formState.form.departmentId = ""
+    formState.form.reportsToPositionId = ""
+    reportsToPositions.value = []
 }
 
-async function saveDepartment() {
+async function onFormDepartmentChange() {
+    formState.form.reportsToPositionId = ""
+    await loadReportsToPositions()
+}
+
+async function savePosition() {
     try {
         const editing = formState.isEdit.value
 
@@ -201,11 +242,11 @@ async function saveDepartment() {
         toast.add({
             severity: "success",
             summary: editing
-                ? t("organization.department.updated")
-                : t("organization.department.created"),
+                ? t("organization.position.updated")
+                : t("organization.position.created"),
             detail: editing
-                ? t("organization.department.updatedDetail")
-                : t("organization.department.createdDetail"),
+                ? t("organization.position.updatedDetail")
+                : t("organization.position.createdDetail"),
             life: 3000,
         })
 
@@ -213,7 +254,7 @@ async function saveDepartment() {
     } catch (error) {
         toast.add({
             severity: "error",
-            summary: t("organization.department.saveFailed"),
+            summary: t("organization.position.saveFailed"),
             detail: translatedError(error),
             life: 5000,
         })
@@ -241,14 +282,14 @@ async function confirmArchive() {
 
         toast.add({
             severity: "success",
-            summary: t("organization.department.archived"),
-            detail: t("organization.department.archivedDetail"),
+            summary: t("organization.position.archived"),
+            detail: t("organization.position.archivedDetail"),
             life: 3000,
         })
     } catch (error) {
         toast.add({
             severity: "error",
-            summary: t("organization.department.archiveFailed"),
+            summary: t("organization.position.archiveFailed"),
             detail: translatedError(error),
             life: 5000,
         })
@@ -266,7 +307,7 @@ function rowActions(row) {
             command: () => openEdit(row),
         },
         {
-            label: t("organization.department.archiveTitle"),
+            label: t("organization.position.archiveTitle"),
             icon: "pi pi-archive",
             visible:
                 canArchive.value &&
@@ -294,18 +335,24 @@ function statusSeverity(status) {
 
 function statusLabel(status) {
     if (status === "ACTIVE") {
-        return t("organization.department.statusActive")
+        return t("organization.position.statusActive")
     }
 
     if (status === "INACTIVE") {
-        return t("organization.department.statusInactive")
+        return t("organization.position.statusInactive")
     }
 
     if (status === "ARCHIVED") {
-        return t("organization.department.statusArchived")
+        return t("organization.position.statusArchived")
     }
 
     return status || "—"
+}
+
+function booleanLabel(value) {
+    return value
+        ? t("common.yes")
+        : t("common.no")
 }
 
 function formatDateTime(value) {
@@ -327,6 +374,11 @@ function formatDateTime(value) {
 
 function onFilterCompanyChange() {
     list.query.branchId = ""
+    list.query.departmentId = ""
+}
+
+function onFilterBranchChange() {
+    list.query.departmentId = ""
 }
 
 onMounted(load)
@@ -341,8 +393,8 @@ onMounted(load)
         :pagination="list.pagination"
         :actions-header="t('common.actions')"
         row-key="id"
-        :empty-title="t('organization.department.empty')"
-        :empty-description="t('organization.department.emptyDescription')"
+        :empty-title="t('organization.position.empty')"
+        :empty-description="t('organization.position.description')"
         @retry="list.load"
         @page-change="list.changePage"
         @sort-change="list.changeSort"
@@ -366,9 +418,9 @@ onMounted(load)
 
                 <template #actions>
                     <PermissionButton
-                        :permission="DEPARTMENT_PERMISSIONS.CREATE"
+                        :permission="POSITION_PERMISSIONS.CREATE"
                         icon="pi pi-plus"
-                        :label="t('organization.department.newDepartment')"
+                        :label="t('organization.position.newPosition')"
                         @click="openCreate"
                     />
                 </template>
@@ -378,7 +430,7 @@ onMounted(load)
                         :loading="list.loading.value"
                     >
                         <EnterpriseFilterField
-                            class="department-filter-search"
+                            class="position-filter-search"
                             :label="t('common.search')"
                             search
                         >
@@ -389,7 +441,7 @@ onMounted(load)
                                     v-model="list.query.search"
                                     :placeholder="
                                         t(
-                                            'organization.department.searchPlaceholder',
+                                            'organization.position.searchPlaceholder',
                                         )
                                     "
                                     @keyup.enter="list.applyFilters"
@@ -398,7 +450,7 @@ onMounted(load)
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
-                            :label="t('organization.department.company')"
+                            :label="t('organization.position.company')"
                         >
                             <Select
                                 v-model="list.query.companyId"
@@ -411,7 +463,7 @@ onMounted(load)
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
-                            :label="t('organization.department.branch')"
+                            :label="t('organization.position.branch')"
                         >
                             <Select
                                 v-model="list.query.branchId"
@@ -420,6 +472,20 @@ onMounted(load)
                                 option-value="id"
                                 filter
                                 :disabled="!list.query.companyId"
+                                @change="onFilterBranchChange"
+                            />
+                        </EnterpriseFilterField>
+
+                        <EnterpriseFilterField
+                            :label="t('organization.position.department')"
+                        >
+                            <Select
+                                v-model="list.query.departmentId"
+                                :options="departmentOptions"
+                                option-label="name"
+                                option-value="id"
+                                filter
+                                :disabled="!list.query.branchId"
                             />
                         </EnterpriseFilterField>
 
@@ -461,9 +527,9 @@ onMounted(load)
 
         <template #empty-action>
             <PermissionButton
-                :permission="DEPARTMENT_PERMISSIONS.CREATE"
+                :permission="POSITION_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
-                :label="t('organization.department.newDepartment')"
+                :label="t('organization.position.newPosition')"
                 @click="openCreate"
             />
         </template>
@@ -477,12 +543,12 @@ onMounted(load)
             </span>
         </template>
 
-        <template #cell-name="{ row }">
+        <template #cell-title="{ row }">
             <span
                 class="enterprise-table__text"
-                :title="row.name || '—'"
+                :title="row.title || '—'"
             >
-                {{ row.name || "—" }}
+                {{ row.title || "—" }}
             </span>
         </template>
 
@@ -504,13 +570,35 @@ onMounted(load)
             </span>
         </template>
 
-        <template #cell-parentDepartment="{ row }">
+        <template #cell-department="{ row }">
             <span
                 class="enterprise-table__text"
-                :title="row.parentDepartment?.name || '—'"
+                :title="row.department?.name || '—'"
             >
-                {{ row.parentDepartment?.name || "—" }}
+                {{ row.department?.name || "—" }}
             </span>
+        </template>
+
+        <template #cell-reportsToPosition="{ row }">
+            <span
+                class="enterprise-table__text"
+                :title="row.reportsToPosition?.title || '—'"
+            >
+                {{ row.reportsToPosition?.title || "—" }}
+            </span>
+        </template>
+
+        <template #cell-level="{ row }">
+            <span class="enterprise-table__text">
+                {{ row.level ?? 0 }}
+            </span>
+        </template>
+
+        <template #cell-isManager="{ row }">
+            <Tag
+                :value="booleanLabel(row.isManager)"
+                :severity="row.isManager ? 'info' : 'secondary'"
+            />
         </template>
 
         <template #cell-status="{ row }">
@@ -537,25 +625,27 @@ onMounted(load)
         </template>
     </EnterpriseListPage>
 
-    <DepartmentFormDialog
+    <PositionFormDialog
         v-model:visible="formVisible"
         :mode="formState.mode.value"
         :form="formState.form"
         :errors="formState.errors.value"
         :companies="companies"
         :branches="formBranchOptions"
-        :parent-departments="parentDepartments"
+        :departments="formDepartmentOptions"
+        :reports-to-positions="reportsToPositions"
         :saving="formState.saving.value"
-        @save="saveDepartment"
+        @save="savePosition"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
         @company-change="onFormCompanyChange"
         @branch-change="onFormBranchChange"
+        @department-change="onFormDepartmentChange"
     />
 
-    <DepartmentArchiveDialog
+    <PositionArchiveDialog
         v-model:visible="archiveVisible"
-        :department="archiveCandidate"
+        :position="archiveCandidate"
         :busy="list.archiving.value"
         @confirm="confirmArchive"
         @cancel="archiveCandidate = null"
@@ -563,7 +653,7 @@ onMounted(load)
 </template>
 
 <style scoped>
-.department-filter-search {
+.position-filter-search {
     min-width: min(18rem, 100%);
     flex: 1 1 18rem;
 }

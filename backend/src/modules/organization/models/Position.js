@@ -63,14 +63,6 @@ const positionSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 80,
-            set: normalizeText,
-            default: "",
-        },
-
         level: {
             type: Number,
             min: 0,

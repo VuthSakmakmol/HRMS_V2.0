@@ -99,8 +99,10 @@ const emit = defineEmits([
 
 <template>
     <section class="enterprise-list-page">
+        <slot name="controls" />
+
         <EnterpriseToolbar
-            v-if="$slots.toolbar || $slots['toolbar-start']"
+            v-if="!$slots.controls && ($slots.toolbar || $slots['toolbar-start'])"
         >
             <template #start>
                 <slot name="toolbar-start" />
@@ -110,7 +112,11 @@ const emit = defineEmits([
         </EnterpriseToolbar>
 
         <EnterpriseFilterBar
-            v-if="props.showFilters && $slots.filters"
+            v-if="
+                !$slots.controls &&
+                props.showFilters &&
+                $slots.filters
+            "
             :loading="props.loading"
         >
             <slot name="filters" />

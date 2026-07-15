@@ -158,7 +158,6 @@ function buildDepartmentSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { name: searchRegex },
-            { shortName: searchRegex },
             { description: searchRegex },
         ],
     }
@@ -188,7 +187,6 @@ function serializeBranch(branch) {
         companyId: branch.companyId?.toString?.() || branch.companyId,
         code: branch.code,
         name: branch.name,
-        shortName: branch.shortName,
         status: branch.status,
         isHeadOffice: Boolean(branch.isHeadOffice),
     }
@@ -203,7 +201,6 @@ function serializeParentDepartment(department) {
         id: department._id?.toString?.() || department.id,
         code: department.code,
         name: department.name,
-        shortName: department.shortName,
         status: department.status,
     }
 }
@@ -255,7 +252,6 @@ function serializeDepartment(department) {
         parentDepartment: populatedParentDepartment,
         code: raw.code,
         name: raw.name,
-        shortName: raw.shortName || "",
         description: raw.description || "",
         status: raw.status,
         createdAt: raw.createdAt,
@@ -272,7 +268,6 @@ function buildDepartmentUpdatePayload(payload, accountId) {
         "parentDepartmentId",
         "code",
         "name",
-        "shortName",
         "description",
         "status",
     ]) {
@@ -492,11 +487,11 @@ export async function listDepartments({ query, user }) {
             })
             .populate({
                 path: "branchId",
-                select: "companyId code name shortName status isHeadOffice",
+                select: "companyId code name status isHeadOffice",
             })
             .populate({
                 path: "parentDepartmentId",
-                select: "code name shortName status",
+                select: "code name status",
             })
             .sort({ [query.sortBy]: query.sortOrder === "desc" ? -1 : 1, _id: 1 })
             .skip(skip)
@@ -538,7 +533,6 @@ export async function lookupDepartments({ query, user }) {
         parentDepartmentId: department.parentDepartmentId || null,
         code: department.code,
         name: department.name,
-        shortName: department.shortName || "",
         status: department.status,
     }))
 }
@@ -560,11 +554,11 @@ export async function getDepartmentById({ departmentId, user }) {
         })
         .populate({
             path: "branchId",
-            select: "companyId code name shortName status isHeadOffice",
+            select: "companyId code name status isHeadOffice",
         })
         .populate({
             path: "parentDepartmentId",
-            select: "code name shortName status",
+            select: "code name status",
         })
 
     if (!department) {
@@ -673,11 +667,11 @@ export async function updateDepartment({ departmentId, payload, user }) {
             })
             .populate({
                 path: "branchId",
-                select: "companyId code name shortName status isHeadOffice",
+                select: "companyId code name status isHeadOffice",
             })
             .populate({
                 path: "parentDepartmentId",
-                select: "code name shortName status",
+                select: "code name status",
             })
 
         if (!department) {
@@ -745,11 +739,11 @@ export async function archiveDepartment({ departmentId, user }) {
         })
         .populate({
             path: "branchId",
-            select: "companyId code name shortName status isHeadOffice",
+            select: "companyId code name status isHeadOffice",
         })
         .populate({
             path: "parentDepartmentId",
-            select: "code name shortName status",
+            select: "code name status",
         })
 
     if (!department) {
