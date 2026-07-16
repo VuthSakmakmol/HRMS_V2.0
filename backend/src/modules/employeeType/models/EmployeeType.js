@@ -249,3 +249,4 @@ const EmployeeType =
     mongoose.model("EmployeeType", employeeTypeSchema)
 
 export default EmployeeType
+    

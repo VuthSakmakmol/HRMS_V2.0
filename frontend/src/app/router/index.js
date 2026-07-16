@@ -100,7 +100,7 @@ const router = createRouter({
                 {
                     path: "organization/shifts",
                     name: "organization-shifts",
-                    component: () => import("@/modules/shift/views/ShiftListView.vue"),
+                    component: () => import("@/modules/organization/shift/views/ShiftListView.vue"),
                     meta: {
                         titleKey: "nav.shifts",
                         permissionCode: "ORGANIZATION.SHIFT.VIEW",
@@ -111,7 +111,7 @@ const router = createRouter({
                     path: "organization/employee-types",
                     name: "organization-employee-types",
                     component: () =>
-                        import("@/modules/employeeType/views/EmployeeTypeListView.vue"),
+                        import("@/modules/organization/employeeType/views/EmployeeTypeListView.vue"),
                     meta: {
                         titleKey: "nav.employeeTypes",
                         permissionCode: "ORGANIZATION.EMPLOYEE_TYPE.VIEW",
@@ -121,7 +121,7 @@ const router = createRouter({
                 {
                     path: "organization/locations",
                     name: "organization-locations",
-                    component: () => import("@/modules/location/views/LocationListView.vue"),
+                    component: () => import("@/modules/organization/location/views/LocationListView.vue"),
                     meta: {
                         titleKey: "nav.locations",
                         permissionCode: "ORGANIZATION.LOCATION.VIEW",

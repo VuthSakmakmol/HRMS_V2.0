@@ -1,11 +1,23 @@
-import multer from "multer"
 import { Router } from "express"
+import multer from "multer"
 
 import {
     requireAuthentication,
     requirePermission,
 } from "../../access/middleware/auth.middleware.js"
-import { AppError } from "../../../shared/errors/AppError.js"
+import {
+    archiveLocationController,
+    createLocationController,
+    downloadLocationImportTemplateController,
+    exportLocationsController,
+    getLocationController,
+    getLocationImportJobController,
+    importLocationsController,
+    listLocationsController,
+    lookupLocationsController,
+    startLocationImportJobController,
+    updateLocationController,
+} from "../controllers/location.controller.js"
 import {
     getLocationCreateSchema,
     getLocationUpdateSchema,
@@ -13,23 +25,9 @@ import {
     locationIdParamSchema,
     locationListQuerySchema,
 } from "../schemas/location.schema.js"
-import {
-    archiveLocation,
-    createLocation,
-    getLocationById,
-    listLocations,
-    lookupLocations,
-    updateLocation,
-} from "../services/location.service.js"
-import {
-    buildLocationExportWorkbook,
-    buildLocationImportTemplateWorkbook,
-    getExportLocations,
-    getLocationExportFilename,
-    getLocationImportFilename,
-    importLocationsFromRows,
-    parseLocationImportWorkbook,
-} from "../services/locationExcel.service.js"
+import { AppError } from "../../../shared/errors/AppError.js"
+import { asyncHandler } from "../../../shared/middleware/asyncHandler.js"
+import { validateRequest } from "../../../shared/middleware/validateRequest.js"
 
 const router = Router()
 
@@ -37,21 +35,25 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
         fileSize: 10 * 1024 * 1024,
+        files: 1,
+    },
+    fileFilter(req, file, callback) {
+        const allowedMimeTypes = new Set([
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel",
+        ])
+
+        if (!allowedMimeTypes.has(file.mimetype)) {
+            return callback(new Error("Only Excel .xlsx or .xls files are allowed."))
+        }
+
+        return callback(null, true)
     },
 })
 
-const LOCATION_PERMISSIONS = Object.freeze({
-    LOOKUP: "ORGANIZATION.LOCATION.LOOKUP",
-    VIEW: "ORGANIZATION.LOCATION.VIEW",
-    CREATE: "ORGANIZATION.LOCATION.CREATE",
-    UPDATE: "ORGANIZATION.LOCATION.UPDATE",
-    ARCHIVE: "ORGANIZATION.LOCATION.ARCHIVE",
-    IMPORT: "ORGANIZATION.LOCATION.IMPORT",
-    EXPORT: "ORGANIZATION.LOCATION.EXPORT",
-})
 
-function parseRequest(schema, value) {
-    const parsed = schema.safeParse(value)
+function parseDynamicBody(schema, body) {
+    const parsed = schema.safeParse(body)
 
     if (!parsed.success) {
         throw new AppError({
@@ -65,290 +67,116 @@ function parseRequest(schema, value) {
     return parsed.data
 }
 
+const LOCATION_PERMISSIONS = Object.freeze({
+    LOOKUP: "ORGANIZATION.LOCATION.LOOKUP",
+    VIEW: "ORGANIZATION.LOCATION.VIEW",
+    CREATE: "ORGANIZATION.LOCATION.CREATE",
+    UPDATE: "ORGANIZATION.LOCATION.UPDATE",
+    ARCHIVE: "ORGANIZATION.LOCATION.ARCHIVE",
+    IMPORT: "ORGANIZATION.LOCATION.IMPORT",
+    EXPORT: "ORGANIZATION.LOCATION.EXPORT",
+})
+
 router.use(requireAuthentication)
 
 router.get(
     "/:entity/lookup",
     requirePermission(LOCATION_PERMISSIONS.LOOKUP),
-    async (req, res, next) => {
-        try {
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const query = parseRequest(locationListQuerySchema, req.query)
-            const result = await lookupLocations({
-                entity,
-                query,
-                user: req.auth.user,
-            })
-
-            res.status(200).json({
-                success: true,
-                data: result,
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
-)
-
-router.get(
-    "/:entity",
-    requirePermission(LOCATION_PERMISSIONS.VIEW),
-    async (req, res, next) => {
-        try {
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const query = parseRequest(locationListQuerySchema, req.query)
-            const result = await listLocations({
-                entity,
-                query,
-                user: req.auth.user,
-            })
-
-            res.status(200).json({
-                success: true,
-                data: result,
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
-)
-
-router.post(
-    "/:entity",
-    requirePermission(LOCATION_PERMISSIONS.CREATE),
-    async (req, res, next) => {
-        try {
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const payload = parseRequest(
-                getLocationCreateSchema(entity),
-                req.body,
-            )
-            const location = await createLocation({
-                entity,
-                payload,
-                user: req.auth.user,
-            })
-
-            res.status(201).json({
-                success: true,
-                data: {
-                    location,
-                },
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
+    validateRequest({
+        params: locationEntityParamSchema,
+        query: locationListQuerySchema,
+    }),
+    asyncHandler(lookupLocationsController),
 )
 
 router.get(
     "/:entity/import-template",
     requirePermission(LOCATION_PERMISSIONS.VIEW),
-    async (req, res, next) => {
-        try {
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const workbook = await buildLocationImportTemplateWorkbook({
-                entity,
-            })
-            const buffer = await workbook.xlsx.writeBuffer()
-
-            res.setHeader(
-                "Content-Type",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            res.setHeader(
-                "Content-Disposition",
-                `attachment; filename="${getLocationImportFilename(entity)}"`,
-            )
-
-            res.status(200).send(Buffer.from(buffer))
-        } catch (error) {
-            next(error)
-        }
-    },
+    validateRequest({ params: locationEntityParamSchema }),
+    asyncHandler(downloadLocationImportTemplateController),
 )
 
 router.get(
     "/:entity/export",
     requirePermission(LOCATION_PERMISSIONS.EXPORT),
-    async (req, res, next) => {
-        try {
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const query = parseRequest(locationListQuerySchema, req.query)
-            const locations = await getExportLocations({
-                entity,
-                query,
-                user: req.auth.user,
-            })
-            const workbook = await buildLocationExportWorkbook({
-                entity,
-                items: locations,
-            })
-            const buffer = await workbook.xlsx.writeBuffer()
+    validateRequest({
+        params: locationEntityParamSchema,
+        query: locationListQuerySchema,
+    }),
+    asyncHandler(exportLocationsController),
+)
 
-            res.setHeader(
-                "Content-Type",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-            res.setHeader(
-                "Content-Disposition",
-                `attachment; filename="${getLocationExportFilename(entity)}"`,
-            )
+router.post(
+    "/:entity/import-jobs",
+    requirePermission(LOCATION_PERMISSIONS.IMPORT),
+    upload.single("file"),
+    validateRequest({ params: locationEntityParamSchema }),
+    asyncHandler(startLocationImportJobController),
+)
 
-            res.status(200).send(Buffer.from(buffer))
-        } catch (error) {
-            next(error)
-        }
-    },
+router.get(
+    "/:entity/import-jobs/:jobId",
+    requirePermission(LOCATION_PERMISSIONS.IMPORT),
+    validateRequest({ params: locationEntityParamSchema.passthrough() }),
+    asyncHandler(getLocationImportJobController),
 )
 
 router.post(
     "/:entity/import",
     requirePermission(LOCATION_PERMISSIONS.IMPORT),
     upload.single("file"),
-    async (req, res, next) => {
-        try {
-            if (!req.file) {
-                throw new AppError({
-                    statusCode: 422,
-                    code: "LOCATION_IMPORT_FILE_REQUIRED",
-                    messageKey: "errors.location.import.fileRequired",
-                })
-            }
+    validateRequest({ params: locationEntityParamSchema }),
+    asyncHandler(importLocationsController),
+)
 
-            const { entity } = parseRequest(
-                locationEntityParamSchema,
-                req.params,
-            )
-            const { rows, errors } = await parseLocationImportWorkbook(
-                req.file.buffer,
-                entity,
-            )
-            const summary = await importLocationsFromRows({
-                entity,
-                rows,
-                parseErrors: errors,
-                user: req.auth.user,
-            })
+router.get(
+    "/:entity",
+    requirePermission(LOCATION_PERMISSIONS.VIEW),
+    validateRequest({
+        params: locationEntityParamSchema,
+        query: locationListQuerySchema,
+    }),
+    asyncHandler(listLocationsController),
+)
 
-            res.status(summary.errors.length > 0 ? 207 : 200).json({
-                success: summary.errors.length === 0,
-                data: {
-                    summary,
-                },
-                error:
-                    summary.errors.length > 0
-                        ? {
-                              code: "LOCATION_IMPORT_HAS_ERRORS",
-                              messageKey: "errors.location.import.hasErrors",
-                          }
-                        : undefined,
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
+router.post(
+    "/:entity",
+    requirePermission(LOCATION_PERMISSIONS.CREATE),
+    validateRequest({ params: locationEntityParamSchema }),
+    asyncHandler(async (req, res) => {
+        req.validatedBody = parseDynamicBody(
+            getLocationCreateSchema(req.validatedParams.entity),
+            req.body,
+        )
+        return createLocationController(req, res)
+    }),
 )
 
 router.get(
     "/:entity/:locationId",
     requirePermission(LOCATION_PERMISSIONS.VIEW),
-    async (req, res, next) => {
-        try {
-            const { entity, locationId } = parseRequest(
-                locationIdParamSchema,
-                req.params,
-            )
-            const location = await getLocationById({
-                entity,
-                locationId,
-                user: req.auth.user,
-            })
-
-            res.status(200).json({
-                success: true,
-                data: {
-                    location,
-                },
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
+    validateRequest({ params: locationIdParamSchema }),
+    asyncHandler(getLocationController),
 )
 
 router.patch(
     "/:entity/:locationId",
     requirePermission(LOCATION_PERMISSIONS.UPDATE),
-    async (req, res, next) => {
-        try {
-            const { entity, locationId } = parseRequest(
-                locationIdParamSchema,
-                req.params,
-            )
-            const payload = parseRequest(
-                getLocationUpdateSchema(entity),
-                req.body,
-            )
-            const location = await updateLocation({
-                entity,
-                locationId,
-                payload,
-                user: req.auth.user,
-            })
-
-            res.status(200).json({
-                success: true,
-                data: {
-                    location,
-                },
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
+    validateRequest({ params: locationIdParamSchema }),
+    asyncHandler(async (req, res) => {
+        req.validatedBody = parseDynamicBody(
+            getLocationUpdateSchema(req.validatedParams.entity),
+            req.body,
+        )
+        return updateLocationController(req, res)
+    }),
 )
 
 router.patch(
     "/:entity/:locationId/archive",
     requirePermission(LOCATION_PERMISSIONS.ARCHIVE),
-    async (req, res, next) => {
-        try {
-            const { entity, locationId } = parseRequest(
-                locationIdParamSchema,
-                req.params,
-            )
-            const location = await archiveLocation({
-                entity,
-                locationId,
-                user: req.auth.user,
-            })
-
-            res.status(200).json({
-                success: true,
-                data: {
-                    location,
-                },
-            })
-        } catch (error) {
-            next(error)
-        }
-    },
+    validateRequest({ params: locationIdParamSchema }),
+    asyncHandler(archiveLocationController),
 )
 
 export default router

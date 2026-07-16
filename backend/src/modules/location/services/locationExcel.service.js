@@ -407,10 +407,14 @@ export async function importLocationsFromRows({
     rows,
     parseErrors,
     user,
+    onProgress,
 }) {
     const summary = {
+        totalRows: rows.length,
         total: rows.length,
         created: 0,
+        updated: 0,
+        skipped: 0,
         failed: 0,
         errors: [...parseErrors],
     }
@@ -420,7 +424,7 @@ export async function importLocationsFromRows({
         return summary
     }
 
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
         try {
             const cleanPayload = cleanImportPayload(row.data)
             const payload = await resolveLocationIdsFromCodes({
@@ -443,6 +447,14 @@ export async function importLocationsFromRows({
                 fields: error.fields,
             })
         }
+
+        onProgress?.({
+            phase: "PROCESSING_ROWS",
+            percent: Math.min(95, 20 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 75)),
+            processedRows: index + 1,
+            totalRows: rows.length,
+            messageKey: "organization.location.importPhaseProcessingRows",
+        })
     }
 
     return summary
