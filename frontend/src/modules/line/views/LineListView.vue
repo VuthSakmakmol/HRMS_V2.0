@@ -30,8 +30,10 @@ import {
 } from "../api/line.api.js"
 import LineArchiveDialog from "../components/LineArchiveDialog.vue"
 import LineFormDialog from "../components/LineFormDialog.vue"
+import LineImportDialog from "../components/LineImportDialog.vue"
 import { useLineForm } from "../composables/useLineForm.js"
 import { useLineList } from "../composables/useLineList.js"
+import { useLineImport } from "../composables/useLineImport.js"
 import { createLineColumns } from "../config/line.columns.js"
 import { createLineStatusOptions } from "../config/line.filters.js"
 import { LINE_PERMISSIONS } from "../config/line.permissions.js"
@@ -43,6 +45,7 @@ const uiStore = useUiStore()
 
 const list = useLineList()
 const formState = useLineForm()
+const importState = useLineImport()
 
 const companies = ref([])
 const branches = ref([])
@@ -50,6 +53,7 @@ const departments = ref([])
 const positions = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
+const importVisible = ref(false)
 const archiveCandidate = ref(null)
 const exporting = ref(false)
 const downloadingTemplate = ref(false)
@@ -211,30 +215,16 @@ function openEdit(row) {
 function onFormCompanyChange() {
     formState.form.branchId = ""
     formState.form.departmentId = ""
-    formState.form.allowedPositionIds = []
     formState.form.leaderPositionId = null
 }
 
 function onFormBranchChange() {
     formState.form.departmentId = ""
-    formState.form.allowedPositionIds = []
     formState.form.leaderPositionId = null
 }
 
 function onFormDepartmentChange() {
-    formState.form.allowedPositionIds = []
     formState.form.leaderPositionId = null
-}
-
-function onFormPositionsChange() {
-    if (
-        formState.form.leaderPositionId &&
-        !formState.form.allowedPositionIds.includes(
-            formState.form.leaderPositionId,
-        )
-    ) {
-        formState.form.leaderPositionId = null
-    }
 }
 
 async function saveLine() {
@@ -374,6 +364,23 @@ function onFilterDepartmentChange() {
     list.query.positionId = ""
 }
 
+function openImport() {
+    importState.reset()
+    importVisible.value = true
+}
+
+async function submitImport() {
+    try {
+        const result = await importState.submit()
+        if (result?.success) {
+            toast.add({ severity: "success", summary: t("organization.line.importCompleted"), life: 3500 })
+            await list.load({ page: 1 })
+        }
+    } catch (error) {
+        toast.add({ severity: "error", summary: t("organization.line.importFailed"), detail: translatedError(error), life: 5000 })
+    }
+}
+
 async function downloadTemplate() {
     downloadingTemplate.value = true
 
@@ -434,6 +441,15 @@ onMounted(load)
                 </template>
 
                 <template #actions>
+                    <PermissionButton
+                        :permission="LINE_PERMISSIONS.IMPORT"
+                        severity="secondary"
+                        outlined
+                        icon="pi pi-file-import"
+                        :label="t('common.import')"
+                        @click="openImport"
+                    />
+
                     <PermissionButton
                         :permission="LINE_PERMISSIONS.IMPORT"
                         severity="secondary"
@@ -586,14 +602,6 @@ onMounted(load)
             <span class="enterprise-table__text">{{ row.department?.name || "—" }}</span>
         </template>
 
-        <template #cell-allowedPositions="{ row }">
-            <span
-                class="enterprise-table__text"
-                :title="row.allowedPositions?.map((item) => item.title).join(', ') || '—'"
-            >
-                {{ row.allowedPositions?.map((item) => item.title).join(", ") || "—" }}
-            </span>
-        </template>
 
         <template #cell-leaderPosition="{ row }">
             <span class="enterprise-table__text">{{ row.leaderPosition?.title || "—" }}</span>
@@ -631,7 +639,23 @@ onMounted(load)
         @company-change="onFormCompanyChange"
         @branch-change="onFormBranchChange"
         @department-change="onFormDepartmentChange"
-        @positions-change="onFormPositionsChange"
+    />
+
+    <LineImportDialog
+        v-model:visible="importVisible"
+        :file="importState.file.value"
+        :importing="importState.importing.value"
+        :progress="importState.progress.value"
+        :phase="importState.phase.value"
+        :phase-message-key="importState.phaseMessageKey.value"
+        :processed-rows="importState.processedRows.value"
+        :total-rows="importState.totalRows.value"
+        :result="importState.result.value"
+        :can-import="importState.canImport.value"
+        @file-change="importState.setFile"
+        @download-template="downloadTemplate"
+        @import="submitImport"
+        @close="importState.reset"
     />
 
     <LineArchiveDialog

@@ -25,17 +25,6 @@ const nullableObjectIdSchema = z.preprocess(
     objectIdSchema.nullable(),
 )
 
-const objectIdArraySchema = z.preprocess(
-    (value) => {
-        if (value === "" || value === null || value === undefined) {
-            return []
-        }
-
-        return value
-    },
-    z.array(objectIdSchema).default([]),
-)
-
 const codeSchema = z
     .string()
     .trim()
@@ -69,7 +58,7 @@ export const lineIdParamSchema = z.object({
 
 export const lineListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     companyId: objectIdSchema.optional(),
     branchId: objectIdSchema.optional(),
     departmentId: objectIdSchema.optional(),
@@ -86,7 +75,6 @@ export const lineCreateSchema = z.object({
     departmentId: objectIdSchema,
     code: codeSchema,
     name: textSchema(2, 160),
-    allowedPositionIds: objectIdArraySchema.optional(),
     leaderPositionId: nullableObjectIdSchema.optional(),
     description: optionalTextSchema(500),
     status: z.enum(LINE_MUTATION_STATUSES).default("ACTIVE"),
@@ -96,7 +84,6 @@ export const lineUpdateSchema = z
     .object({
         code: codeSchema.optional(),
         name: textSchema(2, 160).optional(),
-            allowedPositionIds: objectIdArraySchema.optional(),
         leaderPositionId: nullableObjectIdSchema.optional(),
         description: optionalTextSchema(500),
         status: z.enum(LINE_MUTATION_STATUSES).optional(),

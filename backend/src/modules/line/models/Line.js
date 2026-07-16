@@ -57,12 +57,13 @@ const lineSchema = new Schema(
             set: normalizeText,
         },
 
-        allowedPositionIds: [
-            {
-                type: Schema.Types.ObjectId,
-                ref: "Position",
-            },
-        ],
+        // Legacy compatibility only. An empty array means every active position
+        // in the line department is automatically allowed. New writes always
+        // keep this field empty.
+        allowedPositionIds: {
+            type: [{ type: Schema.Types.ObjectId, ref: "Position" }],
+            default: [],
+        },
 
         leaderPositionId: {
             type: Schema.Types.ObjectId,
@@ -130,15 +131,6 @@ lineSchema.index(
     },
 )
 
-lineSchema.index(
-    {
-        allowedPositionIds: 1,
-        status: 1,
-    },
-    {
-        name: "idx_line_allowed_positions_status",
-    },
-)
 
 lineSchema.set("toJSON", {
     virtuals: true,

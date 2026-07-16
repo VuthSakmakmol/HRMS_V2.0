@@ -1,6 +1,5 @@
 <script setup>
 import InputText from "primevue/inputtext"
-import MultiSelect from "primevue/multiselect"
 import Select from "primevue/select"
 import Textarea from "primevue/textarea"
 import { computed } from "vue"
@@ -47,7 +46,6 @@ const emit = defineEmits([
     "company-change",
     "branch-change",
     "department-change",
-    "positions-change",
 ])
 
 const { t } = useI18n()
@@ -68,9 +66,7 @@ const leaderOptions = computed(() => [
         id: null,
         title: t("organization.line.noLeaderPosition"),
     },
-    ...props.positions.filter((position) =>
-        props.form.allowedPositionIds.includes(position.id),
-    ),
+    ...props.positions,
 ])
 
 function message(field) {
@@ -165,20 +161,6 @@ function message(field) {
                     <small v-if="message('name')">{{ message("name") }}</small>
                 </label>
 
-                <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>{{ t("organization.line.allowedPositions") }}</span>
-                    <MultiSelect
-                        v-model="form.allowedPositionIds"
-                        :options="positions"
-                        option-label="title"
-                        option-value="id"
-                        display="chip"
-                        filter
-                        :disabled="disabled || !form.departmentId"
-                        @change="emit('positions-change')"
-                    />
-                    <small v-if="message('allowedPositionIds')">{{ message("allowedPositionIds") }}</small>
-                </label>
 
                 <label class="enterprise-form-field">
                     <span>{{ t("organization.line.leaderPosition") }}</span>
@@ -188,7 +170,7 @@ function message(field) {
                         option-label="title"
                         option-value="id"
                         filter
-                        :disabled="disabled || !form.allowedPositionIds.length"
+                        :disabled="disabled || !form.departmentId"
                     />
                     <small v-if="message('leaderPositionId')">{{ message("leaderPositionId") }}</small>
                 </label>

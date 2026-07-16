@@ -17,7 +17,6 @@ const TEMPLATE_HEADERS = [
     "departmentCode",
     "lineCode",
     "lineName",
-    "allowedPositionCodes",
     "leaderPositionCode",
     "status",
     "description",
@@ -43,16 +42,6 @@ function normalizeStatus(value) {
     return STATUS_VALUES.includes(status) ? status : null
 }
 
-function normalizeCodeList(value) {
-    return [
-        ...new Set(
-            String(value || "")
-                .split(/[;,\n]/)
-                .map((item) => normalizeCode(item))
-                .filter(Boolean),
-        ),
-    ]
-}
 
 function getCellValue(row, index) {
     const cell = row.getCell(index)
@@ -135,11 +124,6 @@ function buildWorkbookBase(title) {
         { header: "lineCode", key: "lineCode", width: 18 },
         { header: "lineName", key: "lineName", width: 30 },
         {
-            header: "allowedPositionCodes",
-            key: "allowedPositionCodes",
-            width: 36,
-        },
-        {
             header: "leaderPositionCode",
             key: "leaderPositionCode",
             width: 24,
@@ -178,7 +162,6 @@ export async function buildLineImportTemplateWorkbook() {
         departmentCode: "SEWING",
         lineCode: "LINE_A",
         lineName: "Sewing Line A",
-        allowedPositionCodes: "SEWER, LOADER, LINE_LEADER, QC",
         leaderPositionCode: "LINE_LEADER",
         status: "ACTIVE",
         description: "Main sewing production line A",
@@ -190,11 +173,9 @@ export async function buildLineImportTemplateWorkbook() {
         departmentCode: "SEWING",
         lineCode: "LINE_B",
         lineName: "Sewing Line B",
-        allowedPositionCodes: "",
         leaderPositionCode: "",
         status: "ACTIVE",
-        description:
-            "Blank allowedPositionCodes means this line allows all active positions in the department.",
+        description: "All active positions in this department are automatically allowed.",
     })
 
     const instructionSheet = workbook.addWorksheet("Instructions")
@@ -232,14 +213,9 @@ export async function buildLineImportTemplateWorkbook() {
             rule: "Line display name.",
         },
         {
-            field: "allowedPositionCodes",
-            required: "No",
-            rule: "Comma, semicolon, or new-line separated position codes in the same department. Blank means all active positions are allowed.",
-        },
-        {
             field: "leaderPositionCode",
             required: "No",
-            rule: "Optional. Must be active position in same department. If allowedPositionCodes is filled, leader position must be included there.",
+            rule: "Optional. Must be an active position in the same department. All department positions are automatically allowed.",
         },
         {
             field: "status",
@@ -270,10 +246,6 @@ export async function buildLineExportWorkbook({ lines }) {
             departmentCode: line.department?.code || "",
             lineCode: line.code || "",
             lineName: line.name || "",
-            allowedPositionCodes:
-                line.allowedPositions
-                    ?.map((position) => position.code)
-                    .join(", ") || "",
             leaderPositionCode: line.leaderPosition?.code || "",
             status: line.status || "",
             description: line.description || "",
@@ -324,7 +296,6 @@ export async function parseLineImportWorkbook(buffer) {
             departmentCode: normalizeCode(raw.departmentCode),
             lineCode: normalizeCode(raw.lineCode),
             lineName: normalizeText(raw.lineName),
-            allowedPositionCodes: normalizeCodeList(raw.allowedPositionCodes),
             leaderPositionCode: normalizeCode(raw.leaderPositionCode),
             status: normalizeStatus(raw.status),
             description: normalizeText(raw.description),
@@ -611,26 +582,6 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
 
         seenLineKeys.add(lineKey)
 
-        row.allowedPositionIds = []
-
-        for (const positionCode of row.allowedPositionCodes) {
-            const position = positionMap.get(
-                makeDepartmentPositionKey(row.department._id, positionCode),
-            )
-
-            if (!position) {
-                summary.errors.push(
-                    buildImportError(
-                        row.rowNumber,
-                        "allowedPositionCodes",
-                        "errors.organization.lineImport.positionNotFound",
-                    ),
-                )
-            } else {
-                row.allowedPositionIds.push(position._id)
-            }
-        }
-
         if (row.leaderPositionCode) {
             const leaderPosition = positionMap.get(
                 makeDepartmentPositionKey(
@@ -651,18 +602,6 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
                 row.leaderPositionId = leaderPosition._id
             }
 
-            if (
-                row.allowedPositionCodes.length > 0 &&
-                !row.allowedPositionCodes.includes(row.leaderPositionCode)
-            ) {
-                summary.errors.push(
-                    buildImportError(
-                        row.rowNumber,
-                        "leaderPositionCode",
-                        "errors.organization.lineImport.leaderPositionNotAllowed",
-                    ),
-                )
-            }
         } else {
             row.leaderPositionId = null
         }
@@ -683,7 +622,7 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
                 {
                     $set: {
                         name: row.lineName,
-                        allowedPositionIds: row.allowedPositionIds,
+                        allowedPositionIds: [],
                         leaderPositionId: row.leaderPositionId,
                         status: row.status,
                         description: row.description,
@@ -706,7 +645,7 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
                 departmentId: row.department._id,
                 code: row.lineCode,
                 name: row.lineName,
-                allowedPositionIds: row.allowedPositionIds,
+                allowedPositionIds: [],
                 leaderPositionId: row.leaderPositionId,
                 status: row.status,
                 description: row.description,

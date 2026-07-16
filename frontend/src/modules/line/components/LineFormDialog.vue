@@ -47,7 +47,6 @@ const emit = defineEmits([
     "company-change",
     "branch-change",
     "department-change",
-    "positions-change",
 ])
 
 const { t } = useI18n()
@@ -80,7 +79,6 @@ const title = computed(() =>
             @company-change="emit('company-change')"
             @branch-change="emit('branch-change')"
             @department-change="emit('department-change')"
-            @positions-change="emit('positions-change')"
         />
 
         <template #footer>

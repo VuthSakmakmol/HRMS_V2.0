@@ -16,7 +16,6 @@ export function createEmptyLineForm() {
         departmentId: "",
         code: "",
         name: "",
-        allowedPositionIds: [],
         leaderPositionId: null,
         description: "",
         status: "ACTIVE",
@@ -57,10 +56,6 @@ export function useLineForm() {
             branchId: line.branchId ?? line.branch?.id ?? "",
             departmentId:
                 line.departmentId ?? line.department?.id ?? "",
-            allowedPositionIds:
-                line.allowedPositionIds ??
-                line.allowedPositions?.map((position) => position.id) ??
-                [],
             leaderPositionId:
                 line.leaderPositionId ?? line.leaderPosition?.id ?? null,
             status:
@@ -118,6 +113,7 @@ export function useLineForm() {
             }
 
             payload.leaderPositionId = payload.leaderPositionId || null
+            delete payload.allowedPositionIds
 
             return isEdit.value
                 ? await updateLine(lineId.value, payload)

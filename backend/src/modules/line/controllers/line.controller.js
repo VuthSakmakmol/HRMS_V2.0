@@ -1,4 +1,11 @@
 import { AppError } from "../../../shared/errors/AppError.js"
+import {
+    completeImportJob,
+    createImportJob,
+    failImportJob,
+    getImportJob,
+    updateImportJob,
+} from "../../../shared/import/importJob.service.js"
 import { sendList, sendSuccess } from "../../../shared/http/response.js"
 import { writeAuditLog } from "../../audit/services/audit.service.js"
 import {
@@ -16,6 +23,17 @@ import {
     parseLineImportWorkbook,
 } from "../services/lineExcel.service.js"
 
+function setExcelHeaders(res, filename) {
+    res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`,
+    )
+}
+
 export async function listLinesController(req, res) {
     const result = await listLines({
         query: req.validatedQuery,
@@ -32,9 +50,7 @@ export async function getLineController(req, res) {
     })
 
     return sendSuccess(req, res, {
-        data: {
-            line,
-        },
+        data: { line },
     })
 }
 
@@ -56,10 +72,8 @@ export async function createLineController(req, res) {
 
     return sendSuccess(req, res, {
         statusCode: 201,
-        data: {
-            line,
-        },
-        messageKey: "organization.line.created",
+        data: { line },
+        messageKey: "messages.organization.line.created",
     })
 }
 
@@ -69,6 +83,7 @@ export async function updateLineController(req, res) {
         lineId,
         user: req.auth.user,
     })
+
     const line = await updateLine({
         lineId,
         payload: req.validatedBody,
@@ -87,10 +102,8 @@ export async function updateLineController(req, res) {
     })
 
     return sendSuccess(req, res, {
-        data: {
-            line,
-        },
-        messageKey: "organization.line.updated",
+        data: { line },
+        messageKey: "messages.organization.line.updated",
     })
 }
 
@@ -100,6 +113,7 @@ export async function archiveLineController(req, res) {
         lineId,
         user: req.auth.user,
     })
+
     const line = await archiveLine({
         lineId,
         user: req.auth.user,
@@ -117,10 +131,8 @@ export async function archiveLineController(req, res) {
     })
 
     return sendSuccess(req, res, {
-        data: {
-            line,
-        },
-        messageKey: "organization.line.archived",
+        data: { line },
+        messageKey: "messages.organization.line.archived",
     })
 }
 
@@ -128,15 +140,7 @@ export async function downloadLineImportTemplateController(req, res) {
     const workbook = await buildLineImportTemplateWorkbook()
     const buffer = await workbook.xlsx.writeBuffer()
 
-    res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="line-import-template.xlsx"',
-    )
-
+    setExcelHeaders(res, "line-import-template.xlsx")
     return res.status(200).send(Buffer.from(buffer))
 }
 
@@ -145,63 +149,145 @@ export async function exportLinesController(req, res) {
         query: req.validatedQuery,
         user: req.auth.user,
     })
-    const workbook = await buildLineExportWorkbook({
-        lines,
-    })
+    const workbook = await buildLineExportWorkbook({ lines })
     const buffer = await workbook.xlsx.writeBuffer()
 
-    res.setHeader(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    res.setHeader(
-        "Content-Disposition",
-        'attachment; filename="lines-export.xlsx"',
-    )
-
+    setExcelHeaders(res, "lines-export.xlsx")
     return res.status(200).send(Buffer.from(buffer))
 }
 
-export async function importLinesController(req, res) {
+async function processLineImportJob({
+    jobId,
+    fileBuffer,
+    user,
+    req,
+}) {
+    try {
+        updateImportJob(jobId, {
+            status: "PROCESSING",
+            phase: "READING_FILE",
+            percent: 8,
+            messageKey: "organization.line.importPhaseReadingFile",
+        })
+
+        const { rows, errors } = await parseLineImportWorkbook(fileBuffer)
+
+        updateImportJob(jobId, {
+            status: "PROCESSING",
+            phase: "FILE_PARSED",
+            percent: 18,
+            processedRows: rows.length,
+            totalRows: rows.length,
+            messageKey: "organization.line.importPhaseFileParsed",
+        })
+
+        const summary = await importLinesFromRows({
+            rows,
+            parseErrors: errors,
+            user,
+            onProgress(progress) {
+                updateImportJob(jobId, {
+                    status: "PROCESSING",
+                    ...progress,
+                })
+            },
+        })
+
+        await writeAuditLog({
+            req,
+            user,
+            module: "ORGANIZATION.LINE",
+            action: "IMPORT",
+            entityType: "LineImport",
+            after: {
+                total: summary.totalRows,
+                created: summary.created,
+                updated: summary.updated,
+                skipped: summary.skipped,
+                errorCount: summary.errors?.length || 0,
+                atomic: true,
+            },
+        })
+
+        completeImportJob(jobId, summary)
+    } catch (error) {
+        failImportJob(jobId, error)
+    }
+}
+
+export async function startLineImportJobController(req, res) {
     if (!req.file) {
         throw new AppError({
             statusCode: 422,
             code: "ORGANIZATION_LINE_IMPORT_FILE_REQUIRED",
             messageKey: "errors.organization.lineImport.fileRequired",
+            fields: {
+                file: ["errors.organization.lineImport.fileRequired"],
+            },
         })
     }
 
-    const { rows, errors } = await parseLineImportWorkbook(req.file.buffer)
-    const summary = await importLinesFromRows({
-        rows,
-        parseErrors: errors,
-        user: req.auth.user,
-    })
-
-    await writeAuditLog({
-        req,
-        user: req.auth.user,
+    const job = createImportJob({
         module: "ORGANIZATION.LINE",
-        action: "IMPORT",
-        entityType: "Line",
-        after: summary,
+        ownerAccountId: req.auth.user.accountId,
+        fileName: req.file.originalname,
     })
 
-    return res.status(summary.errors.length > 0 ? 207 : 200).json({
-        success: summary.errors.length === 0,
-        data: {
-            summary,
-        },
-        error:
-            summary.errors.length > 0
-                ? {
-                      code: "ORGANIZATION_LINE_IMPORT_HAS_ERRORS",
-                      messageKey: "errors.organization.lineImport.hasErrors",
-                  }
-                : undefined,
-        meta: {
-            requestId: req.requestId,
-            generatedAt: new Date().toISOString(),
-        },
+    updateImportJob(job.jobId, {
+        percent: 5,
+        phase: "UPLOADED",
+        messageKey: "organization.line.importPhaseUploaded",
     })
+
+    const queuedJob = getImportJob({
+        jobId: job.jobId,
+        ownerAccountId: req.auth.user.accountId,
+        module: "ORGANIZATION.LINE",
+    })
+
+    const fileBuffer = Buffer.from(req.file.buffer)
+    const user = { ...req.auth.user }
+
+    // Start after the 202 response is ready. The client polls the job endpoint.
+    setImmediate(() => {
+        void processLineImportJob({
+            jobId: job.jobId,
+            fileBuffer,
+            user,
+            req,
+        })
+    })
+
+    return sendSuccess(req, res, {
+        statusCode: 202,
+        data: {
+            job: queuedJob,
+        },
+        messageKey: "organization.line.importStarted",
+    })
+}
+
+export async function getLineImportJobController(req, res) {
+    const job = getImportJob({
+        jobId: req.params.jobId,
+        ownerAccountId: req.auth.user.accountId,
+        module: "ORGANIZATION.LINE",
+    })
+
+    if (!job) {
+        throw new AppError({
+            statusCode: 404,
+            code: "ORGANIZATION_LINE_IMPORT_JOB_NOT_FOUND",
+            messageKey: "errors.organization.lineImport.jobNotFound",
+        })
+    }
+
+    return sendSuccess(req, res, {
+        data: { job },
+    })
+}
+
+// Backward-compatible endpoint. New frontend should use /import-jobs.
+export async function importLinesController(req, res) {
+    return startLineImportJobController(req, res)
 }

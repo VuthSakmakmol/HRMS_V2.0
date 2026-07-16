@@ -31,11 +31,6 @@ export function createLineColumns(t) {
             minWidth: "12rem",
         },
         {
-            field: "allowedPositions",
-            header: t("organization.line.allowedPositions"),
-            minWidth: "16rem",
-        },
-        {
             field: "leaderPosition",
             header: t("organization.line.leaderPosition"),
             minWidth: "12rem",

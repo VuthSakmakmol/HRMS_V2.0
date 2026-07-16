@@ -261,12 +261,6 @@ export function serializeLine(line) {
             ? serializeDepartment(raw.departmentId)
             : null
 
-    const allowedPositions = Array.isArray(raw.allowedPositionIds)
-        ? raw.allowedPositionIds
-              .filter((position) => position && typeof position === "object")
-              .map(serializePosition)
-              .filter(Boolean)
-        : []
 
     const leaderPosition =
         raw.leaderPositionId && typeof raw.leaderPositionId === "object"
@@ -291,15 +285,8 @@ export function serializeLine(line) {
         description: raw.description || "",
         status: raw.status,
 
-        allowedPositionIds: Array.isArray(raw.allowedPositionIds)
-            ? raw.allowedPositionIds.map(
-                  (position) =>
-                      position?._id?.toString?.() ||
-                      position?.id ||
-                      position?.toString?.() ||
-                      position,
-              )
-            : [],
+        allowedPositionIds: [],
+        allowsAllPositions: true,
 
         leaderPositionId:
             leaderPosition?.id ||
@@ -310,7 +297,7 @@ export function serializeLine(line) {
         company: populatedCompany,
         branch: populatedBranch,
         department: populatedDepartment,
-        allowedPositions,
+        allowedPositions: [],
         leaderPosition,
 
         createdAt: raw.createdAt,
@@ -448,46 +435,25 @@ async function ensureDepartmentExists({
     return department
 }
 
-async function validatePositions({
+async function validateLeaderPosition({
     companyId,
     branchId,
     departmentId,
-    allowedPositionIds = [],
     leaderPositionId,
     user,
 }) {
-    const uniqueAllowedPositionIds = uniqueObjectIds(allowedPositionIds)
-
-    for (const positionId of uniqueAllowedPositionIds) {
-        ensureValidObjectId(
-            positionId,
-            "ORGANIZATION_POSITION_INVALID_ID",
-            "errors.organization.position.invalidId",
-        )
+    if (!leaderPositionId) {
+        return null
     }
 
-    if (leaderPositionId) {
-        ensureValidObjectId(
-            leaderPositionId,
-            "ORGANIZATION_POSITION_INVALID_ID",
-            "errors.organization.position.invalidId",
-        )
-    }
-
-    const requestedIds = uniqueObjectIds([
-        ...uniqueAllowedPositionIds,
+    ensureValidObjectId(
         leaderPositionId,
-    ])
+        "ORGANIZATION_POSITION_INVALID_ID",
+        "errors.organization.position.invalidId",
+    )
 
-    if (requestedIds.length === 0) {
-        return {
-            allowedPositionIds: [],
-            leaderPositionId: null,
-        }
-    }
-
-    const positions = await Position.find({
-        _id: { $in: requestedIds },
+    const position = await Position.findOne({
+        _id: leaderPositionId,
         companyId,
         branchId,
         departmentId,
@@ -495,26 +461,7 @@ async function validatePositions({
         ...getLineScopeFilter(user),
     }).lean()
 
-    const positionMap = new Map(
-        positions.map((position) => [position._id.toString(), position]),
-    )
-
-    for (const positionId of uniqueAllowedPositionIds) {
-        if (!positionMap.has(positionId)) {
-            throw new AppError({
-                statusCode: 404,
-                code: "ORGANIZATION_LINE_POSITION_NOT_FOUND",
-                messageKey: "errors.organization.line.positionNotFound",
-                fields: {
-                    allowedPositionIds: [
-                        "errors.organization.line.positionNotFound",
-                    ],
-                },
-            })
-        }
-    }
-
-    if (leaderPositionId && !positionMap.has(leaderPositionId.toString())) {
+    if (!position) {
         throw new AppError({
             statusCode: 404,
             code: "ORGANIZATION_LINE_LEADER_POSITION_NOT_FOUND",
@@ -527,27 +474,7 @@ async function validatePositions({
         })
     }
 
-    if (
-        leaderPositionId &&
-        uniqueAllowedPositionIds.length > 0 &&
-        !uniqueAllowedPositionIds.includes(leaderPositionId.toString())
-    ) {
-        throw new AppError({
-            statusCode: 409,
-            code: "ORGANIZATION_LINE_LEADER_POSITION_NOT_ALLOWED",
-            messageKey: "errors.organization.line.leaderPositionNotAllowed",
-            fields: {
-                leaderPositionId: [
-                    "errors.organization.line.leaderPositionNotAllowed",
-                ],
-            },
-        })
-    }
-
-    return {
-        allowedPositionIds: uniqueAllowedPositionIds,
-        leaderPositionId: leaderPositionId || null,
-    }
+    return position._id
 }
 
 export async function listLines({ query, user }) {
@@ -595,10 +522,17 @@ export async function listLines({ query, user }) {
             "errors.organization.position.invalidId",
         )
 
-        filter.$or = [
-            { allowedPositionIds: { $size: 0 } },
-            { allowedPositionIds: query.positionId },
-        ]
+        const position = await Position.findOne({
+            _id: query.positionId,
+            status: { $ne: "ARCHIVED" },
+            ...getLineScopeFilter(user),
+        }).select("departmentId").lean()
+
+        if (!position) {
+            filter._id = { $in: [] }
+        } else {
+            filter.departmentId = position.departmentId
+        }
     }
 
     if (query.status !== "ALL") {
@@ -622,10 +556,6 @@ export async function listLines({ query, user }) {
             .populate({
                 path: "departmentId",
                 select: "companyId branchId code name status",
-            })
-            .populate({
-                path: "allowedPositionIds",
-                select: "companyId branchId departmentId code title level isManager status",
             })
             .populate({
                 path: "leaderPositionId",
@@ -680,10 +610,6 @@ export async function getLineById({ lineId, user }) {
             select: "companyId branchId code name status",
         })
         .populate({
-            path: "allowedPositionIds",
-            select: "companyId branchId departmentId code title level isManager status",
-        })
-        .populate({
             path: "leaderPositionId",
             select: "companyId branchId departmentId code title level isManager status",
         })
@@ -719,11 +645,10 @@ export async function createLine({ payload, user }) {
         user,
     })
 
-    const positionPayload = await validatePositions({
+    const leaderPositionId = await validateLeaderPosition({
         companyId: payload.companyId,
         branchId: payload.branchId,
         departmentId: payload.departmentId,
-        allowedPositionIds: payload.allowedPositionIds || [],
         leaderPositionId: payload.leaderPositionId,
         user,
     })
@@ -735,8 +660,8 @@ export async function createLine({ payload, user }) {
             departmentId: payload.departmentId,
             code: payload.code,
             name: payload.name,
-            allowedPositionIds: positionPayload.allowedPositionIds,
-            leaderPositionId: positionPayload.leaderPositionId,
+            allowedPositionIds: [],
+            leaderPositionId,
             description: payload.description || "",
             status: payload.status || "ACTIVE",
             createdByAccountId: user.accountId,
@@ -782,28 +707,18 @@ export async function updateLine({ lineId, payload, user }) {
         })
     }
 
-    if (
-        payload.allowedPositionIds !== undefined ||
-        payload.leaderPositionId !== undefined
-    ) {
-        const positionPayload = await validatePositions({
+    if (payload.leaderPositionId !== undefined) {
+        payload.leaderPositionId = await validateLeaderPosition({
             companyId: existingLine.companyId,
             branchId: existingLine.branchId,
             departmentId: existingLine.departmentId,
-            allowedPositionIds:
-                payload.allowedPositionIds !== undefined
-                    ? payload.allowedPositionIds
-                    : existingLine.allowedPositionIds,
-            leaderPositionId:
-                payload.leaderPositionId !== undefined
-                    ? payload.leaderPositionId
-                    : existingLine.leaderPositionId,
+            leaderPositionId: payload.leaderPositionId,
             user,
         })
-
-        payload.allowedPositionIds = positionPayload.allowedPositionIds
-        payload.leaderPositionId = positionPayload.leaderPositionId
     }
+
+    // All positions in the department are always allowed. Clear legacy limits.
+    payload.allowedPositionIds = []
 
     try {
         const updatedLine = await Line.findByIdAndUpdate(
