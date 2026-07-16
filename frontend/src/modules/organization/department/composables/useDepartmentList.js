@@ -19,7 +19,7 @@ export function useDepartmentList() {
 
     const query = reactive({
         page: 1,
-        limit: 20,
+        limit: 10,
         search: "",
         companyId: "",
         branchId: "",
@@ -30,7 +30,7 @@ export function useDepartmentList() {
 
     const pagination = reactive({
         page: 1,
-        limit: 20,
+        limit: 10,
         total: 0,
         totalPages: 0,
         hasNext: false,

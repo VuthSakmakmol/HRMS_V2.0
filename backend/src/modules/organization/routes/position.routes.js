@@ -11,7 +11,9 @@ import {
     downloadPositionImportTemplateController,
     exportPositionsController,
     getPositionController,
+    getPositionImportJobController,
     importPositionsController,
+    startPositionImportJobController,
     listPositionsController,
     lookupPositionsController,
     updatePositionController,
@@ -79,6 +81,19 @@ router.get(
     requirePermission(POSITION_PERMISSIONS.EXPORT),
     validateRequest({ query: positionListQuerySchema }),
     asyncHandler(exportPositionsController),
+)
+
+router.post(
+    "/import-jobs",
+    requirePermission(POSITION_PERMISSIONS.IMPORT),
+    upload.single("file"),
+    asyncHandler(startPositionImportJobController),
+)
+
+router.get(
+    "/import-jobs/:jobId",
+    requirePermission(POSITION_PERMISSIONS.IMPORT),
+    asyncHandler(getPositionImportJobController),
 )
 
 router.post(

@@ -14,7 +14,7 @@ export function createPositionColumns(t) {
         },
         {
             field: "title",
-            header: t("organization.position.titleField"),
+            header: t("organization.position.name"),
             sortable: true,
             width: "14rem",
             minWidth: "14rem",
@@ -56,7 +56,7 @@ export function createPositionColumns(t) {
         },
         {
             field: "isManager",
-            header: t("organization.position.manager"),
+            header: t("organization.position.managerPosition"),
             sortable: false,
             width: "8rem",
             minWidth: "8rem",

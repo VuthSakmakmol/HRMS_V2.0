@@ -1,4 +1,11 @@
 import { AppError } from "../../../shared/errors/AppError.js"
+import {
+    completeImportJob,
+    createImportJob,
+    failImportJob,
+    getImportJob,
+    updateImportJob,
+} from "../../../shared/import/importJob.service.js"
 import { sendList, sendSuccess } from "../../../shared/http/response.js"
 import { writeAuditLog } from "../../audit/services/audit.service.js"
 import {
@@ -161,7 +168,66 @@ export async function exportPositionsController(req, res) {
     return res.status(200).send(Buffer.from(buffer))
 }
 
-export async function importPositionsController(req, res) {
+async function processPositionImportJob({
+    jobId,
+    fileBuffer,
+    user,
+    req,
+}) {
+    try {
+        updateImportJob(jobId, {
+            status: "PROCESSING",
+            phase: "READING_FILE",
+            percent: 8,
+            messageKey: "organization.position.importPhaseReadingFile",
+        })
+
+        const { rows, errors } = await parsePositionImportWorkbook(fileBuffer)
+
+        updateImportJob(jobId, {
+            status: "PROCESSING",
+            phase: "FILE_PARSED",
+            percent: 18,
+            processedRows: rows.length,
+            totalRows: rows.length,
+            messageKey: "organization.position.importPhaseFileParsed",
+        })
+
+        const summary = await importPositionsFromRows({
+            rows,
+            parseErrors: errors,
+            user,
+            onProgress(progress) {
+                updateImportJob(jobId, {
+                    status: "PROCESSING",
+                    ...progress,
+                })
+            },
+        })
+
+        await writeAuditLog({
+            req,
+            user,
+            module: "ORGANIZATION.POSITION",
+            action: "IMPORT",
+            entityType: "PositionImport",
+            after: {
+                total: summary.totalRows,
+                created: summary.created,
+                updated: summary.updated,
+                skipped: summary.skipped,
+                errorCount: summary.errors?.length || 0,
+                atomic: true,
+            },
+        })
+
+        completeImportJob(jobId, summary)
+    } catch (error) {
+        failImportJob(jobId, error)
+    }
+}
+
+export async function startPositionImportJobController(req, res) {
     if (!req.file) {
         throw new AppError({
             statusCode: 422,
@@ -173,43 +239,67 @@ export async function importPositionsController(req, res) {
         })
     }
 
-    const { rows, errors } = await parsePositionImportWorkbook(req.file.buffer)
-    const summary = await importPositionsFromRows({
-        rows,
-        parseErrors: errors,
-        user: req.auth.user,
-    })
-
-    await writeAuditLog({
-        req,
-        user: req.auth.user,
+    const job = createImportJob({
         module: "ORGANIZATION.POSITION",
-        action: "IMPORT",
-        entityType: "PositionImport",
-        after: {
-            total: summary.total,
-            created: summary.created,
-            updated: summary.updated,
-            skipped: summary.skipped,
-            errorCount: summary.errors?.length || 0,
-        },
+        ownerAccountId: req.auth.user.accountId,
+        fileName: req.file.originalname,
     })
 
-    return res.status(summary.errors.length > 0 ? 207 : 200).json({
-        success: summary.errors.length === 0,
-        data: { summary },
-        error:
-            summary.errors.length > 0
-                ? {
-                      code: "ORGANIZATION_POSITION_IMPORT_HAS_ERRORS",
-                      messageKey:
-                          "errors.organization.positionImport.hasErrors",
-                      requestId: req.requestId,
-                  }
-                : undefined,
-        meta: {
-            requestId: req.requestId,
-            generatedAt: new Date().toISOString(),
-        },
+    updateImportJob(job.jobId, {
+        percent: 5,
+        phase: "UPLOADED",
+        messageKey: "organization.position.importPhaseUploaded",
     })
+
+    const queuedJob = getImportJob({
+        jobId: job.jobId,
+        ownerAccountId: req.auth.user.accountId,
+        module: "ORGANIZATION.POSITION",
+    })
+
+    const fileBuffer = Buffer.from(req.file.buffer)
+    const user = { ...req.auth.user }
+
+    // Start after the 202 response is ready. The client polls the job endpoint.
+    setImmediate(() => {
+        void processPositionImportJob({
+            jobId: job.jobId,
+            fileBuffer,
+            user,
+            req,
+        })
+    })
+
+    return sendSuccess(req, res, {
+        statusCode: 202,
+        data: {
+            job: queuedJob,
+        },
+        messageKey: "organization.position.importStarted",
+    })
+}
+
+export async function getPositionImportJobController(req, res) {
+    const job = getImportJob({
+        jobId: req.params.jobId,
+        ownerAccountId: req.auth.user.accountId,
+        module: "ORGANIZATION.POSITION",
+    })
+
+    if (!job) {
+        throw new AppError({
+            statusCode: 404,
+            code: "ORGANIZATION_POSITION_IMPORT_JOB_NOT_FOUND",
+            messageKey: "errors.organization.positionImport.jobNotFound",
+        })
+    }
+
+    return sendSuccess(req, res, {
+        data: { job },
+    })
+}
+
+// Backward-compatible endpoint. New frontend should use /import-jobs.
+export async function importPositionsController(req, res) {
+    return startPositionImportJobController(req, res)
 }

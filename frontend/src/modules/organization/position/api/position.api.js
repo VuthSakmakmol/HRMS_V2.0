@@ -32,7 +32,7 @@ export async function listPositions(params = {}, signal) {
         items: Array.isArray(data.items) ? data.items : [],
         pagination: {
             page: Number(data.pagination?.page ?? params.page ?? 1),
-            limit: Number(data.pagination?.limit ?? params.limit ?? 20),
+            limit: Number(data.pagination?.limit ?? params.limit ?? 10),
             total: Number(data.pagination?.total ?? 0),
             totalPages: Number(data.pagination?.totalPages ?? 0),
             hasNext: Boolean(data.pagination?.hasNext),
@@ -135,15 +135,67 @@ export async function exportPositions(params = {}) {
     downloadBlob(response.data, "positions-export.xlsx")
 }
 
-export async function importPositions(file, onUploadProgress) {
+export async function startPositionImportJob(file, onUploadProgress) {
     const formData = new FormData()
-
     formData.append("file", file)
 
-    const response = await apiClient.post(`${ENDPOINT}/import`, formData, {
-        timeout: 0,
-        onUploadProgress,
-    })
+    const response = await apiClient.post(
+        `${ENDPOINT}/import-jobs`,
+        formData,
+        {
+            timeout: 0,
+            onUploadProgress,
+        },
+    )
 
-    return unwrapData(response).summary
+    return unwrapData(response).job
+}
+
+export async function getPositionImportJob(jobId, signal) {
+    const response = await apiClient.get(
+        `${ENDPOINT}/import-jobs/${jobId}`,
+        { signal },
+    )
+
+    return unwrapData(response).job
+}
+
+export async function waitForPositionImportJob(
+    jobId,
+    {
+        onProgress,
+        signal,
+        intervalMs = 500,
+    } = {},
+) {
+    while (true) {
+        if (signal?.aborted) {
+            throw new DOMException("Import polling aborted.", "AbortError")
+        }
+
+        const job = await getPositionImportJob(jobId, signal)
+        onProgress?.(job)
+
+        if (job.status === "COMPLETED" || job.status === "FAILED") {
+            return job
+        }
+
+        await new Promise((resolve, reject) => {
+            const timer = window.setTimeout(resolve, intervalMs)
+
+            signal?.addEventListener(
+                "abort",
+                () => {
+                    window.clearTimeout(timer)
+                    reject(
+                        new DOMException(
+                            "Import polling aborted.",
+                            "AbortError",
+                        ),
+                    )
+                },
+                { once: true },
+            )
+        })
+    }
 }

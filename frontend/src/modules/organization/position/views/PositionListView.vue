@@ -25,11 +25,15 @@ import {
     lookupCompanies,
     lookupDepartments,
     lookupPositions,
+    downloadPositionTemplate,
+    exportPositions,
 } from "../api/position.api.js"
 import PositionArchiveDialog from "../components/PositionArchiveDialog.vue"
 import PositionFormDialog from "../components/PositionFormDialog.vue"
+import PositionImportDialog from "../components/PositionImportDialog.vue"
 import { usePositionForm } from "../composables/usePositionForm.js"
 import { usePositionList } from "../composables/usePositionList.js"
+import { usePositionImport } from "../composables/usePositionImport.js"
 import { createPositionColumns } from "../config/position.columns.js"
 import { createPositionStatusOptions } from "../config/position.filters.js"
 import { POSITION_PERMISSIONS } from "../config/position.permissions.js"
@@ -41,6 +45,7 @@ const uiStore = useUiStore()
 
 const list = usePositionList()
 const formState = usePositionForm()
+const importState = usePositionImport()
 
 const companies = ref([])
 const branches = ref([])
@@ -49,6 +54,9 @@ const reportsToPositions = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const archiveCandidate = ref(null)
+const importVisible = ref(false)
+const exporting = ref(false)
+const downloadingTemplate = ref(false)
 
 const columns = computed(() => createPositionColumns(t))
 const statusOptions = computed(() =>
@@ -372,6 +380,106 @@ function formatDateTime(value) {
     }).format(date)
 }
 
+async function downloadTemplate() {
+    downloadingTemplate.value = true
+
+    try {
+        await downloadPositionTemplate()
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.position.templateDownloadFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    } finally {
+        downloadingTemplate.value = false
+    }
+}
+
+async function exportRows() {
+    exporting.value = true
+
+    try {
+        await exportPositions({
+            search: list.query.search || undefined,
+            companyId: list.query.companyId || undefined,
+            branchId: list.query.branchId || undefined,
+            departmentId: list.query.departmentId || undefined,
+            status: list.query.status,
+            sortBy: list.query.sortBy,
+            sortOrder: list.query.sortOrder,
+        })
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.position.exportFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    } finally {
+        exporting.value = false
+    }
+}
+
+async function submitImport() {
+    try {
+        const response = await importState.submit()
+        const summary = response?.summary
+        const errorCount = summary?.errors?.length ?? 0
+        const storedCount =
+            Number(summary?.created ?? 0) + Number(summary?.updated ?? 0)
+
+        if (!response?.success || errorCount > 0) {
+            toast.add({
+                severity: "warn",
+                summary: t("organization.position.importCompletedWithErrors"),
+                detail: t("organization.position.importCompletedWithErrorsDetail", {
+                    created: summary?.created ?? 0,
+                    updated: summary?.updated ?? 0,
+                    skipped: summary?.skipped ?? 0,
+                    failed: errorCount,
+                }),
+                life: 7000,
+            })
+
+            return
+        }
+
+        if (storedCount === 0) {
+            toast.add({
+                severity: "warn",
+                summary: t("organization.position.importNoChanges"),
+                detail: t("organization.position.importNoChangesDetail"),
+                life: 5000,
+            })
+
+            return
+        }
+
+        toast.add({
+            severity: "success",
+            summary: t("organization.position.importSuccess"),
+            detail: t("organization.position.importSuccessDetail", {
+                created: summary?.created ?? 0,
+                updated: summary?.updated ?? 0,
+            }),
+            life: 4500,
+        })
+
+        importVisible.value = false
+        importState.reset()
+        await list.load({ page: 1 })
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.position.importFailed"),
+            detail: translatedError(error),
+            life: 5000,
+        })
+    }
+}
+
 function onFilterCompanyChange() {
     list.query.branchId = ""
     list.query.departmentId = ""
@@ -394,7 +502,7 @@ onMounted(load)
         :actions-header="t('common.actions')"
         row-key="id"
         :empty-title="t('organization.position.empty')"
-        :empty-description="t('organization.position.description')"
+        :empty-description="t('organization.position.emptyDescription')"
         @retry="list.load"
         @page-change="list.changePage"
         @sort-change="list.changeSort"
@@ -413,6 +521,35 @@ onMounted(load)
                         :label="t('common.refresh')"
                         :loading="list.loading.value"
                         @click="list.load"
+                    />
+
+                    <PermissionButton
+                        :permission="POSITION_PERMISSIONS.EXPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-download"
+                        :label="t('organization.position.downloadTemplate')"
+                        :loading="downloadingTemplate"
+                        @click="downloadTemplate"
+                    />
+
+                    <PermissionButton
+                        :permission="POSITION_PERMISSIONS.IMPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-upload"
+                        :label="t('organization.position.import')"
+                        @click="importVisible = true"
+                    />
+
+                    <PermissionButton
+                        :permission="POSITION_PERMISSIONS.EXPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-file-export"
+                        :label="t('organization.position.export')"
+                        :loading="exporting"
+                        @click="exportRows"
                     />
                 </template>
 
@@ -641,6 +778,25 @@ onMounted(load)
         @company-change="onFormCompanyChange"
         @branch-change="onFormBranchChange"
         @department-change="onFormDepartmentChange"
+    />
+
+    <PositionImportDialog
+        v-model:visible="importVisible"
+        :importing="importState.importing.value"
+        :progress="importState.progress.value"
+        :phase-message-key="importState.phaseMessageKey.value"
+        :processed-rows="importState.processedRows.value"
+        :total-rows="importState.totalRows.value"
+        :result="importState.result.value"
+        :error-message="
+            importState.error.value
+                ? translatedError(importState.error.value)
+                : ''
+        "
+        @file-change="importState.setFile"
+        @download-template="downloadTemplate"
+        @import="submitImport"
+        @close="importState.reset"
     />
 
     <PositionArchiveDialog

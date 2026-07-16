@@ -9,8 +9,11 @@ function getInitialPreferences() {
     try {
         const savedPreferences = JSON.parse(localStorage.getItem(STORAGE_KEY))
 
-        if (savedPreferences?.locale && savedPreferences?.colorMode) {
-            return savedPreferences
+        if (savedPreferences?.colorMode) {
+            return {
+                locale: "en-US",
+                colorMode: savedPreferences.colorMode,
+            }
         }
     } catch {
         // Ignore invalid local storage data.
@@ -49,11 +52,6 @@ export const useUiStore = defineStore("ui", {
                     colorMode: this.colorMode,
                 }),
             )
-        },
-
-        setLocale(locale) {
-            this.locale = locale
-            this.applyPreferences()
         },
 
         toggleColorMode() {

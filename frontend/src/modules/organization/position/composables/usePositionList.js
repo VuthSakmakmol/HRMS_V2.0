@@ -19,7 +19,7 @@ export function usePositionList() {
 
     const query = reactive({
         page: 1,
-        limit: 20,
+        limit: 10,
         search: "",
         companyId: "",
         branchId: "",
@@ -31,7 +31,7 @@ export function usePositionList() {
 
     const pagination = reactive({
         page: 1,
-        limit: 20,
+        limit: 10,
         total: 0,
         totalPages: 0,
         hasNext: false,

@@ -66,7 +66,7 @@ const statusOptions = computed(() => [
 const reportsToOptions = computed(() => [
     {
         id: "",
-        title: t("organization.position.noReportsTo"),
+        title: t("organization.position.noReportingPosition"),
     },
     ...props.reportsToPositions,
 ])
@@ -94,7 +94,7 @@ function message(field) {
         <section class="position-form__section">
             <div class="position-form__heading">
                 <h3>
-                    {{ t("organization.position.basicInfo") }}
+                    {{ t("organization.position.basicInformation") }}
                 </h3>
             </div>
 
@@ -198,7 +198,7 @@ function message(field) {
 
                 <label class="enterprise-form-field enterprise-form-field--wide">
                     <span>
-                        {{ t("organization.position.titleField") }} *
+                        {{ t("organization.position.name") }} *
                     </span>
 
                     <InputText
@@ -234,7 +234,7 @@ function message(field) {
 
                 <label class="enterprise-form-field">
                     <span>
-                        {{ t("organization.position.status") }}
+                        {{ t("common.status") }}
                     </span>
 
                     <Select
@@ -259,13 +259,13 @@ function message(field) {
                     />
 
                     <span>
-                        {{ t("organization.position.markAsManager") }}
+                        {{ t("organization.position.managerPosition") }}
                     </span>
                 </label>
 
                 <label class="enterprise-form-field enterprise-form-field--full">
                     <span>
-                        {{ t("organization.position.descriptionLabel") }}
+                        {{ t("organization.position.description") }}
                     </span>
 
                     <Textarea
@@ -299,8 +299,7 @@ function message(field) {
 
 .position-form__heading h3 {
     margin: 0;
-    font-size: 0.88rem;
-    font-weight: 700;
+    font-size: 0.9rem;
 }
 
 .position-form__grid {
@@ -309,9 +308,48 @@ function message(field) {
     gap: 0.75rem;
 }
 
+.enterprise-form-field {
+    display: grid;
+    min-width: 0;
+    gap: 0.3rem;
+}
+
+.enterprise-form-field > span {
+    color: var(--p-text-color, #334155);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.enterprise-form-field small {
+    color: var(--p-red-500, #ef4444);
+    font-size: 0.7rem;
+}
+
+.enterprise-form-field--full {
+    grid-column: 1 / -1;
+}
+
+.enterprise-form-field :deep(.p-inputtext),
+.enterprise-form-field :deep(.p-select),
+.enterprise-form-field :deep(.p-inputnumber),
+.enterprise-form-field :deep(.p-inputnumber-input),
+.enterprise-form-field :deep(.p-textarea) {
+    width: 100%;
+    min-width: 0;
+}
+
+.enterprise-form-field :deep(.p-select) {
+    display: flex;
+}
+
+.enterprise-form-field :deep(.p-select-label) {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
 .position-form__checkbox {
+    display: flex;
     min-height: 2.25rem;
-    flex-direction: row;
     align-items: center;
     align-self: end;
     gap: 0.5rem;
@@ -324,6 +362,10 @@ function message(field) {
 @media (max-width: 680px) {
     .position-form__grid {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .enterprise-form-field--full {
+        grid-column: auto;
     }
 }
 </style>

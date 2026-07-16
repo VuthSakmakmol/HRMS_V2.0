@@ -433,19 +433,6 @@ async function logout() {
                 </div>
 
                 <div class="app-topbar__actions">
-                    <Button
-                        size="small"
-                        :outlined="uiStore.locale !== 'en-US'"
-                        label="EN"
-                        @click="uiStore.setLocale('en-US')"
-                    />
-
-                    <Button
-                        size="small"
-                        :outlined="uiStore.locale !== 'km-KH'"
-                        label="ខ្មែរ"
-                        @click="uiStore.setLocale('km-KH')"
-                    />
 
                     <Button
                         text

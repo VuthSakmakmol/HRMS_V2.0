@@ -68,7 +68,7 @@ const title = computed(() =>
     <EnterpriseDialog
         :visible="visible"
         :title="title"
-        width="52rem"
+        width="48rem"
         @update:visible="emit('update:visible', $event)"
     >
         <PositionForm
