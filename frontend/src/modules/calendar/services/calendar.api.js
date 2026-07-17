@@ -2,6 +2,10 @@ import { apiClient } from "@/shared/services/apiClient.js"
 
 const CALENDAR_ENDPOINT = "/calendar"
 
+function unwrapData(response) {
+    return response?.data?.data ?? {}
+}
+
 function getFilenameFromResponse(response, fallbackFilename) {
     const contentDisposition =
         response.headers?.["content-disposition"] ||
@@ -31,12 +35,12 @@ function downloadBlob(blob, filename) {
 
 export async function fetchCalendarDays(params = {}) {
     const response = await apiClient.get(`${CALENDAR_ENDPOINT}/days`, { params })
-    return response.data.data
+    return unwrapData(response)
 }
 
 export async function createCalendarDay(payload) {
     const response = await apiClient.post(`${CALENDAR_ENDPOINT}/days`, payload)
-    return response.data.data.day
+    return unwrapData(response).day
 }
 
 export async function updateCalendarDay(calendarDayId, payload) {
@@ -45,7 +49,7 @@ export async function updateCalendarDay(calendarDayId, payload) {
         payload,
     )
 
-    return response.data.data.day
+    return unwrapData(response).day
 }
 
 export async function archiveCalendarDay(calendarDayId) {
@@ -53,7 +57,7 @@ export async function archiveCalendarDay(calendarDayId) {
         `${CALENDAR_ENDPOINT}/days/${calendarDayId}/archive`,
     )
 
-    return response.data.data.day
+    return unwrapData(response).day
 }
 
 export async function resolveCalendarDay(params = {}) {
@@ -61,7 +65,7 @@ export async function resolveCalendarDay(params = {}) {
         params,
     })
 
-    return response.data.data.day
+    return unwrapData(response).day
 }
 
 export async function resolveCalendarRange(params = {}) {
@@ -69,7 +73,7 @@ export async function resolveCalendarRange(params = {}) {
         params,
     })
 
-    return response.data.data
+    return unwrapData(response)
 }
 
 export async function downloadCalendarImportTemplate() {
@@ -110,5 +114,5 @@ export async function importCalendarDays(file, onUploadProgress) {
         },
     )
 
-    return response.data.data.summary
+    return unwrapData(response).summary
 }

@@ -29,13 +29,13 @@ export const useCalendarStore = defineStore("calendar", {
         items: [],
         pagination: {
             page: 1,
-            limit: 20,
+            limit: 10,
             total: 0,
             totalPages: 1,
         },
         filters: {
             page: 1,
-            limit: 20,
+            limit: 10,
             search: "",
             status: "ALL",
             scopeLevel: "ALL",

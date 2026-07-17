@@ -116,7 +116,7 @@ const countryOptions = computed(() => [
         label: t("organization.location.allCountries"),
         value: "",
     },
-    ...countries.value.map(toOption),
+    ...(Array.isArray(countries.value) ? countries.value : []).map(toOption),
 ])
 
 const provinceOptions = computed(() => [
@@ -124,7 +124,7 @@ const provinceOptions = computed(() => [
         label: t("organization.location.allProvinces"),
         value: "",
     },
-    ...provinces.value
+    ...(Array.isArray(provinces.value) ? provinces.value : [])
         .filter((row) => !query.countryId || row.countryId === query.countryId)
         .map(toOption),
 ])
@@ -134,7 +134,7 @@ const districtOptions = computed(() => [
         label: t("organization.location.allDistricts"),
         value: "",
     },
-    ...districts.value
+    ...(Array.isArray(districts.value) ? districts.value : [])
         .filter(
             (row) =>
                 (!query.countryId || row.countryId === query.countryId) &&
@@ -148,14 +148,14 @@ const communeOptions = computed(() => [
         label: t("organization.location.allCommunes"),
         value: "",
     },
-    ...communes.value
+    ...(Array.isArray(communes.value) ? communes.value : [])
         .filter((row) => !query.districtId || row.districtId === query.districtId)
         .map(toOption),
 ])
 
-const formCountries = computed(() => countries.value.map(toOption))
+const formCountries = computed(() => (Array.isArray(countries.value) ? countries.value : []).map(toOption))
 const formProvinces = computed(() =>
-    provinces.value
+    (Array.isArray(provinces.value) ? provinces.value : [])
         .filter(
             (row) =>
                 !formState.form.countryId ||
@@ -164,7 +164,7 @@ const formProvinces = computed(() =>
         .map(toOption),
 )
 const formDistricts = computed(() =>
-    districts.value
+    (Array.isArray(districts.value) ? districts.value : [])
         .filter(
             (row) =>
                 (!formState.form.countryId ||
@@ -175,7 +175,7 @@ const formDistricts = computed(() =>
         .map(toOption),
 )
 const formCommunes = computed(() =>
-    communes.value
+    (Array.isArray(communes.value) ? communes.value : [])
         .filter(
             (row) =>
                 !formState.form.districtId ||
@@ -204,10 +204,21 @@ async function loadLookups() {
             lookupLocations("communes"),
         ])
 
-    countries.value = countryRows
-    provinces.value = provinceRows
-    districts.value = districtRows
-    communes.value = communeRows
+    countries.value = Array.isArray(countryRows)
+        ? countryRows
+        : []
+
+    provinces.value = Array.isArray(provinceRows)
+        ? provinceRows
+        : []
+
+    districts.value = Array.isArray(districtRows)
+        ? districtRows
+        : []
+
+    communes.value = Array.isArray(communeRows)
+        ? communeRows
+        : []
 }
 
 async function load() {

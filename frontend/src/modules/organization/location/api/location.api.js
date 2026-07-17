@@ -7,6 +7,18 @@ function unwrap(response) {
     return response?.data?.data ?? {}
 }
 
+function unwrapItems(response) {
+    const data = unwrap(response)
+
+    if (Array.isArray(data)) {
+        return data
+    }
+
+    return Array.isArray(data.items)
+        ? data.items
+        : []
+}
+
 function filenameFrom(response, fallback) {
     const header = response.headers?.["content-disposition"] || ""
     return header.match(/filename="?([^";]+)"?/i)?.[1] || fallback
@@ -34,8 +46,9 @@ export async function listLocations(entity, params = {}, signal) {
 }
 
 export async function lookupLocations(entity, params = {}, signal) {
-    const data = unwrap(
-        await apiClient.get(`${ENDPOINT}/${entity}/lookup`, {
+    const response = await apiClient.get(
+        `${ENDPOINT}/${entity}/lookup`,
+        {
             params: {
                 page: 1,
                 limit: 100,
@@ -43,10 +56,10 @@ export async function lookupLocations(entity, params = {}, signal) {
                 ...params,
             },
             signal,
-        }),
+        },
     )
 
-    return data.items ?? []
+    return unwrapItems(response)
 }
 
 export async function createLocation(entity, payload) {

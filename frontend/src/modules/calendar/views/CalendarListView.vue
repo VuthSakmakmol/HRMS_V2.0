@@ -18,7 +18,7 @@ import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
 import AppFilterBar from "@/shared/components/filter/AppFilterBar.vue"
 import AppTableActions from "@/shared/components/table/AppTableActions.vue"
-import { fetchBranchesLookup } from "@/modules/organization/services/branch.api.js"
+import { fetchBranchesLookup } from "@/modules/organization/branch/services/branch.api.js"
 import { fetchCompaniesLookup } from "@/modules/organization/services/company.api.js"
 
 import InternalCalendarDatePicker from "../components/InternalCalendarDatePicker.vue"
@@ -927,6 +927,8 @@ onMounted(async () => {
     </section>
 </template>
 
+<style src="@/assets/styles/enterprise-list.css"></style>
+
 <style scoped>
 .calendar-page {
     width: 100%;
@@ -1110,6 +1112,90 @@ onMounted(async () => {
     .calendar-form,
     .calendar-import-result__grid {
         grid-template-columns: 1fr;
+    }
+}
+</style>
+
+
+<style scoped>
+.calendar-enterprise-page {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.calendar-enterprise-page :deep(.p-button),
+.calendar-enterprise-page :deep(.p-inputtext),
+.calendar-enterprise-page :deep(.p-select),
+.calendar-enterprise-page :deep(.p-datepicker) {
+    font-size: 0.8125rem;
+}
+
+.calendar-enterprise-page :deep(.p-datatable-table) {
+    min-width: 74rem;
+}
+
+.calendar-enterprise-page :deep(.p-datatable-thead > tr > th),
+.calendar-enterprise-page :deep(.p-datatable-tbody > tr > td) {
+    padding: 0.55rem 0.65rem;
+    text-align: center;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.calendar-enterprise-page :deep(.calendar-code-column) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--surface-card);
+}
+
+.calendar-enterprise-page :deep(.calendar-actions-column) {
+    position: sticky;
+    right: 0;
+    z-index: 3;
+    background: var(--surface-card);
+}
+
+.calendar-enterprise-page :deep(.p-dialog-content) {
+    padding: 1rem 1.25rem;
+}
+
+.calendar-enterprise-page :deep(.calendar-form-grid) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.875rem 1rem;
+}
+
+.calendar-enterprise-page :deep(.calendar-form-field) {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.calendar-enterprise-page :deep(.calendar-form-field--full) {
+    grid-column: 1 / -1;
+}
+
+.calendar-enterprise-page :deep(.calendar-form-field > label) {
+    color: var(--text-color-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+@media (max-width: 720px) {
+    .calendar-enterprise-page :deep(.calendar-form-grid) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .calendar-enterprise-page :deep(.calendar-form-field--full) {
+        grid-column: auto;
+    }
+
+    .calendar-enterprise-page :deep(.calendar-actions-column) {
+        position: static;
     }
 }
 </style>
