@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n"
 import Button from "primevue/button"
 import Select from "primevue/select"
 
-import InternalCalendarDatePicker from "@/modules/calendar/components/InternalCalendarDatePicker.vue"
+import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
 
 const props = defineProps({
     modelValue: {
@@ -175,7 +175,7 @@ function updateField(field, value, dependentFields = []) {
         :aria-busy="loading"
     >
         <div class="dashboard-filter-bar__fields">
-            <InternalCalendarDatePicker
+            <EnterpriseCalendarDatePicker
                 input-id="dashboard-start-date"
                 class="dashboard-filter-field dashboard-filter-field--date"
                 :model-value="modelValue.startDate || ''"
@@ -192,7 +192,7 @@ function updateField(field, value, dependentFields = []) {
                 @update:model-value="updateField('startDate', $event)"
             />
 
-            <InternalCalendarDatePicker
+            <EnterpriseCalendarDatePicker
                 input-id="dashboard-end-date"
                 class="dashboard-filter-field dashboard-filter-field--date"
                 :model-value="modelValue.endDate || ''"

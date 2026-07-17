@@ -17,7 +17,7 @@ import { apiClient } from "@/shared/services/apiClient.js"
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import AppFilterBar from "@/shared/components/filter/AppFilterBar.vue"
 import AppTableActions from "@/shared/components/table/AppTableActions.vue"
-import InternalCalendarDatePicker from "@/modules/calendar/components/InternalCalendarDatePicker.vue"
+import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
 import { useEmployeeStore } from "../stores/employee.store.js"
 
 const toast = useToast()
@@ -815,7 +815,7 @@ onMounted(async () => {
                             <label class="employee-field"><span>Khmer First Name</span><InputText v-model="form.khmerFirstName" /></label>
                             <label class="employee-field"><span>Khmer Last Name</span><InputText v-model="form.khmerLastName" /></label>
                             <label class="employee-field"><span>Gender</span><Select v-model="form.gender" :options="genderOptions" option-label="label" option-value="value" /></label>
-                            <label class="employee-field"><span>Date of Birth</span><InternalCalendarDatePicker v-model="form.dateOfBirth" :show-status="false" compact /></label>
+                            <label class="employee-field"><span>Date of Birth</span><EnterpriseCalendarDatePicker v-model="form.dateOfBirth" :show-status="false" compact /></label>
                             <label class="employee-field employee-field--wide"><span>Profile Image URL</span><InputText v-model="form.profileImageUrl" placeholder="https://..." /></label>
                         </div>
                     </section>
@@ -830,10 +830,10 @@ onMounted(async () => {
                             <label class="employee-field"><span>Line</span><Select v-model="form.lineId" :options="lineOptions" option-label="label" option-value="value" placeholder="Select line" show-clear @change="previewApproval" /></label>
                             <label class="employee-field"><span>Shift</span><Select v-model="form.shiftId" :options="shiftOptions" option-label="label" option-value="value" placeholder="Select shift" show-clear /></label>
                             <label class="employee-field"><span>Employee Type</span><Select v-model="form.employeeTypeId" :options="employeeTypeOptions" option-label="label" option-value="value" placeholder="Select employee type" show-clear /></label>
-                            <label class="employee-field"><span>Join Date *</span><InternalCalendarDatePicker v-model="form.joinDate" :company-id="form.companyId" :branch-id="form.branchId" compact /><small v-if="fieldError('joinDate')">{{ fieldError("joinDate") }}</small></label>
+                            <label class="employee-field"><span>Join Date *</span><EnterpriseCalendarDatePicker v-model="form.joinDate" :company-id="form.companyId" :branch-id="form.branchId" compact /><small v-if="fieldError('joinDate')">{{ fieldError("joinDate") }}</small></label>
                             <label class="employee-field"><span>Employment Status</span><Select v-model="form.employmentStatus" :options="statusEditOptions" option-label="label" option-value="value" /></label>
                             <label class="employee-field"><span>Record Status</span><Select v-model="form.recordStatus" :options="recordEditOptions" option-label="label" option-value="value" /></label>
-                            <label class="employee-field"><span>Resign Date</span><InternalCalendarDatePicker v-model="form.resignDate" :company-id="form.companyId" :branch-id="form.branchId" compact /></label>
+                            <label class="employee-field"><span>Resign Date</span><EnterpriseCalendarDatePicker v-model="form.resignDate" :company-id="form.companyId" :branch-id="form.branchId" compact /></label>
                             <label class="employee-field"><span>Resign Reason</span><InputText v-model="form.resignReason" /></label>
                             <label class="employee-field"><span>Recruitment Channel</span><Select v-model="form.recruitmentChannelId" :options="recruitmentChannelOptions" option-label="label" option-value="value" placeholder="Select channel" show-clear /></label>
                             <label class="employee-field"><span>Source of Hiring</span><InputText v-model="form.sourceOfHiring" /></label>
@@ -870,13 +870,13 @@ onMounted(async () => {
                         <div class="employee-section-heading"><i class="pi pi-folder" /><div><h3>Documents & Skills</h3><p>Official documents and machine capabilities.</p></div></div>
                         <div class="employee-form-grid">
                             <label class="employee-field"><span>ID Card Number</span><InputText v-model="form.documents.idCardNo" /></label>
-                            <label class="employee-field"><span>ID Card Expire</span><InternalCalendarDatePicker v-model="form.documents.idCardExpireDate" :show-status="false" compact /></label>
+                            <label class="employee-field"><span>ID Card Expire</span><EnterpriseCalendarDatePicker v-model="form.documents.idCardExpireDate" :show-status="false" compact /></label>
                             <label class="employee-field"><span>NSSF Number</span><InputText v-model="form.documents.nssfNo" /></label>
                             <label class="employee-field"><span>Passport Number</span><InputText v-model="form.documents.passportNo" /></label>
-                            <label class="employee-field"><span>Passport Expire</span><InternalCalendarDatePicker v-model="form.documents.passportExpireDate" :show-status="false" compact /></label>
-                            <label class="employee-field"><span>Visa Expire</span><InternalCalendarDatePicker v-model="form.documents.visaExpireDate" :show-status="false" compact /></label>
+                            <label class="employee-field"><span>Passport Expire</span><EnterpriseCalendarDatePicker v-model="form.documents.passportExpireDate" :show-status="false" compact /></label>
+                            <label class="employee-field"><span>Visa Expire</span><EnterpriseCalendarDatePicker v-model="form.documents.visaExpireDate" :show-status="false" compact /></label>
                             <label class="employee-field"><span>Medical Check Number</span><InputText v-model="form.documents.medicalCheckNo" /></label>
-                            <label class="employee-field"><span>Medical Check Date</span><InternalCalendarDatePicker v-model="form.documents.medicalCheckDate" :company-id="form.companyId" :branch-id="form.branchId" compact /></label>
+                            <label class="employee-field"><span>Medical Check Date</span><EnterpriseCalendarDatePicker v-model="form.documents.medicalCheckDate" :company-id="form.companyId" :branch-id="form.branchId" compact /></label>
                             <label class="employee-field"><span>Working Book Number</span><InputText v-model="form.documents.workingBookNo" /></label>
                             <label class="employee-field"><span>Single Needle</span><InputNumber v-model="form.machineSkills.singleNeedle" :min="0" :max="999" /></label>
                             <label class="employee-field"><span>Overlock</span><InputNumber v-model="form.machineSkills.overlock" :min="0" :max="999" /></label>

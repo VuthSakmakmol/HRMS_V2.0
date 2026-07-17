@@ -24,6 +24,19 @@ export async function listBranches(params = {}, signal) {
     }
 }
 
+export async function lookupBranches(params = {}, signal) {
+    const response = await apiClient.get(`${ENDPOINT}/lookup`, {
+        params: {
+            limit: 100,
+            status: "ACTIVE",
+            ...params,
+        },
+        signal,
+    })
+
+    return unwrapData(response).items ?? []
+}
+
 export async function createBranch(payload) {
     const response = await apiClient.post(ENDPOINT, payload)
     return unwrapData(response).branch

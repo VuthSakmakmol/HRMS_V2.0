@@ -15,6 +15,7 @@ import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseLis
 import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue"
 import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
 
+
 import {
     downloadEmployeeTypeTemplate,
     exportEmployeeTypes,

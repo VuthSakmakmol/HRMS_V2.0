@@ -8,7 +8,7 @@ import Tag from "primevue/tag"
 import {
     resolveCalendarDay,
     resolveCalendarRange,
-} from "../services/calendar.api.js"
+} from "@/modules/calendar/api/calendar.api.js"
 
 const RESOLVE_CACHE_TTL_MS = 10 * 60 * 1000
 const resolveCache = new Map()

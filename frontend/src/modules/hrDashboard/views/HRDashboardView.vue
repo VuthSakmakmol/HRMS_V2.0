@@ -16,6 +16,7 @@ import TurnoverDashboardSection from "../components/turnover/TurnoverDashboardSe
 import ExitAnalysisSection from "../components/exitAnalysis/ExitAnalysisSection.vue"
 import { useHrDashboardStore } from "../stores/hrDashboard.store.js"
 
+
 const { t } = useI18n()
 const dashboardStore = useHrDashboardStore()
 

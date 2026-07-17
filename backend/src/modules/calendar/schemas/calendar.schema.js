@@ -60,6 +60,8 @@ export const calendarDayListQuerySchema = z
         dayType: z.enum(["ALL", ...CALENDAR_DAY_TYPES]).default("ALL"),
         status: z.enum(["ALL", ...CALENDAR_STATUSES]).default("ALL"),
         search: z.string().trim().max(120).optional().default(""),
+        sortBy: z.enum(["dateKey", "name", "dayType", "scopeLevel", "status", "updatedAt"]).default("dateKey"),
+        sortOrder: z.enum(["asc", "desc"]).default("desc"),
     })
     .superRefine((value, context) => {
         if (value.startDate && value.endDate && value.startDate > value.endDate) {

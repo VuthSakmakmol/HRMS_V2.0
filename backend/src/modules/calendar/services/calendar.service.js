@@ -510,7 +510,7 @@ export async function listCalendarDays({ query, user }) {
                 path: "branchId",
                 select: "companyId code name shortName status isHeadOffice",
             })
-            .sort({ dateKey: -1, scopeLevel: 1, name: 1 })
+            .sort({ [query.sortBy || "dateKey"]: query.sortOrder === "asc" ? 1 : -1, scopeLevel: 1, name: 1 })
             .skip(skip)
             .limit(limit)
             .lean(),
