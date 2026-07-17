@@ -2,12 +2,6 @@ import { z } from "zod"
 
 const EMPLOYEE_TYPE_STATUSES = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 const EMPLOYEE_TYPE_UPDATE_STATUSES = ["ACTIVE", "INACTIVE"]
-const DASHBOARD_CATEGORIES = [
-    "BLUE_COLLAR_SEWER",
-    "BLUE_COLLAR_NON_SEWER",
-    "WHITE_COLLAR",
-    "CUSTOM",
-]
 const POSITION_ASSIGNMENT_MODES = ["ALL_POSITIONS", "SPECIFIC_POSITIONS"]
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
@@ -73,19 +67,20 @@ const positionAssignmentModeSchema = z
 
 const dashboardCategorySchema = z
     .string()
-    .optional()
+    .trim()
+    .min(2)
+    .max(80)
     .transform((value) =>
-        String(value || "CUSTOM")
-            .trim()
+        value
             .replace(/[\s-]+/g, "_")
+            .replace(/[^A-Za-z0-9_]/g, "")
             .toUpperCase(),
     )
-    .pipe(z.enum(DASHBOARD_CATEGORIES))
 
 const employeeTypeChildSchema = z.object({
     code: normalizedCodeSchema.optional(),
     name: normalizedTextSchema(2, 120),
-    dashboardCategory: dashboardCategorySchema.default("CUSTOM"),
+    dashboardCategory: dashboardCategorySchema,
     positionAssignmentMode: positionAssignmentModeSchema.default(
         "SPECIFIC_POSITIONS",
     ),
@@ -102,7 +97,7 @@ function normalizeChildren(children = []) {
                 .replace(/\s+/g, "_")
                 .toUpperCase()
                 .replace(/[^A-Z0-9_-]/g, ""),
-        dashboardCategory: child.dashboardCategory || "CUSTOM",
+        dashboardCategory: child.dashboardCategory,
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: [...new Set(child.positionIds || [])],
@@ -223,12 +218,12 @@ export const employeeTypeIdParamSchema = z.object({
 
 export const employeeTypeListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     companyId: objectIdSchema.optional(),
     branchId: objectIdSchema.optional(),
     departmentId: objectIdSchema.optional(),
     positionId: objectIdSchema.optional(),
-    dashboardCategory: z.enum(["ALL", ...DASHBOARD_CATEGORIES]).default("ALL"),
+    dashboardCategory: z.string().trim().max(80).optional().default("ALL"),
     status: z.enum(["ALL", ...EMPLOYEE_TYPE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
 })
@@ -236,10 +231,10 @@ export const employeeTypeListQuerySchema = z.object({
 export const employeeTypeCreateSchema = z
     .object({
         companyId: objectIdSchema,
+        branchId: objectIdSchema,
         code: normalizedCodeSchema,
         name: normalizedTextSchema(2, 160),
-        shortName: optionalTextSchema(80),
-        dashboardCategory: dashboardCategorySchema.default("CUSTOM"),
+        dashboardCategory: dashboardCategorySchema,
         positionAssignmentMode: positionAssignmentModeSchema.default(
             "SPECIFIC_POSITIONS",
         ),
@@ -257,9 +252,10 @@ export const employeeTypeCreateSchema = z
 
 export const employeeTypeUpdateSchema = z
     .object({
+        companyId: objectIdSchema.optional(),
+        branchId: objectIdSchema.optional(),
         code: normalizedCodeSchema.optional(),
         name: normalizedTextSchema(2, 160).optional(),
-        shortName: optionalTextSchema(80),
         dashboardCategory: dashboardCategorySchema.optional(),
         positionAssignmentMode: positionAssignmentModeSchema.optional(),
         positionIds: updatePositionIdsSchema,

@@ -10,9 +10,9 @@ import { listEmployeeTypes } from "./employeeType.service.js"
 
 const TEMPLATE_HEADERS = [
     "companyCode",
+    "branchCode",
     "employeeTypeCode",
     "employeeTypeName",
-    "shortName",
     "dashboardCategory",
     "positionAssignmentMode",
     "childCode",
@@ -25,12 +25,6 @@ const TEMPLATE_HEADERS = [
 ]
 
 const STATUS_VALUES = ["ACTIVE", "INACTIVE"]
-const DASHBOARD_CATEGORIES = [
-    "BLUE_COLLAR_SEWER",
-    "BLUE_COLLAR_NON_SEWER",
-    "WHITE_COLLAR",
-    "CUSTOM",
-]
 const POSITION_ASSIGNMENT_MODES = ["ALL_POSITIONS", "SPECIFIC_POSITIONS"]
 
 function normalizeCode(value) {
@@ -48,9 +42,8 @@ function normalizeText(value) {
 }
 
 function normalizeDashboardCategory(value) {
-    const normalized = normalizeCode(value || "CUSTOM")
-
-    return DASHBOARD_CATEGORIES.includes(normalized) ? normalized : null
+    const normalized = String(value || "").trim().replace(/[\s-]+/g, "_").replace(/[^A-Za-z0-9_]/g, "").toUpperCase()
+    return normalized.length >= 2 && normalized.length <= 80 ? normalized : null
 }
 
 function normalizeAssignmentMode(value) {
@@ -148,9 +141,9 @@ function buildWorkbookBase(title) {
 
     worksheet.columns = [
         { header: "companyCode", key: "companyCode", width: 18 },
+        { header: "branchCode", key: "branchCode", width: 18 },
         { header: "employeeTypeCode", key: "employeeTypeCode", width: 22 },
         { header: "employeeTypeName", key: "employeeTypeName", width: 28 },
-        { header: "shortName", key: "shortName", width: 18 },
         { header: "dashboardCategory", key: "dashboardCategory", width: 26 },
         { header: "positionAssignmentMode", key: "positionAssignmentMode", width: 28 },
         { header: "childCode", key: "childCode", width: 18 },
@@ -195,14 +188,14 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
     worksheet.addRows([
         {
             companyCode: "TRAX",
+            branchCode: "PP",
             employeeTypeCode: "BLUE_COLLAR",
             employeeTypeName: "Blue Collar",
-            shortName: "Blue Collar",
-            dashboardCategory: "CUSTOM",
+            dashboardCategory: "PRODUCTION",
             positionAssignmentMode: "SPECIFIC_POSITIONS",
             childCode: "SEWER",
             childName: "Sewer",
-            childDashboardCategory: "BLUE_COLLAR_SEWER",
+            childDashboardCategory: "SEWING",
             childPositionAssignmentMode: "SPECIFIC_POSITIONS",
             positionCodes: "SEWER",
             status: "ACTIVE",
@@ -210,14 +203,14 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
         },
         {
             companyCode: "TRAX",
+            branchCode: "PP",
             employeeTypeCode: "BLUE_COLLAR",
             employeeTypeName: "Blue Collar",
-            shortName: "Blue Collar",
-            dashboardCategory: "CUSTOM",
+            dashboardCategory: "PRODUCTION",
             positionAssignmentMode: "SPECIFIC_POSITIONS",
             childCode: "NON_SEWER",
             childName: "Non-Sewer",
-            childDashboardCategory: "BLUE_COLLAR_NON_SEWER",
+            childDashboardCategory: "NON_SEWING",
             childPositionAssignmentMode: "SPECIFIC_POSITIONS",
             positionCodes: "CUTTER,QC,PACKING",
             status: "ACTIVE",
@@ -225,10 +218,10 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
         },
         {
             companyCode: "TRAX",
+            branchCode: "PP",
             employeeTypeCode: "WHITE_COLLAR",
             employeeTypeName: "White Collar",
-            shortName: "White Collar",
-            dashboardCategory: "WHITE_COLLAR",
+            dashboardCategory: "OFFICE",
             positionAssignmentMode: "ALL_POSITIONS",
             childCode: "",
             childName: "",
@@ -250,9 +243,10 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
 
     instructionSheet.addRows([
         { field: "companyCode", required: "Yes", rule: "Existing active company code." },
+        { field: "branchCode", required: "Yes", rule: "Existing active branch code belonging to company." },
         { field: "employeeTypeCode", required: "Yes", rule: "Example: BLUE_COLLAR or WHITE_COLLAR." },
         { field: "employeeTypeName", required: "Yes", rule: "Display name." },
-        { field: "dashboardCategory", required: "Yes", rule: "BLUE_COLLAR_SEWER, BLUE_COLLAR_NON_SEWER, WHITE_COLLAR, or CUSTOM." },
+        { field: "dashboardCategory", required: "Yes", rule: "User-defined category, for example PRODUCTION, OFFICE, MANAGEMENT, or CONTRACTOR." },
         { field: "positionAssignmentMode", required: "Yes", rule: "ALL_POSITIONS or SPECIFIC_POSITIONS." },
         { field: "childCode", required: "No", rule: "Use child rows for groups like SEWER and NON_SEWER under BLUE_COLLAR." },
         { field: "childDashboardCategory", required: "When child used", rule: "Dashboard category for the child group." },
@@ -296,7 +290,6 @@ export async function parseEmployeeTypeImportWorkbook(buffer) {
         const companyCode = normalizeCode(rowObject.companyCode)
         const employeeTypeCode = normalizeCode(rowObject.employeeTypeCode)
         const employeeTypeName = normalizeText(rowObject.employeeTypeName)
-        const shortName = normalizeText(rowObject.shortName)
         const dashboardCategory = normalizeDashboardCategory(
             rowObject.dashboardCategory,
         )
@@ -368,12 +361,11 @@ export async function parseEmployeeTypeImportWorkbook(buffer) {
             companyCode,
             employeeTypeCode,
             employeeTypeName,
-            shortName,
-            dashboardCategory: dashboardCategory || "CUSTOM",
+            dashboardCategory: dashboardCategory || "UNSPECIFIED",
             positionAssignmentMode: positionAssignmentMode || "SPECIFIC_POSITIONS",
             childCode,
             childName,
-            childDashboardCategory: childDashboardCategory || "CUSTOM",
+            childDashboardCategory: childDashboardCategory || "UNSPECIFIED",
             childPositionAssignmentMode:
                 childPositionAssignmentMode || "SPECIFIC_POSITIONS",
             positionCodes,
@@ -439,7 +431,6 @@ function groupRows(rows) {
                 companyCode: row.companyCode,
                 employeeTypeCode: row.employeeTypeCode,
                 employeeTypeName: row.employeeTypeName,
-                shortName: row.shortName,
                 dashboardCategory: row.dashboardCategory,
                 positionAssignmentMode: row.positionAssignmentMode,
                 status: row.status,
@@ -595,7 +586,6 @@ export async function importEmployeeTypesFromRows({
             companyId: company._id,
             code: group.employeeTypeCode,
             name: group.employeeTypeName,
-            shortName: group.shortName,
             dashboardCategory: group.dashboardCategory,
             positionAssignmentMode: children.length > 0
                 ? "SPECIFIC_POSITIONS"
@@ -654,13 +644,12 @@ export async function buildEmployeeTypeExportWorkbook({ employeeTypes }) {
                     companyCode: employeeType.company?.code || "",
                     employeeTypeCode: employeeType.code,
                     employeeTypeName: employeeType.name,
-                    shortName: employeeType.shortName || "",
-                    dashboardCategory: employeeType.dashboardCategory || "CUSTOM",
+                    dashboardCategory: employeeType.dashboardCategory || "UNSPECIFIED",
                     positionAssignmentMode:
                         employeeType.positionAssignmentMode || "SPECIFIC_POSITIONS",
                     childCode: child.code,
                     childName: child.name,
-                    childDashboardCategory: child.dashboardCategory || "CUSTOM",
+                    childDashboardCategory: child.dashboardCategory || "UNSPECIFIED",
                     childPositionAssignmentMode:
                         child.positionAssignmentMode || "SPECIFIC_POSITIONS",
                     positionCodes:
@@ -679,8 +668,7 @@ export async function buildEmployeeTypeExportWorkbook({ employeeTypes }) {
             companyCode: employeeType.company?.code || "",
             employeeTypeCode: employeeType.code,
             employeeTypeName: employeeType.name,
-            shortName: employeeType.shortName || "",
-            dashboardCategory: employeeType.dashboardCategory || "CUSTOM",
+            dashboardCategory: employeeType.dashboardCategory || "UNSPECIFIED",
             positionAssignmentMode:
                 employeeType.positionAssignmentMode || "SPECIFIC_POSITIONS",
             childCode: "",

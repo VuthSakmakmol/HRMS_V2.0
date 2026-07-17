@@ -19,7 +19,9 @@ import {
     downloadEmployeeTypeTemplate,
     exportEmployeeTypes,
     lookupCompanies,
+    lookupBranchesByCompany,
     lookupPositions,
+    lookupEmployeeTypeDashboardCategories,
 } from "../api/employeeType.api.js"
 import EmployeeTypeArchiveDialog from "../components/EmployeeTypeArchiveDialog.vue"
 import EmployeeTypeFormDialog from "../components/EmployeeTypeFormDialog.vue"
@@ -71,7 +73,10 @@ const {
 } = importState
 
 const companies = ref([])
+const branches = ref([])
 const positions = ref([])
+const positionsLoading = ref(false)
+const dashboardCategories = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const archiveCandidate = ref(null)
@@ -81,7 +86,7 @@ const downloadingTemplate = ref(false)
 
 const columns = computed(() => createEmployeeTypeColumns(t))
 const statusOptions = computed(() => createEmployeeTypeStatusOptions(t))
-const categoryOptions = computed(() => createDashboardCategoryOptions(t, true))
+const categoryOptions = computed(() => createDashboardCategoryOptions(t, dashboardCategories.value, true))
 
 const companyOptions = computed(() => [
     {
@@ -95,6 +100,7 @@ const activeFilterCount = computed(() => {
     return [
         query.search?.trim(),
         query.companyId,
+        query.branchId,
         query.dashboardCategory !== "ALL",
         query.status !== "ALL",
     ].filter(Boolean).length
@@ -139,13 +145,73 @@ function translatedError(caught) {
 }
 
 async function loadLookups() {
-    const [companyRows, positionRows] = await Promise.all([
+    const [companyRows, categoryRows] = await Promise.all([
         lookupCompanies(),
-        lookupPositions(),
+        lookupEmployeeTypeDashboardCategories(),
     ])
 
-    companies.value = Array.isArray(companyRows) ? companyRows : []
-    positions.value = Array.isArray(positionRows) ? positionRows : []
+    companies.value = Array.isArray(companyRows)
+        ? companyRows
+        : []
+
+    dashboardCategories.value = Array.isArray(categoryRows)
+        ? categoryRows
+        : []
+}
+
+async function loadPositions({
+    companyId = form.companyId,
+    branchId = form.branchId,
+    search = "",
+} = {}) {
+    positions.value = []
+
+    if (!companyId || !branchId) {
+        return
+    }
+
+    positionsLoading.value = true
+
+    try {
+        const positionRows = await lookupPositions({
+            companyId,
+            branchId,
+            search: String(search || "").trim(),
+            sortBy: "title",
+            sortOrder: "asc",
+        })
+
+        positions.value = Array.isArray(positionRows)
+            ? positionRows
+            : []
+    } catch (caught) {
+        positions.value = []
+
+        toast.add({
+            severity: "error",
+            summary: t(
+                "organization.employeeType.positionLoadFailed",
+            ),
+            detail: translatedError(caught),
+            life: 4500,
+        })
+    } finally {
+        positionsLoading.value = false
+    }
+}
+
+async function loadBranches(companyId) {
+    branches.value = []
+
+    if (!companyId) {
+        return
+    }
+
+    const branchRows = await lookupBranchesByCompany(companyId)
+
+    branches.value = Array.isArray(branchRows)
+        ? branchRows
+        : []
 }
 
 async function load() {
@@ -165,23 +231,58 @@ async function load() {
 }
 
 function openCreate() {
+    branches.value = []
+    positions.value = []
     formState.openCreate()
     formVisible.value = true
 }
 
-function openEdit(row) {
+async function openEdit(row) {
     formState.openEdit(row)
+
+    await loadBranches(form.companyId)
+    await loadPositions({
+        companyId: form.companyId,
+        branchId: form.branchId,
+    })
+
     formVisible.value = true
 }
 
-function handleCompanyChange() {
+async function handleCompanyChange(companyId = form.companyId) {
+    form.companyId = String(companyId || form.companyId || "")
+    form.branchId = ""
+    branches.value = []
+    positions.value = []
     form.positionIds.splice(0)
 
     for (const child of form.children) {
         child.positionIds = []
     }
 
+    formState.clearError("companyId")
+    formState.clearError("branchId")
     formState.clearError("positionIds")
+
+    await loadBranches(form.companyId)
+}
+
+async function handleBranchChange(branchId = form.branchId) {
+    form.branchId = String(branchId || form.branchId || "")
+    positions.value = []
+    form.positionIds.splice(0)
+
+    for (const child of form.children) {
+        child.positionIds = []
+    }
+
+    formState.clearError("branchId")
+    formState.clearError("positionIds")
+
+    await loadPositions({
+        companyId: form.companyId,
+        branchId: form.branchId,
+    })
 }
 
 async function saveEmployeeType() {
@@ -203,7 +304,7 @@ async function saveEmployeeType() {
             life: 3000,
         })
 
-        await list.load()
+        await Promise.all([list.load(), loadLookups()])
     } catch (caught) {
         toast.add({
             severity: "error",
@@ -292,11 +393,8 @@ function statusLabel(status) {
 }
 
 function categoryLabel(value) {
-    return (
-        categoryOptions.value.find((item) => item.value === value)?.label ||
-        value ||
-        "—"
-    )
+    const found = dashboardCategories.value.find((item) => item.value === value)
+    return found?.label || String(value || "—").toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")
 }
 
 function formatDate(value) {
@@ -335,6 +433,7 @@ async function exportRows() {
         await exportEmployeeTypes({
             search: query.search || undefined,
             companyId: query.companyId || undefined,
+            branchId: query.branchId || undefined,
             dashboardCategory: query.dashboardCategory,
             status: query.status,
         })
@@ -485,6 +584,22 @@ onMounted(load)
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
+                            :label="t('organization.employeeType.branch')"
+                        >
+                            <Select
+                                v-model="query.branchId"
+                                :options="branches"
+                                option-label="name"
+                                option-value="id"
+                                :placeholder="t('organization.employeeType.allBranches')"
+                                filter
+                                show-clear
+                                :disabled="!query.companyId"
+                                @before-show="loadBranches(query.companyId)"
+                            />
+                        </EnterpriseFilterField>
+
+                        <EnterpriseFilterField
                             :label="t('organization.employeeType.dashboardCategory')"
                         >
                             <Select
@@ -527,6 +642,10 @@ onMounted(load)
 
         <template #cell-company="{ row }">
             {{ row.company?.displayName || "—" }}
+        </template>
+
+        <template #cell-branch="{ row }">
+            {{ row.branch?.name || "—" }}
         </template>
 
         <template #cell-dashboardCategory="{ row }">
@@ -574,7 +693,9 @@ onMounted(load)
         :form="form"
         :errors="formErrors"
         :companies="companies"
+        :branches="branches"
         :positions="positions"
+        :positions-loading="positionsLoading"
         :saving="formSaving"
         @update:visible="formVisible = $event"
         @save="saveEmployeeType"
@@ -582,6 +703,7 @@ onMounted(load)
         @add-child="formState.addChild"
         @remove-child="formState.removeChild"
         @company-change="handleCompanyChange"
+        @branch-change="handleBranchChange"
     />
 
     <EmployeeTypeArchiveDialog

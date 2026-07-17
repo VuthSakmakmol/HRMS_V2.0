@@ -2,13 +2,6 @@ import mongoose from "mongoose"
 
 const { Schema } = mongoose
 
-export const EMPLOYEE_TYPE_DASHBOARD_CATEGORIES = Object.freeze([
-    "BLUE_COLLAR_SEWER",
-    "BLUE_COLLAR_NON_SEWER",
-    "WHITE_COLLAR",
-    "CUSTOM",
-])
-
 export const EMPLOYEE_TYPE_POSITION_ASSIGNMENT_MODES = Object.freeze([
     "ALL_POSITIONS",
     "SPECIFIC_POSITIONS",
@@ -53,9 +46,11 @@ const employeeTypeChildSchema = new Schema(
 
         dashboardCategory: {
             type: String,
-            enum: EMPLOYEE_TYPE_DASHBOARD_CATEGORIES,
-            default: "CUSTOM",
             required: true,
+            trim: true,
+            minlength: 2,
+            maxlength: 80,
+            set: normalizeCode,
         },
 
         positionAssignmentMode: {
@@ -86,6 +81,12 @@ const employeeTypeSchema = new Schema(
             required: true,
         },
 
+        branchId: {
+            type: Schema.Types.ObjectId,
+            ref: "Branch",
+            required: true,
+        },
+
         code: {
             type: String,
             required: true,
@@ -105,19 +106,13 @@ const employeeTypeSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 80,
-            set: normalizeText,
-            default: "",
-        },
-
         dashboardCategory: {
             type: String,
-            enum: EMPLOYEE_TYPE_DASHBOARD_CATEGORIES,
-            default: "CUSTOM",
             required: true,
+            trim: true,
+            minlength: 2,
+            maxlength: 80,
+            set: normalizeCode,
         },
 
         positionAssignmentMode: {
@@ -176,22 +171,24 @@ const employeeTypeSchema = new Schema(
 employeeTypeSchema.index(
     {
         companyId: 1,
+        branchId: 1,
         code: 1,
     },
     {
         unique: true,
-        name: "uq_employee_type_company_code",
+        name: "uq_employee_type_branch_code",
     },
 )
 
 employeeTypeSchema.index(
     {
         companyId: 1,
+        branchId: 1,
         status: 1,
         name: 1,
     },
     {
-        name: "idx_employee_type_company_status_name",
+        name: "idx_employee_type_branch_status_name",
     },
 )
 
@@ -249,4 +246,3 @@ const EmployeeType =
     mongoose.model("EmployeeType", employeeTypeSchema)
 
 export default EmployeeType
-    

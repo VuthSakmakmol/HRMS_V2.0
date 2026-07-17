@@ -8,6 +8,7 @@ import {
 import { AppError } from "../../../shared/errors/AppError.js"
 
 import Company from "../../organization/models/Company.js"
+import Branch from "../../organization/models/Branch.js"
 import Position from "../../organization/models/Position.js"
 import EmployeeType from "../models/EmployeeType.js"
 
@@ -123,7 +124,6 @@ function buildEmployeeTypeSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { name: searchRegex },
-            { shortName: searchRegex },
             { description: searchRegex },
             { "children.code": searchRegex },
             { "children.name": searchRegex },
@@ -227,7 +227,7 @@ function serializeEmployeeTypeChild(child) {
         id: child._id?.toString?.() || child.id || child.code,
         code: child.code,
         name: child.name,
-        dashboardCategory: child.dashboardCategory || "CUSTOM",
+        dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: populatedPositions.length
@@ -254,6 +254,11 @@ function serializeEmployeeType(employeeType) {
     const populatedCompany =
         raw.companyId && typeof raw.companyId === "object"
             ? serializeCompany(raw.companyId)
+            : null
+
+    const populatedBranch =
+        raw.branchId && typeof raw.branchId === "object"
+            ? serializeBranch(raw.branchId)
             : null
 
     const populatedPositions = Array.isArray(raw.positionIds)
@@ -288,10 +293,12 @@ function serializeEmployeeType(employeeType) {
         companyId:
             populatedCompany?.id || raw.companyId?.toString?.() || raw.companyId,
         company: populatedCompany,
+        branchId:
+            populatedBranch?.id || raw.branchId?.toString?.() || raw.branchId,
+        branch: populatedBranch,
         code: raw.code,
         name: raw.name,
-        shortName: raw.shortName || "",
-        dashboardCategory: raw.dashboardCategory || "CUSTOM",
+        dashboardCategory: raw.dashboardCategory || "UNSPECIFIED",
         assignmentMode: children.length > 0 ? "CHILD" : "DIRECT",
         positionAssignmentMode:
             raw.positionAssignmentMode || "SPECIFIC_POSITIONS",
@@ -327,9 +334,10 @@ function buildEmployeeTypeUpdatePayload(payload, accountId) {
     const updatePayload = { updatedByAccountId: accountId }
 
     for (const field of [
+        "companyId",
+        "branchId",
         "code",
         "name",
-        "shortName",
         "dashboardCategory",
         "positionAssignmentMode",
         "positionIds",
@@ -370,7 +378,7 @@ function normalizeChildGroups(children = []) {
     return (children || []).map((child) => ({
         code: normalizeCode(child.code || child.name),
         name: child.name,
-        dashboardCategory: child.dashboardCategory || "CUSTOM",
+        dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds:
@@ -391,10 +399,6 @@ function flattenAssignmentPositionIds({ positionIds = [], children = [] }) {
 
 function normalizeAssignmentPayload(payload) {
     const normalized = { ...payload }
-
-    if (!normalized.dashboardCategory) {
-        normalized.dashboardCategory = "CUSTOM"
-    }
 
     if (!normalized.positionAssignmentMode) {
         normalized.positionAssignmentMode = "SPECIFIC_POSITIONS"
@@ -451,7 +455,48 @@ async function ensureCompanyExists({ companyId, user }) {
     return company
 }
 
-async function ensurePositionsExist({ companyId, positionIds, user }) {
+
+async function ensureBranchExists({ companyId, branchId, user }) {
+    ensureValidObjectId(
+        branchId,
+        "ORGANIZATION_BRANCH_INVALID_ID",
+        "errors.organization.branch.invalidId",
+    )
+
+    const branch = await Branch.findOne({
+        _id: branchId,
+        companyId,
+        status: { $ne: "ARCHIVED" },
+    }).lean()
+
+    if (!branch) {
+        throw new AppError({
+            statusCode: 404,
+            code: "ORGANIZATION_BRANCH_NOT_FOUND",
+            messageKey: "errors.organization.branch.notFound",
+            fields: {
+                branchId: ["errors.organization.branch.notFound"],
+            },
+        })
+    }
+
+    const allowedCompany = await Company.exists({
+        _id: companyId,
+        ...getCompanyScopeFilter(user),
+    })
+
+    if (!allowedCompany) {
+        throw new AppError({
+            statusCode: 403,
+            code: "ORGANIZATION_BRANCH_FORBIDDEN",
+            messageKey: "errors.forbidden",
+        })
+    }
+
+    return branch
+}
+
+async function ensurePositionsExist({ companyId, branchId, positionIds, user }) {
     const uniquePositionIds = [...new Set(positionIds || [])]
 
     if (uniquePositionIds.length === 0) {
@@ -469,6 +514,7 @@ async function ensurePositionsExist({ companyId, positionIds, user }) {
     const positions = await Position.find({
         _id: { $in: uniquePositionIds },
         companyId,
+        branchId,
         status: { $ne: "ARCHIVED" },
         ...getPositionScopeFilter(user),
     })
@@ -500,6 +546,7 @@ async function ensurePositionsExist({ companyId, positionIds, user }) {
 
 async function ensurePositionsNotAlreadyMapped({
     companyId,
+    branchId,
     positionIds,
     employeeTypeId = null,
 }) {
@@ -511,6 +558,7 @@ async function ensurePositionsNotAlreadyMapped({
 
     const filter = {
         companyId,
+        branchId,
         status: { $ne: "ARCHIVED" },
         $or: [
             { positionIds: { $in: uniquePositionIds } },
@@ -608,6 +656,10 @@ function populateEmployeeTypeQuery(query) {
             select: "code displayName legalName status",
         })
         .populate({
+            path: "branchId",
+            select: "companyId code name shortName status",
+        })
+        .populate({
             path: "positionIds",
             select: "companyId branchId departmentId code title shortName level isManager status",
             populate: [
@@ -676,6 +728,15 @@ export async function listEmployeeTypes({ query, user }) {
     if (query.companyId) {
         await ensureCompanyExists({ companyId: query.companyId, user })
         filter.companyId = query.companyId
+    }
+
+    if (query.branchId) {
+        await ensureBranchExists({
+            companyId: query.companyId,
+            branchId: query.branchId,
+            user,
+        })
+        filter.branchId = query.branchId
     }
 
     if (query.status !== "ALL") {
@@ -753,18 +814,25 @@ export async function getEmployeeTypeById({ employeeTypeId, user }) {
 
 export async function createEmployeeType({ payload, user }) {
     await ensureCompanyExists({ companyId: payload.companyId, user })
+    await ensureBranchExists({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        user,
+    })
 
     const normalizedPayload = normalizeAssignmentPayload(payload)
     const allPositionIds = flattenAssignmentPositionIds(normalizedPayload)
 
     await ensurePositionsExist({
         companyId: normalizedPayload.companyId,
+        branchId: normalizedPayload.branchId,
         positionIds: allPositionIds,
         user,
     })
 
     await ensurePositionsNotAlreadyMapped({
         companyId: normalizedPayload.companyId,
+        branchId: normalizedPayload.branchId,
         positionIds: allPositionIds,
     })
 
@@ -816,6 +884,17 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         ...payload,
     })
 
+    await ensureCompanyExists({
+        companyId: normalizedPayload.companyId,
+        user,
+    })
+
+    await ensureBranchExists({
+        companyId: normalizedPayload.companyId,
+        branchId: normalizedPayload.branchId,
+        user,
+    })
+
     const patchPayload = normalizeAssignmentPayload(payload)
 
     if (
@@ -826,13 +905,15 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         const allPositionIds = flattenAssignmentPositionIds(normalizedPayload)
 
         await ensurePositionsExist({
-            companyId: existingEmployeeType.companyId,
+            companyId: normalizedPayload.companyId,
+            branchId: normalizedPayload.branchId,
             positionIds: allPositionIds,
             user,
         })
 
         await ensurePositionsNotAlreadyMapped({
-            companyId: existingEmployeeType.companyId,
+            companyId: normalizedPayload.companyId,
+            branchId: normalizedPayload.branchId,
             positionIds: allPositionIds,
             employeeTypeId,
         })
@@ -907,4 +988,17 @@ export async function archiveEmployeeType({ employeeTypeId, user }) {
     clearEmployeeTypeRelatedCaches()
 
     return getEmployeeTypeById({ employeeTypeId, user })
+}
+
+export async function listEmployeeTypeDashboardCategories({ user }) {
+    const scope = getEmployeeTypeScopeFilter(user)
+    const rows = await EmployeeType.aggregate([
+        { $match: { ...scope, status: { $ne: "ARCHIVED" } } },
+        { $project: { categories: { $setUnion: [[{ $ifNull: ["$dashboardCategory", ""] }], { $map: { input: { $ifNull: ["$children", []] }, as: "child", in: { $ifNull: ["$$child.dashboardCategory", ""] } } }] } } },
+        { $unwind: "$categories" },
+        { $match: { categories: { $nin: ["", null] } } },
+        { $group: { _id: "$categories" } },
+        { $sort: { _id: 1 } },
+    ])
+    return rows.map((row) => ({ value: row._id, label: String(row._id).toLowerCase().split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") }))
 }

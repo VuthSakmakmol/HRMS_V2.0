@@ -13,6 +13,7 @@ import {
     getEmployeeTypeImportJobController,
     importEmployeeTypesController,
     listEmployeeTypesController,
+    listEmployeeTypeDashboardCategoriesController,
     startEmployeeTypeImportJobController,
     updateEmployeeTypeController,
 } from "../controllers/employeeType.controller.js"
@@ -50,6 +51,7 @@ export const EMPLOYEE_TYPE_PERMISSIONS = Object.freeze({
 })
 
 router.use(requireAuthentication)
+router.get("/dashboard-categories", requirePermission(EMPLOYEE_TYPE_PERMISSIONS.VIEW), asyncHandler(listEmployeeTypeDashboardCategoriesController))
 router.get("/import-template", requirePermission(EMPLOYEE_TYPE_PERMISSIONS.VIEW), asyncHandler(downloadEmployeeTypeImportTemplateController))
 router.get("/export", requirePermission(EMPLOYEE_TYPE_PERMISSIONS.EXPORT), validateRequest({ query: employeeTypeListQuerySchema }), asyncHandler(exportEmployeeTypesController))
 router.post("/import-jobs", requirePermission(EMPLOYEE_TYPE_PERMISSIONS.IMPORT), upload.single("file"), asyncHandler(startEmployeeTypeImportJobController))

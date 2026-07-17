@@ -45,13 +45,16 @@ export async function listPositionsController(req, res) {
 }
 
 export async function lookupPositionsController(req, res) {
-    const items = await lookupPositions({
+    const result = await lookupPositions({
         query: req.validatedQuery,
         user: req.auth.user,
     })
 
     return sendSuccess(req, res, {
-        data: { items },
+        data: {
+            items: result.items,
+            pagination: result.pagination,
+        },
     })
 }
 

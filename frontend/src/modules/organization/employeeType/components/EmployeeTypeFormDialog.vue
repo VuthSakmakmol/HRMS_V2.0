@@ -27,9 +27,17 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    branches: {
+        type: Array,
+        default: () => [],
+    },
     positions: {
         type: Array,
         default: () => [],
+    },
+    positionsLoading: {
+        type: Boolean,
+        default: false,
     },
     saving: {
         type: Boolean,
@@ -44,6 +52,7 @@ const emit = defineEmits([
     "add-child",
     "remove-child",
     "company-change",
+    "branch-change",
 ])
 
 const { t } = useI18n()
@@ -66,13 +75,16 @@ const title = computed(() =>
             :form="form"
             :errors="errors"
             :companies="companies"
+            :branches="branches"
             :positions="positions"
+            :positions-loading="positionsLoading"
             :disabled="saving"
             :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
             @add-child="emit('add-child')"
             @remove-child="emit('remove-child', $event)"
             @company-change="emit('company-change')"
+            @branch-change="emit('branch-change')"
         />
 
         <template #footer>

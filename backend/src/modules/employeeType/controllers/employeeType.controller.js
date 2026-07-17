@@ -13,6 +13,7 @@ import {
     createEmployeeType,
     getEmployeeTypeById,
     listEmployeeTypes,
+    listEmployeeTypeDashboardCategories,
     updateEmployeeType,
 } from "../services/employeeType.service.js"
 import {
@@ -34,6 +35,11 @@ function setExcelHeaders(res, filename) {
         "Content-Disposition",
         `attachment; filename="${filename}"`,
     )
+}
+
+export async function listEmployeeTypeDashboardCategoriesController(req, res) {
+    const items = await listEmployeeTypeDashboardCategories({ user: req.auth.user })
+    return sendSuccess(req, res, { data: { items } })
 }
 
 export async function listEmployeeTypesController(req, res) {

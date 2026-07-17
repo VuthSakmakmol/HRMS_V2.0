@@ -7,16 +7,9 @@ export function createEmployeeTypeStatusOptions(t) {
     ]
 }
 
-export function createDashboardCategoryOptions(t, includeAll = false) {
-    const rows = [
-        { label: t("organization.employeeType.categoryBlueCollarSewer"), value: "BLUE_COLLAR_SEWER" },
-        { label: t("organization.employeeType.categoryBlueCollarNonSewer"), value: "BLUE_COLLAR_NON_SEWER" },
-        { label: t("organization.employeeType.categoryWhiteCollar"), value: "WHITE_COLLAR" },
-        { label: t("organization.employeeType.categoryCustom"), value: "CUSTOM" },
-    ]
-    return includeAll
-        ? [{ label: t("organization.employeeType.allCategories"), value: "ALL" }, ...rows]
-        : rows
+export function createDashboardCategoryOptions(t, categories = [], includeAll = false) {
+    const rows = categories.map((category) => ({ label: category.label || String(category.value || category).replaceAll("_", " "), value: category.value || category }))
+    return includeAll ? [{ label: t("organization.employeeType.allCategories"), value: "ALL" }, ...rows] : rows
 }
 
 export function createPositionAssignmentModeOptions(t) {

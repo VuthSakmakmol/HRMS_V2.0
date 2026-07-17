@@ -600,26 +600,29 @@ export async function lookupPositions({ query, user }) {
     const result = await listPositions({
         query: {
             ...query,
-            page: 1,
-            limit: Math.min(query.limit || 100, 100),
+            page: Math.max(1, Number(query.page || 1)),
+            limit: Math.min(Math.max(1, Number(query.limit || 100)), 100),
             status: "ACTIVE",
         },
         user,
     })
 
-    return result.items.map((position) => ({
-        id: position.id,
-        companyId: position.companyId,
-        branchId: position.branchId,
-        departmentId: position.departmentId,
-        reportsToPositionId: position.reportsToPositionId || null,
-        code: position.code,
-        name: position.title,
-        title: position.title,
-        level: position.level,
-        isManager: Boolean(position.isManager),
-        status: position.status,
-    }))
+    return {
+        items: result.items.map((position) => ({
+            id: position.id,
+            companyId: position.companyId,
+            branchId: position.branchId,
+            departmentId: position.departmentId,
+            reportsToPositionId: position.reportsToPositionId || null,
+            code: position.code,
+            name: position.title,
+            title: position.title,
+            level: position.level,
+            isManager: Boolean(position.isManager),
+            status: position.status,
+        })),
+        pagination: result.pagination,
+    }
 }
 
 export async function getPositionById({ positionId, user }) {

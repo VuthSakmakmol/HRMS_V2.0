@@ -3,6 +3,7 @@ export function createEmployeeTypeColumns(t) {
         { field: "code", header: t("organization.employeeType.code"), sortable: true, frozen: true, minWidth: "9rem" },
         { field: "name", header: t("organization.employeeType.name"), sortable: true, minWidth: "13rem" },
         { field: "company", header: t("organization.employeeType.company"), minWidth: "12rem" },
+        { field: "branch", header: t("organization.employeeType.branch"), minWidth: "12rem" },
         { field: "dashboardCategory", header: t("organization.employeeType.dashboardCategory"), minWidth: "12rem" },
         { field: "structure", header: t("organization.employeeType.structure"), minWidth: "10rem" },
         { field: "positionCount", header: t("organization.employeeType.positions"), minWidth: "8rem" },

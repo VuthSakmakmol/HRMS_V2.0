@@ -8,7 +8,6 @@ import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 
 import {
-    createDashboardCategoryOptions,
     createPositionAssignmentModeOptions,
 } from "../config/employeeType.filters.js"
 
@@ -25,9 +24,17 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    branches: {
+        type: Array,
+        default: () => [],
+    },
     positions: {
         type: Array,
         default: () => [],
+    },
+    positionsLoading: {
+        type: Boolean,
+        default: false,
     },
     disabled: {
         type: Boolean,
@@ -44,11 +51,11 @@ const emit = defineEmits([
     "add-child",
     "remove-child",
     "company-change",
+    "branch-change",
 ])
 
 const { t } = useI18n()
 
-const categoryOptions = computed(() => createDashboardCategoryOptions(t))
 
 const assignmentOptions = computed(() =>
     createPositionAssignmentModeOptions(t),
@@ -76,21 +83,29 @@ const structureOptions = computed(() => [
     },
 ])
 
-const companyPositions = computed(() => {
+const hasSelectedCompany = computed(() => {
+    return Boolean(String(props.form.companyId || "").trim())
+})
+
+const branchOptions = computed(() => {
     if (!props.form.companyId) {
         return []
     }
 
-    return props.positions.filter((position) => {
-        const positionCompanyId =
-            position.companyId?.id ||
-            position.companyId?._id ||
-            position.company?.id ||
-            position.company?._id ||
-            position.companyId
+    return props.branches
+})
 
-        return String(positionCompanyId || "") === String(props.form.companyId)
-    })
+const companyPositions = computed(() => {
+    if (!props.form.companyId || !props.form.branchId) {
+        return []
+    }
+
+    /*
+     * The backend Position lookup is the source of truth and already applies
+     * Company + Branch + ACTIVE filters. Do not filter the returned rows again
+     * in the browser because lookup response shapes may differ between modules.
+     */
+    return props.positions
 })
 
 function message(field) {
@@ -140,12 +155,37 @@ function clearFieldError(field) {
                         option-label="displayName"
                         option-value="id"
                         filter
+                        :virtual-scroller-options="{ itemSize: 38 }"
+                        :max-selected-labels="3"
                         :disabled="disabled || editing"
-                        @change="emit('company-change')"
+                        @change="emit('company-change', form.companyId)"
                     />
 
                     <small v-if="message('companyId')">
                         {{ message("companyId") }}
+                    </small>
+                </label>
+
+                <label class="enterprise-form-field">
+                    <span>
+                        {{ t("organization.employeeType.branch") }} *
+                    </span>
+
+                    <Select
+                        v-model="form.branchId"
+                        :options="branchOptions"
+                        option-label="name"
+                        option-value="id"
+                        filter
+                        :virtual-scroller-options="{ itemSize: 38 }"
+                        :disabled="disabled || !hasSelectedCompany"
+                        :placeholder="t('organization.employeeType.selectBranch')"
+                        show-clear
+                        @change="emit('branch-change', form.branchId)"
+                    />
+
+                    <small v-if="message('branchId')">
+                        {{ message("branchId") }}
                     </small>
                 </label>
 
@@ -163,23 +203,6 @@ function clearFieldError(field) {
 
                     <small v-if="message('code')">
                         {{ message("code") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.employeeType.shortName") }}
-                    </span>
-
-                    <InputText
-                        v-model="form.shortName"
-                        :disabled="disabled"
-                        maxlength="60"
-                        @input="clearFieldError('shortName')"
-                    />
-
-                    <small v-if="message('shortName')">
-                        {{ message("shortName") }}
                     </small>
                 </label>
 
@@ -205,13 +228,12 @@ function clearFieldError(field) {
                         {{ t("organization.employeeType.dashboardCategory") }}
                     </span>
 
-                    <Select
+                    <InputText
                         v-model="form.dashboardCategory"
-                        :options="categoryOptions"
-                        option-label="label"
-                        option-value="value"
+                        :placeholder="t('organization.employeeType.dashboardCategoryPlaceholder')"
                         :disabled="disabled"
-                        @change="clearFieldError('dashboardCategory')"
+                        maxlength="80"
+                        @input="clearFieldError('dashboardCategory')"
                     />
 
                     <small v-if="message('dashboardCategory')">
@@ -304,10 +326,13 @@ function clearFieldError(field) {
                         v-model="form.positionIds"
                         :options="companyPositions"
                         option-label="title"
+                        :loading="positionsLoading"
                         option-value="id"
                         filter
+                        :virtual-scroller-options="{ itemSize: 38 }"
+                        :max-selected-labels="3"
                         display="chip"
-                        :disabled="disabled || !form.companyId"
+                        :disabled="disabled || !form.companyId || !form.branchId"
                         @change="clearFieldError('positionIds')"
                     />
 
@@ -393,12 +418,11 @@ function clearFieldError(field) {
                                     {{ t("organization.employeeType.dashboardCategory") }}
                                 </span>
 
-                                <Select
+                                <InputText
                                     v-model="child.dashboardCategory"
-                                    :options="categoryOptions"
-                                    option-label="label"
-                                    option-value="value"
+                                    :placeholder="t('organization.employeeType.dashboardCategoryPlaceholder')"
                                     :disabled="disabled"
+                                    maxlength="80"
                                 />
                             </label>
 
@@ -430,8 +454,10 @@ function clearFieldError(field) {
                                     option-label="title"
                                     option-value="id"
                                     filter
+                                    :virtual-scroller-options="{ itemSize: 38 }"
+                                    :max-selected-labels="3"
                                     display="chip"
-                                    :disabled="disabled || !form.companyId"
+                                    :disabled="disabled || !form.companyId || !form.branchId"
                                 />
                             </label>
                         </div>
