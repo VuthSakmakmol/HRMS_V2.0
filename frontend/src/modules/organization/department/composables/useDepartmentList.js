@@ -21,8 +21,6 @@ export function useDepartmentList() {
         page: 1,
         limit: 10,
         search: "",
-        companyId: "",
-        branchId: "",
         status: "ALL",
         sortBy: "name",
         sortOrder: "asc",
@@ -38,12 +36,7 @@ export function useDepartmentList() {
     })
 
     const hasActiveFilters = computed(
-        () =>
-            Boolean(
-                query.search ||
-                    query.companyId ||
-                    query.branchId,
-            ) || query.status !== "ALL",
+        () => Boolean(query.search) || query.status !== "ALL",
     )
 
     async function load(overrides = {}) {
@@ -59,8 +52,6 @@ export function useDepartmentList() {
                     page: query.page,
                     limit: query.limit,
                     search: query.search || undefined,
-                    companyId: query.companyId || undefined,
-                    branchId: query.branchId || undefined,
                     status: query.status,
                     sortBy: query.sortBy,
                     sortOrder: query.sortOrder,
@@ -88,8 +79,6 @@ export function useDepartmentList() {
 
     function clearFilters() {
         query.search = ""
-        query.companyId = ""
-        query.branchId = ""
         query.status = "ALL"
 
         return load({

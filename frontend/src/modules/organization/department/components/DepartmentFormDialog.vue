@@ -23,13 +23,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     parentDepartments: {
         type: Array,
@@ -46,8 +46,6 @@ const emit = defineEmits([
     "save",
     "clear-error",
     "normalize-code",
-    "company-change",
-    "branch-change",
 ])
 
 const { t } = useI18n()
@@ -69,15 +67,13 @@ const title = computed(() =>
         <DepartmentForm
             :form="form"
             :errors="errors"
-            :companies="companies"
-            :branches="branches"
+            :company-name="companyName"
+            :branch-name="branchName"
             :parent-departments="parentDepartments"
             :disabled="saving"
             :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
             @normalize-code="emit('normalize-code')"
-            @company-change="emit('company-change')"
-            @branch-change="emit('branch-change')"
         />
 
         <template #footer>

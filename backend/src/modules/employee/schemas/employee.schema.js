@@ -155,10 +155,7 @@ export const employeeCreateSchema = z.object({
     nationality: optionalTextSchema(120),
 
     birthAddress: addressSchema,
-    livingAddress: addressSchema,
     permanentAddress: addressSchema,
-    emergencyContactAddress: addressSchema,
-    familyAddress: addressSchema,
 
     companyId: objectIdSchema,
     branchId: objectIdSchema,

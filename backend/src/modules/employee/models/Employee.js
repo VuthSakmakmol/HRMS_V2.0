@@ -140,10 +140,7 @@ const employeeSchema = new Schema(
         nationality: { type: String, trim: true, maxlength: 120, set: normalizeText, default: "" },
 
         birthAddress: { type: addressSchema, default: () => ({}) },
-        livingAddress: { type: addressSchema, default: () => ({}) },
         permanentAddress: { type: addressSchema, default: () => ({}) },
-        emergencyContactAddress: { type: addressSchema, default: () => ({}) },
-        familyAddress: { type: addressSchema, default: () => ({}) },
 
         companyId: { type: Schema.Types.ObjectId, ref: "Company", required: true },
         branchId: { type: Schema.Types.ObjectId, ref: "Branch", required: true },

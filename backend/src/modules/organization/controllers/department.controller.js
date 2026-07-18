@@ -185,6 +185,29 @@ export async function importDepartmentsController(req, res) {
         })
     }
 
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_DEPARTMENT_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.department.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.department.workspaceRequired"],
+                branchId: ["errors.organization.department.workspaceRequired"],
+            },
+        })
+    }
+
+    await listDepartments({
+        query: {
+            ...req.validatedQuery,
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
     const { rows, errors } = await parseDepartmentImportWorkbook(
         req.file.buffer,
     )
@@ -192,6 +215,10 @@ export async function importDepartmentsController(req, res) {
         rows,
         parseErrors: errors,
         user: req.auth.user,
+        workspace: {
+            companyId,
+            branchId,
+        },
     })
 
     await writeAuditLog({

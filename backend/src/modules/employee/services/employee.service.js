@@ -356,14 +356,20 @@ function getUserCompanyIds(user) {
     return [...new Set((user?.roleAssignments || []).map((item) => item.companyId).filter(Boolean))]
 }
 
+function hasGlobalScope(user) {
+    return (user?.roleAssignments || []).some(
+        (assignment) => assignment.roleScope === "GLOBAL",
+    )
+}
+
 function getCompanyScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
     const companyIds = getUserCompanyIds(user)
     return companyIds.length ? { _id: { $in: companyIds } } : { _id: { $in: [] } }
 }
 
 function getBranchScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
     const allBranchCompanyIds = []
     const branchIds = []
 
@@ -379,7 +385,7 @@ function getBranchScopeFilter(user) {
 }
 
 function getEmployeeScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
     const allBranchCompanyIds = []
     const branchIds = []
 
@@ -490,10 +496,7 @@ export function serializeEmployee(employee) {
         religion: raw.religion || "",
         nationality: raw.nationality || "",
         birthAddress: serializeAddress(raw.birthAddress),
-        livingAddress: serializeAddress(raw.livingAddress),
         permanentAddress: serializeAddress(raw.permanentAddress),
-        emergencyContactAddress: serializeAddress(raw.emergencyContactAddress),
-        familyAddress: serializeAddress(raw.familyAddress),
         companyId: raw.companyId?._id?.toString?.() || raw.companyId?.id || raw.companyId?.toString?.(),
         branchId: raw.branchId?._id?.toString?.() || raw.branchId?.id || raw.branchId?.toString?.(),
         departmentId: raw.departmentId?._id?.toString?.() || raw.departmentId?.id || raw.departmentId?.toString?.(),
@@ -601,26 +604,11 @@ function employeePopulate(query) {
         .populate({ path: "birthAddress.districtId", select: "code name nameKh status" })
         .populate({ path: "birthAddress.communeId", select: "code name nameKh status" })
         .populate({ path: "birthAddress.villageId", select: "code name nameKh status" })
-        .populate({ path: "livingAddress.countryId", select: "code name nationality phoneCode status" })
-        .populate({ path: "livingAddress.provinceId", select: "code name nameKh status" })
-        .populate({ path: "livingAddress.districtId", select: "code name nameKh status" })
-        .populate({ path: "livingAddress.communeId", select: "code name nameKh status" })
-        .populate({ path: "livingAddress.villageId", select: "code name nameKh status" })
         .populate({ path: "permanentAddress.countryId", select: "code name nationality phoneCode status" })
         .populate({ path: "permanentAddress.provinceId", select: "code name nameKh status" })
         .populate({ path: "permanentAddress.districtId", select: "code name nameKh status" })
         .populate({ path: "permanentAddress.communeId", select: "code name nameKh status" })
         .populate({ path: "permanentAddress.villageId", select: "code name nameKh status" })
-        .populate({ path: "emergencyContactAddress.countryId", select: "code name nationality phoneCode status" })
-        .populate({ path: "emergencyContactAddress.provinceId", select: "code name nameKh status" })
-        .populate({ path: "emergencyContactAddress.districtId", select: "code name nameKh status" })
-        .populate({ path: "emergencyContactAddress.communeId", select: "code name nameKh status" })
-        .populate({ path: "emergencyContactAddress.villageId", select: "code name nameKh status" })
-        .populate({ path: "familyAddress.countryId", select: "code name nationality phoneCode status" })
-        .populate({ path: "familyAddress.provinceId", select: "code name nameKh status" })
-        .populate({ path: "familyAddress.districtId", select: "code name nameKh status" })
-        .populate({ path: "familyAddress.communeId", select: "code name nameKh status" })
-        .populate({ path: "familyAddress.villageId", select: "code name nameKh status" })
 }
 
 async function ensureCompany(companyId, user) {
@@ -736,10 +724,7 @@ async function validateAddress(address, prefix) {
 async function validateAddresses(payload) {
     await Promise.all([
         validateAddress(payload.birthAddress, "birthAddress"),
-        validateAddress(payload.livingAddress, "livingAddress"),
         validateAddress(payload.permanentAddress, "permanentAddress"),
-        validateAddress(payload.emergencyContactAddress, "emergencyContactAddress"),
-        validateAddress(payload.familyAddress, "familyAddress"),
     ])
 }
 

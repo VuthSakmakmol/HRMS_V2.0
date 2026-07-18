@@ -75,11 +75,14 @@ export function useDepartmentForm() {
         )
     }
 
-    function openCreate() {
+    function openCreate(workspace = {}) {
         mode.value = "create"
         departmentId.value = null
         errors.value = {}
-        replaceForm()
+        replaceForm({
+            companyId: workspace.companyId || "",
+            branchId: workspace.branchId || "",
+        })
     }
 
     function openEdit(department) {

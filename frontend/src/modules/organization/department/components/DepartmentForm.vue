@@ -14,13 +14,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     parentDepartments: {
         type: Array,
@@ -39,8 +39,6 @@ const props = defineProps({
 const emit = defineEmits([
     "clear-error",
     "normalize-code",
-    "company-change",
-    "branch-change",
 ])
 
 const { t } = useI18n()
@@ -97,14 +95,9 @@ function message(field) {
                         {{ t("organization.department.company") }} *
                     </span>
 
-                    <Select
-                        v-model="form.companyId"
-                        :options="companies"
-                        option-label="displayName"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || editing"
-                        @change="emit('company-change')"
+                    <InputText
+                        :model-value="companyName"
+                        disabled
                     />
 
                     <small v-if="message('companyId')">
@@ -117,14 +110,9 @@ function message(field) {
                         {{ t("organization.department.branch") }} *
                     </span>
 
-                    <Select
-                        v-model="form.branchId"
-                        :options="branches"
-                        option-label="name"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || editing || !form.companyId"
-                        @change="emit('branch-change')"
+                    <InputText
+                        :model-value="branchName"
+                        disabled
                     />
 
                     <small v-if="message('branchId')">

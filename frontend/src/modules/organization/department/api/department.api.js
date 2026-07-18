@@ -1,8 +1,6 @@
 import { apiClient } from "@/shared/services/apiClient.js"
 
 const ENDPOINT = "/organization/departments"
-const COMPANY_ENDPOINT = "/organization/companies"
-const BRANCH_ENDPOINT = "/organization/branches"
 
 function unwrapData(response) {
     return response?.data?.data ?? {}
@@ -61,32 +59,6 @@ export async function archiveDepartment(departmentId) {
     )
 
     return unwrapData(response).department
-}
-
-export async function lookupCompanies(params = {}, signal) {
-    const response = await apiClient.get(`${COMPANY_ENDPOINT}/lookup`, {
-        params: {
-            limit: 100,
-            status: "ACTIVE",
-            ...params,
-        },
-        signal,
-    })
-
-    return unwrapData(response).items ?? []
-}
-
-export async function lookupBranches(params = {}, signal) {
-    const response = await apiClient.get(`${BRANCH_ENDPOINT}/lookup`, {
-        params: {
-            limit: 100,
-            status: "ACTIVE",
-            ...params,
-        },
-        signal,
-    })
-
-    return unwrapData(response).items ?? []
 }
 
 export async function lookupDepartments(params = {}, signal) {

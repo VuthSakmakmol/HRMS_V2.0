@@ -11,7 +11,7 @@ export function createEmptyEmployeeForm() {
         khmerFirstName: "", khmerLastName: "", englishFirstName: "", englishLastName: "", displayName: "",
         gender: "UNKNOWN", dateOfBirth: "", email: "", phoneNumber: "", agentPhoneNumber: "", agentPerson: "", note: "",
         maritalStatus: "UNKNOWN", spouseName: "", spouseContactNumber: "", education: "", religion: "", nationality: "Khmer",
-        birthAddress: emptyAddress(), livingAddress: emptyAddress(), permanentAddress: emptyAddress(), emergencyContactAddress: emptyAddress(), familyAddress: emptyAddress(),
+        birthAddress: emptyAddress(), permanentAddress: emptyAddress(),
         companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "",
         joinDate: "", employmentStatus: "WORKING", resignDate: "", resignReason: "", exitReasonId: null, remark: "",
         documents: emptyDocuments(), sourceOfHiring: "", recruitmentChannelId: null, introducerEmployeeId: null,
@@ -29,7 +29,7 @@ export function useEmployeeForm() {
     function assign(source = {}) {
         const empty = createEmptyEmployeeForm()
         Object.assign(form, empty, source)
-        for (const key of ["birthAddress", "livingAddress", "permanentAddress", "emergencyContactAddress", "familyAddress"]) form[key] = { ...empty[key], ...(source[key] || {}) }
+        for (const key of ["birthAddress", "permanentAddress"]) form[key] = { ...empty[key], ...(source[key] || {}) }
         form.documents = { ...empty.documents, ...(source.documents || {}) }
         form.machineSkills = { ...empty.machineSkills, ...(source.machineSkills || {}) }
     }

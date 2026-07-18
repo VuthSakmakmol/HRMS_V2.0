@@ -13,6 +13,7 @@ import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
@@ -23,8 +24,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadDepartmentTemplate,
     exportDepartments,
-    lookupBranches,
-    lookupCompanies,
     lookupDepartments,
 } from "../api/department.api.js"
 import DepartmentArchiveDialog from "../components/DepartmentArchiveDialog.vue"
@@ -41,13 +40,12 @@ const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+const workspaceStore = useWorkspaceStore()
 
 const list = useDepartmentList()
 const formState = useDepartmentForm()
 const importState = useDepartmentImport()
 
-const companies = ref([])
-const branches = ref([])
 const parentDepartments = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
@@ -68,14 +66,6 @@ const activeFilterCount = computed(() => {
         count += 1
     }
 
-    if (list.query.companyId) {
-        count += 1
-    }
-
-    if (list.query.branchId) {
-        count += 1
-    }
-
     if (list.query.status !== "ALL") {
         count += 1
     }
@@ -83,32 +73,17 @@ const activeFilterCount = computed(() => {
     return count
 })
 
-const companyOptions = computed(() => [
-    {
-        id: "",
-        displayName: t("organization.department.allCompanies"),
-    },
-    ...companies.value,
-])
+const workspaceCompanyName = computed(() =>
+    workspaceStore.selectedCompany?.displayName ||
+    workspaceStore.selectedCompany?.legalName ||
+    workspaceStore.selectedCompany?.code ||
+    "—",
+)
 
-const branchOptions = computed(() => [
-    {
-        id: "",
-        name: t("organization.department.allBranches"),
-    },
-    ...branches.value.filter(
-        (branch) =>
-            !list.query.companyId ||
-            branch.companyId === list.query.companyId,
-    ),
-])
-
-const formBranchOptions = computed(() =>
-    branches.value.filter(
-        (branch) =>
-            !formState.form.companyId ||
-            branch.companyId === formState.form.companyId,
-    ),
+const workspaceBranchName = computed(() =>
+    workspaceStore.selectedBranch?.name ||
+    workspaceStore.selectedBranch?.code ||
+    "—",
 )
 
 const canUpdate = computed(() =>
@@ -133,22 +108,13 @@ function translatedError(error) {
         : translated
 }
 
-async function loadLookups() {
-    const [companyRows, branchRows] = await Promise.all([
-        lookupCompanies(),
-        lookupBranches(),
-    ])
-
-    companies.value = companyRows
-    branches.value = branchRows
-}
-
 async function load() {
+    if (!workspaceStore.ready) {
+        return
+    }
+
     try {
-        await Promise.all([
-            list.load(),
-            loadLookups(),
-        ])
+        await list.load()
     } catch (error) {
         toast.add({
             severity: "error",
@@ -177,8 +143,11 @@ async function loadParentDepartments() {
 }
 
 async function openCreate() {
-    formState.openCreate()
-    parentDepartments.value = []
+    formState.openCreate({
+        companyId: workspaceStore.companyId,
+        branchId: workspaceStore.branchId,
+    })
+    await loadParentDepartments()
     formVisible.value = true
 }
 
@@ -191,17 +160,6 @@ async function openEdit(row) {
 function openImport() {
     importState.reset()
     importVisible.value = true
-}
-
-function onFormCompanyChange() {
-    formState.form.branchId = ""
-    formState.form.parentDepartmentId = ""
-    parentDepartments.value = []
-}
-
-async function onFormBranchChange() {
-    formState.form.parentDepartmentId = ""
-    await loadParentDepartments()
 }
 
 async function saveDepartment() {
@@ -264,8 +222,6 @@ async function exportCurrentDepartments() {
     try {
         await exportDepartments({
             search: list.query.search || undefined,
-            companyId: list.query.companyId || undefined,
-            branchId: list.query.branchId || undefined,
             status: list.query.status,
             sortBy: list.query.sortBy,
             sortOrder: list.query.sortOrder,
@@ -300,12 +256,9 @@ async function importDepartmentFile() {
             life: 4000,
         })
 
-        await Promise.all([
-            list.load({
-                page: 1,
-            }),
-            loadLookups(),
-        ])
+        await list.load({
+            page: 1,
+        })
     } catch (error) {
         toast.add({
             severity: "error",
@@ -421,10 +374,6 @@ function formatDateTime(value) {
     }).format(date)
 }
 
-function onFilterCompanyChange() {
-    list.query.branchId = ""
-}
-
 onMounted(load)
 </script>
 
@@ -475,6 +424,7 @@ onMounted(load)
                         text
                         icon="pi pi-upload"
                         :label="t('organization.department.import')"
+                        :disabled="!workspaceStore.ready"
                         @click="openImport"
                     />
 
@@ -485,6 +435,7 @@ onMounted(load)
                         icon="pi pi-file-export"
                         :label="t('organization.department.export')"
                         :loading="exporting"
+                        :disabled="!workspaceStore.ready"
                         @click="exportCurrentDepartments"
                     />
                 </template>
@@ -494,6 +445,7 @@ onMounted(load)
                         :permission="DEPARTMENT_PERMISSIONS.CREATE"
                         icon="pi pi-plus"
                         :label="t('organization.department.newDepartment')"
+                        :disabled="!workspaceStore.ready"
                         @click="openCreate"
                     />
                 </template>
@@ -520,32 +472,6 @@ onMounted(load)
                                     @keyup.enter="list.applyFilters"
                                 />
                             </span>
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
-                            :label="t('organization.department.company')"
-                        >
-                            <Select
-                                v-model="list.query.companyId"
-                                :options="companyOptions"
-                                option-label="displayName"
-                                option-value="id"
-                                filter
-                                @change="onFilterCompanyChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
-                            :label="t('organization.department.branch')"
-                        >
-                            <Select
-                                v-model="list.query.branchId"
-                                :options="branchOptions"
-                                option-label="name"
-                                option-value="id"
-                                filter
-                                :disabled="!list.query.companyId"
-                            />
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
@@ -589,6 +515,7 @@ onMounted(load)
                 :permission="DEPARTMENT_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
                 :label="t('organization.department.newDepartment')"
+                :disabled="!workspaceStore.ready"
                 @click="openCreate"
             />
         </template>
@@ -667,15 +594,13 @@ onMounted(load)
         :mode="formState.mode.value"
         :form="formState.form"
         :errors="formState.errors.value"
-        :companies="companies"
-        :branches="formBranchOptions"
+        :company-name="workspaceCompanyName"
+        :branch-name="workspaceBranchName"
         :parent-departments="parentDepartments"
         :saving="formState.saving.value"
         @save="saveDepartment"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
-        @company-change="onFormCompanyChange"
-        @branch-change="onFormBranchChange"
     />
 
     <DepartmentImportDialog

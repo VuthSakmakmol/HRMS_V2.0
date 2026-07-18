@@ -432,7 +432,12 @@ function buildImportSummary() {
     }
 }
 
-export async function importDepartmentsFromRows({ rows, parseErrors, user }) {
+export async function importDepartmentsFromRows({
+    rows,
+    parseErrors,
+    user,
+    workspace,
+}) {
     const summary = buildImportSummary()
     summary.totalRows = rows.length
 
@@ -481,7 +486,29 @@ export async function importDepartmentsFromRows({ rows, parseErrors, user }) {
         const branchKey = `${company._id.toString()}::${row.branchCode}`
         const branch = branchMap.get(branchKey)
 
+        if (
+            company._id.toString() !== workspace.companyId.toString()
+        ) {
+            errors.push(
+                buildImportError(
+                    row.rowNumber,
+                    "companyCode",
+                    "errors.organization.departmentImport.companyNotFound",
+                ),
+            )
+        }
+
         if (!branch) {
+            errors.push(
+                buildImportError(
+                    row.rowNumber,
+                    "branchCode",
+                    "errors.organization.departmentImport.branchNotFound",
+                ),
+            )
+        } else if (
+            branch._id.toString() !== workspace.branchId.toString()
+        ) {
             errors.push(
                 buildImportError(
                     row.rowNumber,

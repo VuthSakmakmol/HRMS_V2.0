@@ -4,10 +4,12 @@ import { useI18n } from "vue-i18n"
 import { useRoute, useRouter } from "vue-router"
 
 import Button from "primevue/button"
+import Select from "primevue/select"
 import Tag from "primevue/tag"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 
 const { t } = useI18n()
 const route = useRoute()
@@ -15,6 +17,7 @@ const router = useRouter()
 
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+const workspaceStore = useWorkspaceStore()
 
 const sidebarOpen = ref(false)
 const desktopSidebarCollapsed = ref(false)
@@ -35,6 +38,24 @@ const roleLabel = computed(() => {
 
     return authStore.user?.roleCodes?.join(", ") || "-"
 })
+
+const companyOptions = computed(() =>
+    workspaceStore.companies.map((company) => ({
+        label: [company.code, company.displayName || company.legalName]
+            .filter(Boolean)
+            .join(" - "),
+        value: company.id || company._id,
+    })),
+)
+
+const branchOptions = computed(() =>
+    workspaceStore.branches.map((branch) => ({
+        label: [branch.code, branch.name]
+            .filter(Boolean)
+            .join(" - "),
+        value: branch.id || branch._id,
+    })),
+)
 
 const navGroups = computed(() => {
     const groups = [
@@ -288,9 +309,10 @@ function toggleSidebar() {
     desktopSidebarCollapsed.value = !desktopSidebarCollapsed.value
 }
 
-onMounted(() => {
+onMounted(async () => {
     syncViewportMode()
     window.addEventListener("resize", syncViewportMode)
+    await workspaceStore.initialize(authStore.user)
 })
 
 onBeforeUnmount(() => {
@@ -298,6 +320,7 @@ onBeforeUnmount(() => {
 })
 
 async function logout() {
+    workspaceStore.clear()
     authStore.logout()
     closeSidebar()
 
@@ -434,6 +457,33 @@ async function logout() {
 
                 <div class="app-topbar__actions">
 
+                    <div class="app-topbar__workspace">
+                        <Select
+                            :model-value="workspaceStore.companyId"
+                            :options="companyOptions"
+                            option-label="label"
+                            option-value="value"
+                            filter
+                            :placeholder="t('workspace.selectCompany')"
+                            :loading="workspaceStore.loadingCompanies"
+                            class="app-topbar__workspace-select"
+                            @update:model-value="workspaceStore.selectCompany"
+                        />
+
+                        <Select
+                            :model-value="workspaceStore.branchId"
+                            :options="branchOptions"
+                            option-label="label"
+                            option-value="value"
+                            filter
+                            :placeholder="t('workspace.selectBranch')"
+                            :loading="workspaceStore.loadingBranches"
+                            :disabled="!workspaceStore.companyId"
+                            class="app-topbar__workspace-select"
+                            @update:model-value="workspaceStore.selectBranch"
+                        />
+                    </div>
+
                     <Button
                         text
                         rounded
@@ -458,7 +508,9 @@ async function logout() {
                     'app-content--flush': isFlushContentRoute,
                 }"
             >
-                <RouterView />
+                <RouterView
+                    :key="`${route.fullPath}:${workspaceStore.revision}`"
+                />
             </main>
         </section>
     </div>
@@ -726,6 +778,24 @@ async function logout() {
     gap: 0.375rem;
 }
 
+.app-topbar__workspace {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+}
+
+.app-topbar__workspace-select {
+    width: clamp(9rem, 15vw, 14rem);
+    min-width: 0;
+}
+
+.app-topbar__workspace-select :deep(.p-select-label) {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+    font-size: 0.72rem;
+}
+
 .app-topbar__actions :deep(.p-button) {
     min-height: 2rem;
     padding-top: 0.35rem;
@@ -802,7 +872,22 @@ async function logout() {
     }
 
     .app-topbar__actions {
+        flex: 1 1 auto;
         gap: 0.125rem;
+        min-width: 0;
+    }
+
+    .app-topbar__workspace {
+        flex: 1 1 auto;
+    }
+
+    .app-topbar__workspace-select {
+        flex: 1 1 0;
+        width: auto;
+    }
+
+    .app-topbar__title {
+        display: none;
     }
 
     .app-topbar__actions :deep(.p-button) {

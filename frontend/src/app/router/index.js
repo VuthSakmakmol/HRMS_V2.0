@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 
 const router = createRouter({
     history: createWebHistory(),
@@ -280,6 +281,11 @@ router.beforeEach(async (to) => {
                 redirect: to.fullPath,
             },
         }
+    }
+
+    if (requiresAuth && authStore.isAuthenticated) {
+        const workspaceStore = useWorkspaceStore()
+        await workspaceStore.initialize(authStore.user)
     }
 
     if (guestOnly && authStore.isAuthenticated) {

@@ -10,6 +10,7 @@ import {
     apiClient,
     setApiAccessToken,
 } from "@/shared/services/apiClient.js"
+import { clearActiveWorkspaceContext } from "@/shared/workspace/workspace.storage.js"
 
 function getLoginPayload(response) {
     const payload = response?.data?.data
@@ -105,6 +106,7 @@ export const useAuthStore = defineStore("auth", {
 
             this.accessToken = null
             this.user = null
+            clearActiveWorkspaceContext()
         },
 
         logout() {

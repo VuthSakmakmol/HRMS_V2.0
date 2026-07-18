@@ -73,6 +73,9 @@ router.post(
     "/import",
     requirePermission(PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({
+        query: departmentListQuerySchema,
+    }),
     asyncHandler(importDepartmentsController),
 )
 
