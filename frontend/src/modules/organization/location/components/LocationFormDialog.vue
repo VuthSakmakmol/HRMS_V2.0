@@ -4,7 +4,7 @@ import { useI18n } from "vue-i18n"
 import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue"
 import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue"
 import LocationForm from "./LocationForm.vue"
-const props = defineProps({ visible: Boolean, mode: { type: String, default: "create" }, entity: { type: String, required: true }, form: { type: Object, required: true }, errors: { type: Object, default: () => ({}) }, saving: Boolean, countries: Array, provinces: Array, districts: Array, communes: Array, entityLabel: { type: String, default: "" } })
+const props = defineProps({ visible: Boolean, mode: { type: String, default: "create" }, entity: { type: String, required: true }, form: { type: Object, required: true }, errors: { type: Object, default: () => ({}) }, saving: Boolean, countries: Array, provinces: Array, districts: Array, communes: Array, loadingCountries: Boolean, loadingProvinces: Boolean, loadingDistricts: Boolean, loadingCommunes: Boolean, entityLabel: { type: String, default: "" } })
 const emit = defineEmits(["update:visible","save","clear-error","normalize-code","country-change","province-change","district-change"])
 const { t } = useI18n()
 const title = computed(() => props.mode === "edit" ? t("organization.location.editTitle", { entity: props.entityLabel }) : t("organization.location.createTitle", { entity: props.entityLabel }))

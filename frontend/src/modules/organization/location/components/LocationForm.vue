@@ -4,7 +4,7 @@ import Select from "primevue/select"
 import Textarea from "primevue/textarea"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
-const props = defineProps({ entity: { type: String, required: true }, form: { type: Object, required: true }, errors: { type: Object, default: () => ({}) }, countries: { type: Array, default: () => [] }, provinces: { type: Array, default: () => [] }, districts: { type: Array, default: () => [] }, communes: { type: Array, default: () => [] }, disabled: { type: Boolean, default: false } })
+const props = defineProps({ entity: { type: String, required: true }, form: { type: Object, required: true }, errors: { type: Object, default: () => ({}) }, countries: { type: Array, default: () => [] }, provinces: { type: Array, default: () => [] }, districts: { type: Array, default: () => [] }, communes: { type: Array, default: () => [] }, loadingCountries: { type: Boolean, default: false }, loadingProvinces: { type: Boolean, default: false }, loadingDistricts: { type: Boolean, default: false }, loadingCommunes: { type: Boolean, default: false }, disabled: { type: Boolean, default: false } })
 const emit = defineEmits(["clear-error","normalize-code","country-change","province-change","district-change"])
 const { t } = useI18n()
 const statusOptions = computed(() => [{ label: t("organization.location.statusActive"), value: "ACTIVE" }, { label: t("organization.location.statusInactive"), value: "INACTIVE" }])
@@ -21,22 +21,22 @@ function msg(field) { const value = props.errors?.[field]; if (!value) return ""
         <div class="enterprise-form-grid">
             <div v-if="needsCountry" class="enterprise-form-field">
                 <label>{{ t("organization.location.country") }} *</label>
-                <Select v-model="form.countryId" :options="countries" option-label="label" option-value="value" filter fluid :disabled="disabled" :invalid="Boolean(errors.countryId)" @change="emit('country-change')" />
+                <Select v-model="form.countryId" :options="countries" option-label="label" option-value="value" filter fluid :loading="loadingCountries" :disabled="disabled" :invalid="Boolean(errors.countryId)" @change="emit('country-change')" />
                 <small v-if="msg('countryId')" class="p-error">{{ msg("countryId") }}</small>
             </div>
             <div v-if="needsProvince" class="enterprise-form-field">
                 <label>{{ t("organization.location.province") }} *</label>
-                <Select v-model="form.provinceId" :options="provinces" option-label="label" option-value="value" filter fluid :disabled="disabled || !form.countryId" :invalid="Boolean(errors.provinceId)" @change="emit('province-change')" />
+                <Select v-model="form.provinceId" :options="provinces" option-label="label" option-value="value" filter fluid :loading="loadingProvinces" :disabled="disabled || !form.countryId" :invalid="Boolean(errors.provinceId)" @change="emit('province-change')" />
                 <small v-if="msg('provinceId')" class="p-error">{{ msg("provinceId") }}</small>
             </div>
             <div v-if="needsDistrict" class="enterprise-form-field">
                 <label>{{ t("organization.location.district") }} *</label>
-                <Select v-model="form.districtId" :options="districts" option-label="label" option-value="value" filter fluid :disabled="disabled || !form.provinceId" :invalid="Boolean(errors.districtId)" @change="emit('district-change')" />
+                <Select v-model="form.districtId" :options="districts" option-label="label" option-value="value" filter fluid :loading="loadingDistricts" :disabled="disabled || !form.provinceId" :invalid="Boolean(errors.districtId)" @change="emit('district-change')" />
                 <small v-if="msg('districtId')" class="p-error">{{ msg("districtId") }}</small>
             </div>
             <div v-if="needsCommune" class="enterprise-form-field">
                 <label>{{ t("organization.location.commune") }} *</label>
-                <Select v-model="form.communeId" :options="communes" option-label="label" option-value="value" filter fluid :disabled="disabled || !form.districtId" :invalid="Boolean(errors.communeId)" @change="emit('clear-error','communeId')" />
+                <Select v-model="form.communeId" :options="communes" option-label="label" option-value="value" filter fluid :loading="loadingCommunes" :disabled="disabled || !form.districtId" :invalid="Boolean(errors.communeId)" @change="emit('clear-error','communeId')" />
                 <small v-if="msg('communeId')" class="p-error">{{ msg("communeId") }}</small>
             </div>
         </div>

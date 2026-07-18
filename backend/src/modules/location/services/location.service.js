@@ -512,8 +512,34 @@ function buildLocationFilter({ entity, query }) {
     return filter
 }
 
+const LOOKUP_PARENT_FIELDS = Object.freeze({
+    countries: null,
+    provinces: "countryId",
+    districts: "provinceId",
+    communes: "districtId",
+    villages: "communeId",
+})
+
+function assertLookupParent(entity, query) {
+    const parentField = LOOKUP_PARENT_FIELDS[entity]
+
+    if (!parentField || query[parentField]) {
+        return
+    }
+
+    throw new AppError({
+        statusCode: 422,
+        code: "LOCATION_LOOKUP_PARENT_REQUIRED",
+        messageKey: "errors.location.lookup.parentRequired",
+        fields: {
+            [parentField]: ["errors.location.lookup.parentRequired"],
+        },
+    })
+}
+
 export async function lookupLocations({ entity, query }) {
     const config = getConfig(entity)
+    assertLookupParent(entity, query)
     const normalizedQuery = {
         ...query,
         page: 1,
@@ -531,21 +557,19 @@ export async function lookupLocations({ entity, query }) {
 
     const items = await addPopulate(findQuery, config.populate).lean()
 
-    return {
-        items: items.map((item) => {
-            const location = serializeLocation(entity, item)
+    return items.map((item) => {
+        const location = serializeLocation(entity, item)
 
-            return {
-                id: location.id,
-                code: location.code,
-                name: location.name,
-                countryId: location.countryId || null,
-                provinceId: location.provinceId || null,
-                districtId: location.districtId || null,
-                communeId: location.communeId || null,
-            }
-        }),
-    }
+        return {
+            id: location.id,
+            code: location.code,
+            name: location.name,
+            countryId: location.countryId || null,
+            provinceId: location.provinceId || null,
+            districtId: location.districtId || null,
+            communeId: location.communeId || null,
+        }
+    })
 }
 
 export async function listLocations({ entity, query }) {

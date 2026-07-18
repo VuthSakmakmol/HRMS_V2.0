@@ -22,7 +22,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadLocationTemplate,
     exportLocations,
-    lookupLocations,
 } from "../api/location.api.js"
 import LocationArchiveDialog from "../components/LocationArchiveDialog.vue"
 import LocationFormDialog from "../components/LocationFormDialog.vue"
@@ -30,6 +29,7 @@ import LocationImportDialog from "../components/LocationImportDialog.vue"
 import { useLocationForm } from "../composables/useLocationForm.js"
 import { useLocationImport } from "../composables/useLocationImport.js"
 import { useLocationList } from "../composables/useLocationList.js"
+import { useLocationHierarchy } from "../composables/useLocationHierarchy.js"
 import { createLocationColumns } from "../config/location.columns.js"
 import {
     LOCATION_ENTITIES,
@@ -45,6 +45,8 @@ const activeEntity = ref("countries")
 const list = useLocationList()
 const formState = useLocationForm()
 const importState = useLocationImport(activeEntity)
+const filterHierarchy = useLocationHierarchy()
+const formHierarchy = useLocationHierarchy()
 
 const formVisible = ref(false)
 const archiveVisible = ref(false)
@@ -52,11 +54,6 @@ const archiveCandidate = ref(null)
 const importVisible = ref(false)
 const exporting = ref(false)
 const downloadingTemplate = ref(false)
-
-const countries = ref([])
-const provinces = ref([])
-const districts = ref([])
-const communes = ref([])
 
 // Top-level bindings prevent nested Ref objects from reaching PrimeVue.
 const rows = list.rows
@@ -75,6 +72,14 @@ const importProcessedRows = importState.processedRows
 const importTotalRows = importState.totalRows
 const importResult = importState.result
 const importError = importState.error
+const filterLoadingCountries = filterHierarchy.loadingCountries
+const filterLoadingProvinces = filterHierarchy.loadingProvinces
+const filterLoadingDistricts = filterHierarchy.loadingDistricts
+const filterLoadingCommunes = filterHierarchy.loadingCommunes
+const formLoadingCountries = formHierarchy.loadingCountries
+const formLoadingProvinces = formHierarchy.loadingProvinces
+const formLoadingDistricts = formHierarchy.loadingDistricts
+const formLoadingCommunes = formHierarchy.loadingCommunes
 
 const columns = computed(() => createLocationColumns(t, activeEntity.value))
 const statusOptions = computed(() => createLocationStatusOptions(t))
@@ -116,7 +121,7 @@ const countryOptions = computed(() => [
         label: t("organization.location.allCountries"),
         value: "",
     },
-    ...(Array.isArray(countries.value) ? countries.value : []).map(toOption),
+    ...filterHierarchy.countries.value.map(toOption),
 ])
 
 const provinceOptions = computed(() => [
@@ -124,9 +129,7 @@ const provinceOptions = computed(() => [
         label: t("organization.location.allProvinces"),
         value: "",
     },
-    ...(Array.isArray(provinces.value) ? provinces.value : [])
-        .filter((row) => !query.countryId || row.countryId === query.countryId)
-        .map(toOption),
+    ...filterHierarchy.provinces.value.map(toOption),
 ])
 
 const districtOptions = computed(() => [
@@ -134,13 +137,7 @@ const districtOptions = computed(() => [
         label: t("organization.location.allDistricts"),
         value: "",
     },
-    ...(Array.isArray(districts.value) ? districts.value : [])
-        .filter(
-            (row) =>
-                (!query.countryId || row.countryId === query.countryId) &&
-                (!query.provinceId || row.provinceId === query.provinceId),
-        )
-        .map(toOption),
+    ...filterHierarchy.districts.value.map(toOption),
 ])
 
 const communeOptions = computed(() => [
@@ -148,41 +145,13 @@ const communeOptions = computed(() => [
         label: t("organization.location.allCommunes"),
         value: "",
     },
-    ...(Array.isArray(communes.value) ? communes.value : [])
-        .filter((row) => !query.districtId || row.districtId === query.districtId)
-        .map(toOption),
+    ...filterHierarchy.communes.value.map(toOption),
 ])
 
-const formCountries = computed(() => (Array.isArray(countries.value) ? countries.value : []).map(toOption))
-const formProvinces = computed(() =>
-    (Array.isArray(provinces.value) ? provinces.value : [])
-        .filter(
-            (row) =>
-                !formState.form.countryId ||
-                row.countryId === formState.form.countryId,
-        )
-        .map(toOption),
-)
-const formDistricts = computed(() =>
-    (Array.isArray(districts.value) ? districts.value : [])
-        .filter(
-            (row) =>
-                (!formState.form.countryId ||
-                    row.countryId === formState.form.countryId) &&
-                (!formState.form.provinceId ||
-                    row.provinceId === formState.form.provinceId),
-        )
-        .map(toOption),
-)
-const formCommunes = computed(() =>
-    (Array.isArray(communes.value) ? communes.value : [])
-        .filter(
-            (row) =>
-                !formState.form.districtId ||
-                row.districtId === formState.form.districtId,
-        )
-        .map(toOption),
-)
+const formCountries = computed(() => formHierarchy.countries.value.map(toOption))
+const formProvinces = computed(() => formHierarchy.provinces.value.map(toOption))
+const formDistricts = computed(() => formHierarchy.districts.value.map(toOption))
+const formCommunes = computed(() => formHierarchy.communes.value.map(toOption))
 
 function translatedError(error) {
     const key = error?.response?.data?.error?.messageKey || error?.messageKey
@@ -195,37 +164,11 @@ function translatedError(error) {
     return translated === key ? t("errors.internal") : translated
 }
 
-async function loadLookups() {
-    const [countryRows, provinceRows, districtRows, communeRows] =
-        await Promise.all([
-            lookupLocations("countries"),
-            lookupLocations("provinces"),
-            lookupLocations("districts"),
-            lookupLocations("communes"),
-        ])
-
-    countries.value = Array.isArray(countryRows)
-        ? countryRows
-        : []
-
-    provinces.value = Array.isArray(provinceRows)
-        ? provinceRows
-        : []
-
-    districts.value = Array.isArray(districtRows)
-        ? districtRows
-        : []
-
-    communes.value = Array.isArray(communeRows)
-        ? communeRows
-        : []
-}
-
 async function load() {
     try {
         await Promise.all([
             list.load(activeEntity.value),
-            loadLookups(),
+            filterHierarchy.loadCountries(),
         ])
     } catch (error) {
         toast.add({
@@ -250,29 +193,52 @@ async function switchEntity(entity) {
     await list.reset(entity)
 }
 
-function openCreate() {
+async function openCreate() {
     formState.openCreate()
+    await formHierarchy.loadCountries()
     formVisible.value = true
 }
 
-function openEdit(row) {
+async function openEdit(row) {
     formState.openEdit(row)
+    await formHierarchy.hydrate(formState.form)
     formVisible.value = true
 }
 
-function onCountryChange() {
+async function onCountryChange() {
     formState.form.provinceId = ""
     formState.form.districtId = ""
     formState.form.communeId = ""
+    await formHierarchy.loadProvinces(formState.form.countryId)
 }
 
-function onProvinceChange() {
+async function onProvinceChange() {
     formState.form.districtId = ""
     formState.form.communeId = ""
+    await formHierarchy.loadDistricts(formState.form.provinceId)
 }
 
-function onDistrictChange() {
+async function onDistrictChange() {
     formState.form.communeId = ""
+    await formHierarchy.loadCommunes(formState.form.districtId)
+}
+
+async function onFilterCountryChange() {
+    query.provinceId = ""
+    query.districtId = ""
+    query.communeId = ""
+    await filterHierarchy.loadProvinces(query.countryId)
+}
+
+async function onFilterProvinceChange() {
+    query.districtId = ""
+    query.communeId = ""
+    await filterHierarchy.loadDistricts(query.provinceId)
+}
+
+async function onFilterDistrictChange() {
+    query.communeId = ""
+    await filterHierarchy.loadCommunes(query.districtId)
 }
 
 async function saveLocation() {
@@ -292,10 +258,9 @@ async function saveLocation() {
             life: 3000,
         })
 
-        await Promise.all([
-            list.load(activeEntity.value),
-            loadLookups(),
-        ])
+        formHierarchy.invalidate()
+        filterHierarchy.invalidate()
+        await list.load(activeEntity.value)
     } catch (error) {
         toast.add({
             severity: "error",
@@ -322,7 +287,8 @@ async function confirmArchive() {
         await list.archive(activeEntity.value, id)
         archiveVisible.value = false
         archiveCandidate.value = null
-        await loadLookups()
+        formHierarchy.invalidate()
+        filterHierarchy.invalidate()
 
         toast.add({
             severity: "success",
@@ -407,10 +373,9 @@ async function submitImport() {
             importState.reset()
         }
 
-        await Promise.all([
-            list.load(activeEntity.value),
-            loadLookups(),
-        ])
+        formHierarchy.invalidate()
+        filterHierarchy.invalidate()
+        await list.load(activeEntity.value)
     } catch (error) {
         toast.add({
             severity: "error",
@@ -577,7 +542,8 @@ onMounted(load)
                                 option-label="label"
                                 option-value="value"
                                 filter
-                                @change="query.provinceId = ''; query.districtId = ''; query.communeId = ''"
+                                :loading="filterLoadingCountries"
+                                @change="onFilterCountryChange"
                             />
                         </EnterpriseFilterField>
 
@@ -591,7 +557,9 @@ onMounted(load)
                                 option-label="label"
                                 option-value="value"
                                 filter
-                                @change="query.districtId = ''; query.communeId = ''"
+                                :disabled="!query.countryId"
+                                :loading="filterLoadingProvinces"
+                                @change="onFilterProvinceChange"
                             />
                         </EnterpriseFilterField>
 
@@ -605,7 +573,9 @@ onMounted(load)
                                 option-label="label"
                                 option-value="value"
                                 filter
-                                @change="query.communeId = ''"
+                                :disabled="!query.provinceId"
+                                :loading="filterLoadingDistricts"
+                                @change="onFilterDistrictChange"
                             />
                         </EnterpriseFilterField>
 
@@ -619,6 +589,8 @@ onMounted(load)
                                 option-label="label"
                                 option-value="value"
                                 filter
+                                :disabled="!query.districtId"
+                                :loading="filterLoadingCommunes"
                             />
                         </EnterpriseFilterField>
 
@@ -691,6 +663,10 @@ onMounted(load)
         :provinces="formProvinces"
         :districts="formDistricts"
         :communes="formCommunes"
+        :loading-countries="formLoadingCountries"
+        :loading-provinces="formLoadingProvinces"
+        :loading-districts="formLoadingDistricts"
+        :loading-communes="formLoadingCommunes"
         @update:visible="formVisible = $event"
         @save="saveLocation"
         @clear-error="formState.clearError"
