@@ -84,11 +84,14 @@ export function usePositionForm() {
         )
     }
 
-    function openCreate() {
+    function openCreate(workspace = {}) {
         mode.value = "create"
         positionId.value = null
         errors.value = {}
-        replaceForm()
+        replaceForm({
+            companyId: workspace.companyId || "",
+            branchId: workspace.branchId || "",
+        })
     }
 
     function openEdit(position) {

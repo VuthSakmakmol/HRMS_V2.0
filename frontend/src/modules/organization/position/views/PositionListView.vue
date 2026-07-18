@@ -13,6 +13,7 @@ import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
@@ -21,8 +22,6 @@ import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPag
 import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
 
 import {
-    lookupBranches,
-    lookupCompanies,
     lookupDepartments,
     lookupPositions,
     downloadPositionTemplate,
@@ -42,13 +41,12 @@ const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+const workspaceStore = useWorkspaceStore()
 
 const list = usePositionList()
 const formState = usePositionForm()
 const importState = usePositionImport()
 
-const companies = ref([])
-const branches = ref([])
 const departments = ref([])
 const reportsToPositions = ref([])
 const formVisible = ref(false)
@@ -70,14 +68,6 @@ const activeFilterCount = computed(() => {
         count += 1
     }
 
-    if (list.query.companyId) {
-        count += 1
-    }
-
-    if (list.query.branchId) {
-        count += 1
-    }
-
     if (list.query.departmentId) {
         count += 1
     }
@@ -89,56 +79,25 @@ const activeFilterCount = computed(() => {
     return count
 })
 
-const companyOptions = computed(() => [
-    {
-        id: "",
-        displayName: t("organization.position.allCompanies"),
-    },
-    ...companies.value,
-])
-
-const branchOptions = computed(() => [
-    {
-        id: "",
-        name: t("organization.position.allBranches"),
-    },
-    ...branches.value.filter(
-        (branch) =>
-            !list.query.companyId ||
-            branch.companyId === list.query.companyId,
-    ),
-])
-
 const departmentOptions = computed(() => [
     {
         id: "",
         name: t("organization.position.allDepartments"),
     },
-    ...departments.value.filter(
-        (department) =>
-            (!list.query.companyId ||
-                department.companyId === list.query.companyId) &&
-            (!list.query.branchId ||
-                department.branchId === list.query.branchId),
-    ),
+    ...departments.value,
 ])
 
-const formBranchOptions = computed(() =>
-    branches.value.filter(
-        (branch) =>
-            !formState.form.companyId ||
-            branch.companyId === formState.form.companyId,
-    ),
+const workspaceCompanyName = computed(() =>
+    workspaceStore.selectedCompany?.displayName ||
+    workspaceStore.selectedCompany?.legalName ||
+    workspaceStore.selectedCompany?.code ||
+    "—",
 )
 
-const formDepartmentOptions = computed(() =>
-    departments.value.filter(
-        (department) =>
-            (!formState.form.companyId ||
-                department.companyId === formState.form.companyId) &&
-            (!formState.form.branchId ||
-                department.branchId === formState.form.branchId),
-    ),
+const workspaceBranchName = computed(() =>
+    workspaceStore.selectedBranch?.name ||
+    workspaceStore.selectedBranch?.code ||
+    "—",
 )
 
 const canUpdate = computed(() =>
@@ -164,19 +123,14 @@ function translatedError(error) {
 }
 
 async function loadLookups() {
-    const [companyRows, branchRows, departmentRows] =
-        await Promise.all([
-            lookupCompanies(),
-            lookupBranches(),
-            lookupDepartments(),
-        ])
-
-    companies.value = companyRows
-    branches.value = branchRows
-    departments.value = departmentRows
+    departments.value = await lookupDepartments()
 }
 
 async function load() {
+    if (!workspaceStore.ready) {
+        return
+    }
+
     try {
         await Promise.all([
             list.load(),
@@ -211,7 +165,10 @@ async function loadReportsToPositions() {
 }
 
 async function openCreate() {
-    formState.openCreate()
+    formState.openCreate({
+        companyId: workspaceStore.companyId,
+        branchId: workspaceStore.branchId,
+    })
     reportsToPositions.value = []
     formVisible.value = true
 }
@@ -220,19 +177,6 @@ async function openEdit(row) {
     formState.openEdit(row)
     await loadReportsToPositions()
     formVisible.value = true
-}
-
-function onFormCompanyChange() {
-    formState.form.branchId = ""
-    formState.form.departmentId = ""
-    formState.form.reportsToPositionId = ""
-    reportsToPositions.value = []
-}
-
-function onFormBranchChange() {
-    formState.form.departmentId = ""
-    formState.form.reportsToPositionId = ""
-    reportsToPositions.value = []
 }
 
 async function onFormDepartmentChange() {
@@ -403,8 +347,6 @@ async function exportRows() {
     try {
         await exportPositions({
             search: list.query.search || undefined,
-            companyId: list.query.companyId || undefined,
-            branchId: list.query.branchId || undefined,
             departmentId: list.query.departmentId || undefined,
             status: list.query.status,
             sortBy: list.query.sortBy,
@@ -480,15 +422,6 @@ async function submitImport() {
     }
 }
 
-function onFilterCompanyChange() {
-    list.query.branchId = ""
-    list.query.departmentId = ""
-}
-
-function onFilterBranchChange() {
-    list.query.departmentId = ""
-}
-
 onMounted(load)
 </script>
 
@@ -539,6 +472,7 @@ onMounted(load)
                         text
                         icon="pi pi-upload"
                         :label="t('organization.position.import')"
+                        :disabled="!workspaceStore.ready"
                         @click="importVisible = true"
                     />
 
@@ -549,6 +483,7 @@ onMounted(load)
                         icon="pi pi-file-export"
                         :label="t('organization.position.export')"
                         :loading="exporting"
+                        :disabled="!workspaceStore.ready"
                         @click="exportRows"
                     />
                 </template>
@@ -558,6 +493,7 @@ onMounted(load)
                         :permission="POSITION_PERMISSIONS.CREATE"
                         icon="pi pi-plus"
                         :label="t('organization.position.newPosition')"
+                        :disabled="!workspaceStore.ready"
                         @click="openCreate"
                     />
                 </template>
@@ -587,33 +523,6 @@ onMounted(load)
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
-                            :label="t('organization.position.company')"
-                        >
-                            <Select
-                                v-model="list.query.companyId"
-                                :options="companyOptions"
-                                option-label="displayName"
-                                option-value="id"
-                                filter
-                                @change="onFilterCompanyChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
-                            :label="t('organization.position.branch')"
-                        >
-                            <Select
-                                v-model="list.query.branchId"
-                                :options="branchOptions"
-                                option-label="name"
-                                option-value="id"
-                                filter
-                                :disabled="!list.query.companyId"
-                                @change="onFilterBranchChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
                             :label="t('organization.position.department')"
                         >
                             <Select
@@ -622,7 +531,7 @@ onMounted(load)
                                 option-label="name"
                                 option-value="id"
                                 filter
-                                :disabled="!list.query.branchId"
+                                :disabled="!workspaceStore.ready"
                             />
                         </EnterpriseFilterField>
 
@@ -667,6 +576,7 @@ onMounted(load)
                 :permission="POSITION_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
                 :label="t('organization.position.newPosition')"
+                :disabled="!workspaceStore.ready"
                 @click="openCreate"
             />
         </template>
@@ -767,16 +677,14 @@ onMounted(load)
         :mode="formState.mode.value"
         :form="formState.form"
         :errors="formState.errors.value"
-        :companies="companies"
-        :branches="formBranchOptions"
-        :departments="formDepartmentOptions"
+        :company-name="workspaceCompanyName"
+        :branch-name="workspaceBranchName"
+        :departments="departments"
         :reports-to-positions="reportsToPositions"
         :saving="formState.saving.value"
         @save="savePosition"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
-        @company-change="onFormCompanyChange"
-        @branch-change="onFormBranchChange"
         @department-change="onFormDepartmentChange"
     />
 

@@ -546,7 +546,12 @@ function buildImportSummary() {
     }
 }
 
-export async function importPositionsFromRows({ rows, parseErrors, user }) {
+export async function importPositionsFromRows({
+    rows,
+    parseErrors,
+    user,
+    workspace,
+}) {
     const summary = buildImportSummary()
     summary.totalRows = rows.length
 
@@ -565,7 +570,12 @@ export async function importPositionsFromRows({ rows, parseErrors, user }) {
     const companyMap = await buildCompanyMap({ companyCodes })
 
     for (const row of rows) {
-        if (!companyMap.has(row.companyCode)) {
+        const company = companyMap.get(row.companyCode)
+
+        if (
+            !company ||
+            company._id.toString() !== workspace.companyId.toString()
+        ) {
             errors.push(
                 buildImportError(
                     row.rowNumber,
@@ -596,7 +606,10 @@ export async function importPositionsFromRows({ rows, parseErrors, user }) {
         const branchKey = `${company._id.toString()}::${row.branchCode}`
         const branch = branchMap.get(branchKey)
 
-        if (!branch) {
+        if (
+            !branch ||
+            branch._id.toString() !== workspace.branchId.toString()
+        ) {
             errors.push(
                 buildImportError(
                     row.rowNumber,

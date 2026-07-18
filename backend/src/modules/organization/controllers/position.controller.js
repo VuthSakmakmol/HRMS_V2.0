@@ -176,6 +176,7 @@ async function processPositionImportJob({
     fileBuffer,
     user,
     req,
+    workspace,
 }) {
     try {
         updateImportJob(jobId, {
@@ -200,6 +201,7 @@ async function processPositionImportJob({
             rows,
             parseErrors: errors,
             user,
+            workspace,
             onProgress(progress) {
                 updateImportJob(jobId, {
                     status: "PROCESSING",
@@ -242,6 +244,32 @@ export async function startPositionImportJobController(req, res) {
         })
     }
 
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_POSITION_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.position.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.position.workspaceRequired"],
+                branchId: ["errors.organization.position.workspaceRequired"],
+            },
+        })
+    }
+
+    await listPositions({
+        query: {
+            ...req.validatedQuery,
+            companyId,
+            branchId,
+            departmentId: undefined,
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
     const job = createImportJob({
         module: "ORGANIZATION.POSITION",
         ownerAccountId: req.auth.user.accountId,
@@ -270,6 +298,7 @@ export async function startPositionImportJobController(req, res) {
             fileBuffer,
             user,
             req,
+            workspace: { companyId, branchId },
         })
     })
 

@@ -23,13 +23,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     departments: {
         type: Array,
@@ -50,8 +50,6 @@ const emit = defineEmits([
     "save",
     "clear-error",
     "normalize-code",
-    "company-change",
-    "branch-change",
     "department-change",
 ])
 
@@ -74,16 +72,14 @@ const title = computed(() =>
         <PositionForm
             :form="form"
             :errors="errors"
-            :companies="companies"
-            :branches="branches"
+            :company-name="companyName"
+            :branch-name="branchName"
             :departments="departments"
             :reports-to-positions="reportsToPositions"
             :disabled="saving"
             :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
             @normalize-code="emit('normalize-code')"
-            @company-change="emit('company-change')"
-            @branch-change="emit('branch-change')"
             @department-change="emit('department-change')"
         />
 

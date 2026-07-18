@@ -87,6 +87,7 @@ router.post(
     "/import-jobs",
     requirePermission(POSITION_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: positionListQuerySchema }),
     asyncHandler(startPositionImportJobController),
 )
 
@@ -100,6 +101,7 @@ router.post(
     "/import",
     requirePermission(POSITION_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: positionListQuerySchema }),
     asyncHandler(importPositionsController),
 )
 

@@ -21,8 +21,6 @@ export function usePositionList() {
         page: 1,
         limit: 10,
         search: "",
-        companyId: "",
-        branchId: "",
         departmentId: "",
         status: "ALL",
         sortBy: "level",
@@ -41,10 +39,7 @@ export function usePositionList() {
     const hasActiveFilters = computed(
         () =>
             Boolean(
-                query.search ||
-                    query.companyId ||
-                    query.branchId ||
-                    query.departmentId,
+                query.search || query.departmentId,
             ) || query.status !== "ALL",
     )
 
@@ -61,8 +56,6 @@ export function usePositionList() {
                     page: query.page,
                     limit: query.limit,
                     search: query.search || undefined,
-                    companyId: query.companyId || undefined,
-                    branchId: query.branchId || undefined,
                     departmentId: query.departmentId || undefined,
                     status: query.status,
                     sortBy: query.sortBy,
@@ -91,8 +84,6 @@ export function usePositionList() {
 
     function clearFilters() {
         query.search = ""
-        query.companyId = ""
-        query.branchId = ""
         query.departmentId = ""
         query.status = "ALL"
 
