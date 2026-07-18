@@ -22,6 +22,19 @@ const optionalDateSchema = z.preprocess(
 
 const requiredDateSchema = z.coerce.date()
 
+const adultDateSchema = optionalDateSchema.refine(
+    (value) => {
+        if (!value) return true
+
+        const maximumBirthDate = new Date()
+        maximumBirthDate.setHours(0, 0, 0, 0)
+        maximumBirthDate.setFullYear(maximumBirthDate.getFullYear() - 18)
+
+        return value <= maximumBirthDate
+    },
+    { message: "Employee must be at least 18 years old." },
+)
+
 const codeSchema = z
     .string()
     .trim()
@@ -52,6 +65,16 @@ const phoneSchema = z
     .string()
     .trim()
     .max(40)
+    .regex(/^\d*$/, { message: "Phone number must contain digits only." })
+    .optional()
+
+const nationalitySchema = z
+    .string()
+    .trim()
+    .max(120)
+    .regex(/^[\p{L}\s'-]*$/u, {
+        message: "Nationality must contain text only.",
+    })
     .optional()
 
 const optionalBooleanSchema = (defaultValue = false) =>
@@ -138,7 +161,7 @@ export const employeeCreateSchema = z.object({
     englishLastName: optionalTextSchema(120),
     displayName: optionalTextSchema(240),
     gender: z.enum(["MALE", "FEMALE", "OTHER", "UNKNOWN"]).optional(),
-    dateOfBirth: optionalDateSchema.optional(),
+    dateOfBirth: adultDateSchema.optional(),
 
     email: emailSchema.optional(),
     phoneNumber: phoneSchema,
@@ -152,7 +175,7 @@ export const employeeCreateSchema = z.object({
 
     education: optionalTextSchema(120),
     religion: optionalTextSchema(120),
-    nationality: optionalTextSchema(120),
+    nationality: nationalitySchema,
 
     birthAddress: addressSchema,
     permanentAddress: addressSchema,

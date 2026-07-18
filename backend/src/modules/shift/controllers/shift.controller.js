@@ -45,13 +45,13 @@ export async function listShiftsController(req, res) {
 }
 
 export async function lookupShiftsController(req, res) {
-    const items = await lookupShifts({
+    const result = await lookupShifts({
         query: req.validatedQuery,
         user: req.auth.user,
     })
 
     return sendSuccess(req, res, {
-        data: { items },
+        data: result,
     })
 }
 

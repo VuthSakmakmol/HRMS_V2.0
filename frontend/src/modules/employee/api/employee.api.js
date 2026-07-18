@@ -105,13 +105,24 @@ async function fetchPage(endpoint, params = {}) {
         },
     })
 
-    return response.data.data?.items ?? []
+    const payload = response?.data?.data
+
+    if (Array.isArray(payload)) return payload
+    if (Array.isArray(payload?.items)) return payload.items
+
+    // Some organization endpoints use an entity-specific collection key.
+    // Normalize every lookup to an array before it reaches the form.
+    const collection = Object.values(payload || {}).find(Array.isArray)
+    return collection || []
 }
 
 async function fetchOptional(endpoints, params = {}) {
     for (const endpoint of endpoints) {
         try { return await fetchPage(endpoint, params) }
-        catch (error) { if (![404, 422].includes(error?.response?.status)) throw error }
+        catch (error) {
+            const status = error?.status || error?.response?.status
+            if (![404, 422].includes(status)) throw error
+        }
     }
     return []
 }

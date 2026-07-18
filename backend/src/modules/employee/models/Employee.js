@@ -122,8 +122,8 @@ const employeeSchema = new Schema(
         dateOfBirth: { type: Date, default: null },
 
         email: { type: String, trim: true, lowercase: true, maxlength: 180, default: "" },
-        phoneNumber: { type: String, trim: true, maxlength: 40, default: "" },
-        agentPhoneNumber: { type: String, trim: true, maxlength: 40, default: "" },
+        phoneNumber: { type: String, trim: true, maxlength: 40, match: /^\d*$/, default: "" },
+        agentPhoneNumber: { type: String, trim: true, maxlength: 40, match: /^\d*$/, default: "" },
         agentPerson: { type: String, trim: true, maxlength: 160, set: normalizeText, default: "" },
         note: { type: String, trim: true, maxlength: 1000, set: normalizeText, default: "" },
 
@@ -133,11 +133,11 @@ const employeeSchema = new Schema(
             default: "UNKNOWN",
         },
         spouseName: { type: String, trim: true, maxlength: 160, set: normalizeText, default: "" },
-        spouseContactNumber: { type: String, trim: true, maxlength: 40, default: "" },
+        spouseContactNumber: { type: String, trim: true, maxlength: 40, match: /^\d*$/, default: "" },
 
         education: { type: String, trim: true, maxlength: 120, set: normalizeText, default: "" },
         religion: { type: String, trim: true, maxlength: 120, set: normalizeText, default: "" },
-        nationality: { type: String, trim: true, maxlength: 120, set: normalizeText, default: "" },
+        nationality: { type: String, trim: true, maxlength: 120, match: /^[\p{L}\s'-]*$/u, set: normalizeText, default: "" },
 
         birthAddress: { type: addressSchema, default: () => ({}) },
         permanentAddress: { type: addressSchema, default: () => ({}) },

@@ -10,11 +10,11 @@ export function createEmptyEmployeeForm() {
         employeeCode: "", profileImageUrl: "", createAccount: true, defaultRoleId: null,
         khmerFirstName: "", khmerLastName: "", englishFirstName: "", englishLastName: "", displayName: "",
         gender: "UNKNOWN", dateOfBirth: "", email: "", phoneNumber: "", agentPhoneNumber: "", agentPerson: "", note: "",
-        maritalStatus: "UNKNOWN", spouseName: "", spouseContactNumber: "", education: "", religion: "", nationality: "Khmer",
+        maritalStatus: "UNKNOWN", spouseName: "", spouseContactNumber: "", education: "", religion: "", nationality: "",
         birthAddress: emptyAddress(), permanentAddress: emptyAddress(),
         companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "",
-        joinDate: "", employmentStatus: "WORKING", resignDate: "", resignReason: "", exitReasonId: null, remark: "",
-        documents: emptyDocuments(), sourceOfHiring: "", recruitmentChannelId: null, introducerEmployeeId: null,
+        joinDate: "", employmentStatus: "WORKING", resignDate: "", resignReason: "", exitReasonId: null,
+        documents: emptyDocuments(), recruitmentChannelId: null, introducerEmployeeId: null,
         employeeTypeId: null, employeeTypeChildId: null, employeeTypeChildCode: "", employeeTypeChildName: "",
         machineSkills: { singleNeedle: 0, overlock: 0, coverstitch: 0, totalMachines: 0 },
         approvalPolicyId: null, recordStatus: "ACTIVE",
@@ -44,12 +44,24 @@ export function useEmployeeForm() {
         saving.value = true; errors.value = {}
         try {
             const payload = structuredClone(form)
+            delete payload.sourceOfHiring
+            delete payload.remark
+            delete payload.employeeTypeChildCode
+            delete payload.employeeTypeChildName
+            if (payload.maritalStatus !== "MARRIED") {
+                payload.spouseName = ""
+                payload.spouseContactNumber = ""
+            }
+            if (!payload.resignDate) {
+                payload.exitReasonId = null
+                payload.resignReason = ""
+            }
             if (editing.value) { delete payload.companyId; delete payload.branchId; delete payload.createAccount; delete payload.defaultRoleId }
             const employee = editing.value ? await updateEmployee(employeeId.value, payload) : await createEmployee(payload)
             visible.value = false
             return employee
         } catch (error) {
-            errors.value = error?.response?.data?.error?.fields ?? {}
+            errors.value = error?.fields ?? error?.response?.data?.error?.fields ?? {}
             throw error
         } finally { saving.value = false }
     }

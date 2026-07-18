@@ -20,5 +20,96 @@ const components = [EmployeeBasicSection, EmployeeContactSection, EmployeeAssign
   <section class="employee-form__content"><component :is="components[activeSection]" :form="form" :errors="errors" :options="options" :disabled="disabled" :editing="editing" @clear-error="emit('clear-error',$event)" @company-change="emit('company-change')" @branch-change="emit('branch-change')" @department-change="emit('department-change')"/></section>
 </div></template>
 <style scoped>
-.employee-form{display:grid;gap:1rem}.employee-form__steps{display:flex;gap:.45rem;padding-bottom:.75rem;overflow-x:auto;border-bottom:1px solid var(--p-content-border-color,#e2e8f0)}.employee-form__steps :deep(.p-button){flex:0 0 auto}.employee-form__content{min-height:20rem}.employee-form :deep(.employee-section-grid){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}.employee-form :deep(.enterprise-form-field){display:grid;min-width:0;gap:.3rem}.employee-form :deep(.enterprise-form-field>span){color:var(--p-text-color,#334155);font-size:.75rem;font-weight:600}.employee-form :deep(.enterprise-form-field small){color:var(--p-red-500,#ef4444);font-size:.7rem}.employee-form :deep(.enterprise-form-field--full){grid-column:1/-1}.employee-form :deep(.p-inputtext),.employee-form :deep(.p-select),.employee-form :deep(.p-inputnumber),.employee-form :deep(.p-inputnumber-input),.employee-form :deep(.p-textarea),.employee-form :deep(.p-datepicker),.employee-form :deep(.internal-calendar-picker){width:100%;min-width:0}.employee-form :deep(.employee-form-checkbox){display:flex;align-items:center;align-self:end;gap:.5rem;min-height:2.25rem}@media(max-width:680px){.employee-form :deep(.employee-section-grid){grid-template-columns:minmax(0,1fr)}.employee-form :deep(.enterprise-form-field--full){grid-column:auto}}
+.employee-form {
+    display: grid;
+    width: 100%;
+    min-height: 0;
+    flex: 1 1 auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    overflow: hidden;
+}
+
+.employee-form__steps {
+    display: flex;
+    gap: 0.4rem;
+    padding-bottom: 0.6rem;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--p-content-border-color, #e2e8f0);
+}
+
+.employee-form__steps :deep(.p-button) {
+    min-height: 2rem;
+    flex: 0 0 auto;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.76rem;
+}
+
+.employee-form__content {
+    min-height: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+}
+
+.employee-form :deep(.employee-section-grid) {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.employee-form :deep(.enterprise-form-field) {
+    display: grid;
+    min-width: 0;
+    gap: 0.3rem;
+}
+
+.employee-form :deep(.enterprise-form-field > span) {
+    color: var(--p-text-color, #334155);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.employee-form :deep(.enterprise-form-field small) {
+    color: var(--p-red-500, #ef4444);
+    font-size: 0.7rem;
+}
+
+.employee-form :deep(.enterprise-form-field--full) {
+    grid-column: 1 / -1;
+}
+
+.employee-form :deep(.p-inputtext),
+.employee-form :deep(.p-select),
+.employee-form :deep(.p-inputnumber),
+.employee-form :deep(.p-inputnumber-input),
+.employee-form :deep(.p-textarea),
+.employee-form :deep(.p-datepicker),
+.employee-form :deep(.internal-calendar-picker) {
+    width: 100%;
+    min-width: 0;
+}
+
+.employee-form :deep(.employee-form-checkbox) {
+    display: flex;
+    min-height: 2.25rem;
+    align-items: center;
+    align-self: end;
+    gap: 0.5rem;
+}
+
+@media (max-width: 1000px) {
+    .employee-form :deep(.employee-section-grid) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 680px) {
+    .employee-form :deep(.employee-section-grid) {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .employee-form :deep(.enterprise-form-field--full) {
+        grid-column: auto;
+    }
+}
 </style>

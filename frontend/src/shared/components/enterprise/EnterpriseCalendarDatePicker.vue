@@ -13,6 +13,7 @@ import {
 const RESOLVE_CACHE_TTL_MS = 10 * 60 * 1000
 const resolveCache = new Map()
 const rangeCache = new Map()
+const rangeRequestCache = new Map()
 
 const props = defineProps({
     modelValue: {
@@ -123,7 +124,7 @@ const normalizedMinDate = computed(() => toDate(props.minDate))
 const normalizedMaxDate = computed(() => toDate(props.maxDate))
 
 const shouldResolvePanelHighlights = computed(
-    () => props.showStatus && props.showPanelHighlights,
+    () => props.showPanelHighlights,
 )
 
 const statusSeverity = computed(() => getCalendarDaySeverity(resolvedDay.value))
@@ -401,12 +402,23 @@ async function resolveVisibleMonth() {
     rangeLoading.value = true
 
     try {
-        const payload = await resolveCalendarRange({
-            startDate,
-            endDate,
-            companyId: props.companyId || undefined,
-            branchId: props.branchId || undefined,
-        })
+        const cacheKey = buildRangeCacheKey(startDate, endDate)
+        let pendingRequest = rangeRequestCache.get(cacheKey)
+
+        if (!pendingRequest) {
+            pendingRequest = resolveCalendarRange({
+                startDate,
+                endDate,
+                companyId: props.companyId || undefined,
+                branchId: props.branchId || undefined,
+            }).finally(() => {
+                rangeRequestCache.delete(cacheKey)
+            })
+
+            rangeRequestCache.set(cacheKey, pendingRequest)
+        }
+
+        const payload = await pendingRequest
 
         if (requestId !== rangeRequestSequence.value) {
             return

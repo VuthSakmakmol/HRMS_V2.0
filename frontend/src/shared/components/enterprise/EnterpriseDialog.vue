@@ -47,6 +47,7 @@ const emit = defineEmits(["update:visible", "hide"])
 
 <style scoped>
 :global(.enterprise-dialog--fullscreen) {
+    display: flex !important;
     width: 100vw !important;
     max-width: 100vw !important;
     height: 100vh !important;
@@ -54,16 +55,21 @@ const emit = defineEmits(["update:visible", "hide"])
     margin: 0 !important;
     border: 0 !important;
     border-radius: 0 !important;
+    flex-direction: column;
 }
 
 :global(.enterprise-dialog--fullscreen .p-dialog-content) {
+    display: flex;
     min-height: 0;
     flex: 1 1 auto;
     overflow: hidden;
 }
 
 :global(.enterprise-dialog--fullscreen .enterprise-dialog__body) {
+    display: flex;
     height: 100%;
+    width: 100%;
     min-height: 0;
+    flex: 1 1 auto;
 }
 </style>

@@ -484,6 +484,8 @@ export function serializeEmployee(employee) {
         gender: raw.gender || "UNKNOWN",
         dateOfBirth: raw.dateOfBirth,
         age: ageFromDate(raw.dateOfBirth),
+        dateOfBirth: raw.dateOfBirth,
+        age: ageFromDate(raw.dateOfBirth),
         email: raw.email || "",
         phoneNumber: raw.phoneNumber || "",
         agentPhoneNumber: raw.agentPhoneNumber || "",
@@ -495,6 +497,8 @@ export function serializeEmployee(employee) {
         education: raw.education || "",
         religion: raw.religion || "",
         nationality: raw.nationality || "",
+        birthAddressDetail: raw.birthAddress?.detail || "",
+        permanentAddressDetail: raw.permanentAddress?.detail || "",
         birthAddress: serializeAddress(raw.birthAddress),
         permanentAddress: serializeAddress(raw.permanentAddress),
         companyId: raw.companyId?._id?.toString?.() || raw.companyId?.id || raw.companyId?.toString?.(),
@@ -570,13 +574,27 @@ export function serializeEmployeeListItem(employee) {
         joinDate: raw.joinDate,
         employmentStatus: raw.employmentStatus,
         recordStatus: raw.recordStatus,
+        idCardNo: raw.documents?.idCardNo || "",
+        idCardExpireDate: raw.documents?.idCardExpireDate || null,
+        nssfNo: raw.documents?.nssfNo || "",
+        passportNo: raw.documents?.passportNo || "",
+        passportExpireDate: raw.documents?.passportExpireDate || null,
+        visaExpireDate: raw.documents?.visaExpireDate || null,
+        medicalCheckNo: raw.documents?.medicalCheckNo || "",
+        medicalCheckDate: raw.documents?.medicalCheckDate || null,
+        workingBookNo: raw.documents?.workingBookNo || "",
+        singleNeedle: Number(raw.machineSkills?.singleNeedle || 0),
+        overlock: Number(raw.machineSkills?.overlock || 0),
+        coverstitch: Number(raw.machineSkills?.coverstitch || 0),
+        totalMachines: Number(raw.machineSkills?.totalMachines || 0),
+        note: raw.note || "",
         updatedAt: raw.updatedAt,
     }
 }
 
 function employeeListPopulate(query) {
     return query
-        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender phoneNumber email nationality companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName joinDate employmentStatus recordStatus updatedAt")
+        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender dateOfBirth phoneNumber email nationality birthAddress.detail permanentAddress.detail companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName joinDate employmentStatus recordStatus documents machineSkills note updatedAt")
         .populate({ path: "companyId", select: "code displayName legalName status" })
         .populate({ path: "branchId", select: "code name shortName status" })
         .populate({ path: "departmentId", select: "code name shortName status" })
@@ -747,6 +765,22 @@ function buildDisplayName(payload) {
 function buildEmployeePayload(payload, accountId) {
     const { createAccount, defaultRoleId, ...employeePayload } = payload
     const base = { ...employeePayload, updatedByAccountId: accountId }
+
+    delete base.sourceOfHiring
+    delete base.remark
+    delete base.employeeTypeChildCode
+    delete base.employeeTypeChildName
+
+    if (payload.maritalStatus && payload.maritalStatus !== "MARRIED") {
+        base.spouseName = ""
+        base.spouseContactNumber = ""
+    }
+
+    if (Object.hasOwn(payload, "resignDate") && !payload.resignDate) {
+        base.exitReasonId = null
+        base.resignReason = ""
+    }
+
     if (payload.employeeCode || payload.englishFirstName || payload.englishLastName || payload.khmerFirstName || payload.khmerLastName || payload.displayName) {
         base.displayName = buildDisplayName({ ...payload, displayName: payload.displayName })
     }
@@ -824,7 +858,6 @@ export async function createEmployee({ payload, user }) {
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
             recruitmentChannelId: recruitmentChannel?._id || null,
-            sourceOfHiring: recruitmentChannel ? recruitmentChannel.name : payload.sourceOfHiring || "",
             exitReasonId: exitReason?._id || null,
             resignReason: exitReason ? exitReason.name : payload.resignReason || "",
             displayName: buildDisplayName(payload),
@@ -886,7 +919,6 @@ export async function updateEmployee({ employeeId, payload, user }) {
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
             recruitmentChannelId: recruitmentChannel?._id || null,
-            sourceOfHiring: recruitmentChannel ? recruitmentChannel.name : payload.sourceOfHiring || "",
             exitReasonId: exitReason?._id || null,
             resignReason: exitReason ? exitReason.name : payload.resignReason || "",
         }

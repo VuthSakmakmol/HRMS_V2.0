@@ -861,19 +861,84 @@ export async function resolveCalendarRange({ query, user }) {
         return cached
     }
 
+    const resolvedScope = await resolveBranchCompany({
+        companyId: query.companyId,
+        branchId: query.branchId,
+        user,
+    })
+
+    if (resolvedScope.companyId && !query.branchId) {
+        await ensureCompanyExists({
+            companyId: resolvedScope.companyId,
+            user,
+        })
+    }
+
+    const scopeKeys = ["GLOBAL"]
+
+    if (resolvedScope.companyId) {
+        scopeKeys.push(`COMPANY:${resolvedScope.companyId}`)
+    }
+
+    if (resolvedScope.branchId) {
+        scopeKeys.push(`BRANCH:${resolvedScope.branchId}`)
+    }
+
+    // Load the complete visible calendar range once. The previous
+    // implementation called resolveCalendarDay sequentially and executed one
+    // database query per date, making a normal 42-cell month take seconds.
+    const overrides = await CalendarDay.find({
+        dateKey: {
+            $gte: query.startDate,
+            $lte: query.endDate,
+        },
+        scopeKey: { $in: scopeKeys },
+        status: "ACTIVE",
+    })
+        .populate({
+            path: "companyId",
+            select: "code displayName legalName status",
+        })
+        .populate({
+            path: "branchId",
+            select: "companyId code name shortName status isHeadOffice",
+        })
+        .lean()
+
+    const overridesByDate = new Map()
+
+    for (const override of overrides) {
+        if (!overridesByDate.has(override.dateKey)) {
+            overridesByDate.set(override.dateKey, new Map())
+        }
+
+        overridesByDate.get(override.dateKey).set(override.scopeKey, override)
+    }
+
     const items = []
     let current = query.startDate
 
     while (current <= query.endDate) {
-        items.push(
-            await resolveCalendarDay({
-                query: {
-                    date: current,
-                    companyId: query.companyId,
-                    branchId: query.branchId,
-                },
-                user,
-            }),
+        const dateOverrides = overridesByDate.get(current)
+        let resolvedDay = null
+
+        for (const scopeKey of [...scopeKeys].reverse()) {
+            if (dateOverrides?.has(scopeKey)) {
+                resolvedDay = serializeCalendarDay(
+                    dateOverrides.get(scopeKey),
+                    "OVERRIDE",
+                )
+                break
+            }
+        }
+
+        resolvedDay ||= getDefaultCalendarDay(current)
+        items.push(resolvedDay)
+
+        setCache(
+            `${CALENDAR_CACHE_PREFIX}resolve:day:${current}:${resolvedScope.companyId || ""}:${resolvedScope.branchId || ""}`,
+            resolvedDay,
+            10 * 60_000,
         )
 
         current = addDays(current, 1)

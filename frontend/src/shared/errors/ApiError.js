@@ -15,6 +15,17 @@ export function toApiError(error) {
         return error
     }
 
+    // Request cancellation is expected when a lookup is replaced or its
+    // component is unmounted. Keep the original cancellation so callers can
+    // quietly ignore it instead of reporting a false API failure.
+    if (
+        error?.name === "CanceledError" ||
+        error?.name === "AbortError" ||
+        error?.code === "ERR_CANCELED"
+    ) {
+        return error
+    }
+
     const payload = error?.response?.data?.error || {}
 
     return new ApiError({
