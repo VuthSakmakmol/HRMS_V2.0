@@ -16,36 +16,6 @@ function normalizeId(value) {
     return String(value.id || value._id || value)
 }
 
-function normalizeCompany(item = {}) {
-    return {
-        ...item,
-        id: normalizeId(item.id || item._id),
-        displayName:
-            item.displayName ||
-            item.name ||
-            item.legalName ||
-            item.code ||
-            "",
-    }
-}
-
-function normalizeBranch(item = {}) {
-    return {
-        ...item,
-        id: normalizeId(item.id || item._id),
-        companyId: normalizeId(
-            item.companyId ||
-            item.company?.id ||
-            item.company?._id,
-        ),
-        name:
-            item.name ||
-            item.displayName ||
-            item.code ||
-            "",
-    }
-}
-
 function normalizePosition(item = {}) {
     return {
         ...item,
@@ -98,52 +68,6 @@ export async function listEmployeeTypes(params = {}, signal) {
 export async function createEmployeeType(payload) { return unwrapData(await apiClient.post(ENDPOINT, payload)).employeeType }
 export async function updateEmployeeType(id, payload) { return unwrapData(await apiClient.patch(`${ENDPOINT}/${id}`, payload)).employeeType }
 export async function archiveEmployeeType(id) { return unwrapData(await apiClient.patch(`${ENDPOINT}/${id}/archive`)).employeeType }
-export async function lookupCompanies(params = {}, signal) {
-    const data = unwrapData(
-        await apiClient.get("/organization/companies/lookup", {
-            params,
-            signal,
-        }),
-    )
-
-    return Array.isArray(data.items)
-        ? data.items.map(normalizeCompany)
-        : []
-}
-
-export async function lookupBranches(params = {}, signal) {
-    const data = unwrapData(
-        await apiClient.get("/organization/branches/lookup", {
-            params,
-            signal,
-        }),
-    )
-
-    return Array.isArray(data.items)
-        ? data.items.map(normalizeBranch)
-        : []
-}
-
-export async function lookupBranchesByCompany(companyId, signal) {
-    if (!companyId) {
-        return []
-    }
-
-    const data = unwrapData(
-        await apiClient.get("/organization/branches/lookup", {
-            params: {
-                companyId,
-                limit: 100,
-            },
-            signal,
-        }),
-    )
-
-    return Array.isArray(data.items)
-        ? data.items.map(normalizeBranch)
-        : []
-}
-
 export async function lookupPositionPage(params = {}, signal) {
     const data = unwrapData(
         await apiClient.get("/organization/positions/lookup", {

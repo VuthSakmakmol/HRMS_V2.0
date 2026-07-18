@@ -57,10 +57,13 @@ export function useShiftForm() {
         })
     }
 
-    function openCreate() {
+    function openCreate(workspace = {}) {
         mode.value = "create"
         selectedId.value = null
-        assign()
+        assign({
+            companyId: workspace.companyId || "",
+            branchId: workspace.branchId || "",
+        })
         clearErrors()
         visible.value = true
     }

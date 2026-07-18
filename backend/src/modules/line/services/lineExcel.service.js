@@ -455,7 +455,12 @@ function makeDepartmentPositionKey(departmentId, positionCode) {
     return `${departmentId.toString()}::${positionCode}`
 }
 
-export async function importLinesFromRows({ rows, parseErrors, user }) {
+export async function importLinesFromRows({
+    rows,
+    parseErrors,
+    user,
+    workspace,
+}) {
     const summary = {
         totalRows: rows.length,
         created: 0,
@@ -476,7 +481,12 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
     const companyMap = await buildCompanyMap(companyCodes)
 
     for (const row of rows) {
-        if (!companyMap.has(row.companyCode)) {
+        const company = companyMap.get(row.companyCode)
+
+        if (
+            !company ||
+            company._id.toString() !== workspace.companyId.toString()
+        ) {
             summary.errors.push(
                 buildImportError(
                     row.rowNumber,
@@ -507,7 +517,10 @@ export async function importLinesFromRows({ rows, parseErrors, user }) {
             `${company._id.toString()}::${row.branchCode}`,
         )
 
-        if (!branch) {
+        if (
+            !branch ||
+            branch._id.toString() !== workspace.branchId.toString()
+        ) {
             summary.errors.push(
                 buildImportError(
                     row.rowNumber,

@@ -15,13 +15,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     disabled: {
         type: Boolean,
@@ -35,7 +35,6 @@ const props = defineProps({
 
 const emit = defineEmits([
     "clear-error",
-    "company-change",
 ])
 
 const { t } = useI18n()
@@ -96,15 +95,9 @@ function normalizeCode() {
                         {{ t("organization.shift.company") }} *
                     </span>
 
-                    <Select
-                        v-model="form.companyId"
-                        :options="companies"
-                        option-label="displayName"
-                        option-value="id"
-                        filter
-                        :placeholder="t('organization.shift.selectCompany')"
-                        :disabled="disabled || editing"
-                        @change="emit('company-change')"
+                    <InputText
+                        :model-value="companyName"
+                        disabled
                     />
 
                     <small v-if="message('companyId')">
@@ -117,15 +110,9 @@ function normalizeCode() {
                         {{ t("organization.shift.branch") }} *
                     </span>
 
-                    <Select
-                        v-model="form.branchId"
-                        :options="branches"
-                        option-label="name"
-                        option-value="id"
-                        filter
-                        :placeholder="t('organization.shift.selectBranch')"
-                        :disabled="disabled || editing || !form.companyId"
-                        @change="emit('clear-error', 'branchId')"
+                    <InputText
+                        :model-value="branchName"
+                        disabled
                     />
 
                     <small v-if="message('branchId')">

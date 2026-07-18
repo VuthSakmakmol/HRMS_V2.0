@@ -18,7 +18,7 @@ export function useCalendarForm() {
     const form = reactive(createEmptyCalendarForm())
     const isEdit = computed(() => mode.value === "edit")
     function replaceForm(day = {}) { Object.assign(form, createEmptyCalendarForm(), day, { companyId: day.companyId ?? day.company?.id ?? "", branchId: day.branchId ?? day.branch?.id ?? "", isPaidHoliday: Boolean(day.isPaidHoliday), status: day.status === "INACTIVE" ? "INACTIVE" : "ACTIVE" }) }
-    function openCreate() { mode.value = "create"; calendarDayId.value = null; errors.value = {}; replaceForm() }
+    function openCreate(workspace = {}) { mode.value = "create"; calendarDayId.value = null; errors.value = {}; replaceForm({ scopeLevel: "BRANCH", companyId: workspace.companyId || "", branchId: workspace.branchId || "" }) }
     function openEdit(day) { mode.value = "edit"; calendarDayId.value = day.id ?? day._id; errors.value = {}; replaceForm(day) }
     function clearError(field) { const next = { ...errors.value }; delete next[field]; errors.value = next }
     async function save() {

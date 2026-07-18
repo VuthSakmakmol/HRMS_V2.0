@@ -161,6 +161,7 @@ async function processLineImportJob({
     fileBuffer,
     user,
     req,
+    workspace,
 }) {
     try {
         updateImportJob(jobId, {
@@ -185,6 +186,7 @@ async function processLineImportJob({
             rows,
             parseErrors: errors,
             user,
+            workspace,
             onProgress(progress) {
                 updateImportJob(jobId, {
                     status: "PROCESSING",
@@ -227,6 +229,33 @@ export async function startLineImportJobController(req, res) {
         })
     }
 
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_LINE_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.line.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.line.workspaceRequired"],
+                branchId: ["errors.organization.line.workspaceRequired"],
+            },
+        })
+    }
+
+    await listLines({
+        query: {
+            ...req.validatedQuery,
+            companyId,
+            branchId,
+            departmentId: undefined,
+            positionId: undefined,
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
     const job = createImportJob({
         module: "ORGANIZATION.LINE",
         ownerAccountId: req.auth.user.accountId,
@@ -255,6 +284,7 @@ export async function startLineImportJobController(req, res) {
             fileBuffer,
             user,
             req,
+            workspace: { companyId, branchId },
         })
     })
 

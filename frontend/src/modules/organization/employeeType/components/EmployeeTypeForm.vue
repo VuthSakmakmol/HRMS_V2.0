@@ -20,13 +20,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     positions: {
         type: Array,
@@ -50,8 +50,6 @@ const emit = defineEmits([
     "clear-error",
     "add-child",
     "remove-child",
-    "company-change",
-    "branch-change",
 ])
 
 const { t } = useI18n()
@@ -82,18 +80,6 @@ const structureOptions = computed(() => [
         value: "CHILD",
     },
 ])
-
-const hasSelectedCompany = computed(() => {
-    return Boolean(String(props.form.companyId || "").trim())
-})
-
-const branchOptions = computed(() => {
-    if (!props.form.companyId) {
-        return []
-    }
-
-    return props.branches
-})
 
 const companyPositions = computed(() => {
     if (!props.form.companyId || !props.form.branchId) {
@@ -149,16 +135,9 @@ function clearFieldError(field) {
                         {{ t("organization.employeeType.company") }} *
                     </span>
 
-                    <Select
-                        v-model="form.companyId"
-                        :options="companies"
-                        option-label="displayName"
-                        option-value="id"
-                        filter
-                        :virtual-scroller-options="{ itemSize: 38 }"
-                        :max-selected-labels="3"
-                        :disabled="disabled || editing"
-                        @change="emit('company-change', form.companyId)"
+                    <InputText
+                        :model-value="companyName"
+                        disabled
                     />
 
                     <small v-if="message('companyId')">
@@ -171,17 +150,9 @@ function clearFieldError(field) {
                         {{ t("organization.employeeType.branch") }} *
                     </span>
 
-                    <Select
-                        v-model="form.branchId"
-                        :options="branchOptions"
-                        option-label="name"
-                        option-value="id"
-                        filter
-                        :virtual-scroller-options="{ itemSize: 38 }"
-                        :disabled="disabled || !hasSelectedCompany"
-                        :placeholder="t('organization.employeeType.selectBranch')"
-                        show-clear
-                        @change="emit('branch-change', form.branchId)"
+                    <InputText
+                        :model-value="branchName"
+                        disabled
                     />
 
                     <small v-if="message('branchId')">

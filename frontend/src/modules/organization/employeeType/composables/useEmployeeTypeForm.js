@@ -5,7 +5,7 @@ function normalizeCode(value) { return String(value || "").trim().replace(/\s+/g
 export function useEmployeeTypeForm() {
  const form=reactive(emptyForm()), errors=reactive({}), saving=ref(false), mode=ref("create"), employeeTypeId=ref(null); const isEdit=computed(()=>mode.value==="edit")
  function reset(){Object.assign(form,emptyForm());Object.keys(errors).forEach(k=>delete errors[k]);employeeTypeId.value=null}
- function openCreate(){reset();mode.value="create"}
+ function openCreate(workspace={}){reset();mode.value="create";form.companyId=workspace.companyId||"";form.branchId=workspace.branchId||""}
  function openEdit(row){reset();mode.value="edit";employeeTypeId.value=row.id;Object.assign(form,{companyId:row.companyId||row.company?.id||"",branchId:row.branchId||row.branch?.id||"",code:row.code||"",name:row.name||"",structureMode:row.children?.length?"CHILD":"DIRECT",dashboardCategory:row.dashboardCategory||"",positionAssignmentMode:row.positionAssignmentMode||"SPECIFIC_POSITIONS",positionIds:(row.positionIds||[]).map(x=>x.id||x._id||x),children:(row.children||[]).map(c=>({id:c.id,code:c.code||"",name:c.name||"",dashboardCategory:c.dashboardCategory||"",positionAssignmentMode:c.positionAssignmentMode||"SPECIFIC_POSITIONS",positionIds:(c.positionIds||[]).map(x=>x.id||x._id||x)})),description:row.description||"",status:row.status==="ARCHIVED"?"INACTIVE":row.status||"ACTIVE"})}
  function addChild(){form.structureMode="CHILD";form.positionIds=[];form.children.push({code:"",name:"",dashboardCategory:"",positionAssignmentMode:"SPECIFIC_POSITIONS",positionIds:[]})}
  function removeChild(i){form.children.splice(i,1)} function clearError(f){delete errors[f]}

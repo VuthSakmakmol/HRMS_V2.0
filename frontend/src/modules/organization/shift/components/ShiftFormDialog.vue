@@ -23,13 +23,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     saving: {
         type: Boolean,
@@ -42,7 +42,6 @@ const emit = defineEmits([
     "submit",
     "close",
     "clear-error",
-    "company-change",
 ])
 
 const { t } = useI18n()
@@ -74,12 +73,11 @@ function closeDialog() {
         <ShiftForm
             :form="form"
             :errors="errors"
-            :companies="companies"
-            :branches="branches"
+            :company-name="companyName"
+            :branch-name="branchName"
             :disabled="saving"
             :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
-            @company-change="emit('company-change')"
         />
 
         <template #footer>

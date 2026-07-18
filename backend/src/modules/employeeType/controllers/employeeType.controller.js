@@ -149,7 +149,7 @@ export async function exportEmployeeTypesController(req, res) {
     return res.status(200).send(Buffer.from(buffer))
 }
 
-async function processEmployeeTypeImportJob({ jobId, fileBuffer, user, req }) {
+async function processEmployeeTypeImportJob({ jobId, fileBuffer, user, req, workspace }) {
     try {
         updateImportJob(jobId, {
             status: "PROCESSING",
@@ -170,6 +170,7 @@ async function processEmployeeTypeImportJob({ jobId, fileBuffer, user, req }) {
             rows,
             parseErrors: errors,
             user,
+            workspace,
             onProgress(progress) {
                 updateImportJob(jobId, {
                     status: "PROCESSING",
@@ -208,6 +209,33 @@ export async function startEmployeeTypeImportJobController(req, res) {
         })
     }
 
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_EMPLOYEE_TYPE_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.employeeType.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.employeeType.workspaceRequired"],
+                branchId: ["errors.organization.employeeType.workspaceRequired"],
+            },
+        })
+    }
+
+    await listEmployeeTypes({
+        query: {
+            ...req.validatedQuery,
+            companyId,
+            branchId,
+            departmentId: undefined,
+            positionId: undefined,
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
     const job = createImportJob({
         module: MODULE,
         ownerAccountId: req.auth.user.accountId,
@@ -231,6 +259,7 @@ export async function startEmployeeTypeImportJobController(req, res) {
             fileBuffer,
             user,
             req,
+            workspace: { companyId, branchId },
         })
     })
 

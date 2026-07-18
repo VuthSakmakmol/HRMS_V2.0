@@ -14,4 +14,61 @@ export async function updateCalendarDayController(req, res) { const id = req.val
 export async function archiveCalendarDayController(req, res) { const id = req.validatedParams.calendarDayId; const before = await getCalendarDayById({ calendarDayId: id, user: req.auth.user }); const day = await archiveCalendarDay({ calendarDayId: id, user: req.auth.user }); await writeAuditLog({ req, user: req.auth.user, module: "CALENDAR.DAY", action: "ARCHIVE", entityType: "CalendarDay", entityId: day.id, before, after: day }); return sendSuccess(req, res, { data: { day } }) }
 export async function downloadCalendarTemplateController(req, res) { const workbook = await buildCalendarImportTemplateWorkbook(); const buffer = await workbook.xlsx.writeBuffer(); excel(res, "calendar-import-template.xlsx"); return res.status(200).send(Buffer.from(buffer)) }
 export async function exportCalendarDaysController(req, res) { const days = await getCalendarExportRows({ query: req.validatedQuery, user: req.auth.user }); const workbook = await buildCalendarExportWorkbook({ days }); const buffer = await workbook.xlsx.writeBuffer(); excel(res, "calendar-days-export.xlsx"); return res.status(200).send(Buffer.from(buffer)) }
-export async function importCalendarDaysController(req, res) { if (!req.file) throw new AppError({ statusCode: 422, code: "CALENDAR_IMPORT_FILE_REQUIRED", messageKey: "errors.calendar.import.fileRequired" }); const { rows, errors } = await parseCalendarImportWorkbook(req.file.buffer); const summary = await importCalendarDaysFromRows({ rows, parseErrors: errors, user: req.auth.user }); await writeAuditLog({ req, user: req.auth.user, module: "CALENDAR.DAY", action: "IMPORT", entityType: "CalendarImport", after: summary }); return sendSuccess(req, res, { statusCode: summary.errors?.length ? 207 : 200, data: { summary } }) }
+export async function importCalendarDaysController(req, res) {
+    if (!req.file) {
+        throw new AppError({
+            statusCode: 422,
+            code: "CALENDAR_IMPORT_FILE_REQUIRED",
+            messageKey: "errors.calendar.import.fileRequired",
+        })
+    }
+
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "CALENDAR_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.calendar.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.calendar.workspaceRequired"],
+                branchId: ["errors.organization.calendar.workspaceRequired"],
+            },
+        })
+    }
+
+    await listCalendarDays({
+        query: {
+            ...req.validatedQuery,
+            companyId,
+            branchId,
+            includeInherited: false,
+            scopeLevel: "ALL",
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
+    const { rows, errors } = await parseCalendarImportWorkbook(req.file.buffer)
+    const summary = await importCalendarDaysFromRows({
+        rows,
+        parseErrors: errors,
+        user: req.auth.user,
+        workspace: { companyId, branchId },
+    })
+
+    await writeAuditLog({
+        req,
+        user: req.auth.user,
+        module: "CALENDAR.DAY",
+        action: "IMPORT",
+        entityType: "CalendarImport",
+        after: summary,
+    })
+
+    return sendSuccess(req, res, {
+        statusCode: summary.errors?.length ? 207 : 200,
+        data: { summary },
+    })
+}

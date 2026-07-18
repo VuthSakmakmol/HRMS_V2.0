@@ -13,6 +13,7 @@ import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
@@ -23,8 +24,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadLineTemplate,
     exportLines,
-    lookupBranches,
-    lookupCompanies,
     lookupDepartments,
     lookupPositions,
 } from "../api/line.api.js"
@@ -42,15 +41,15 @@ const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+const workspaceStore = useWorkspaceStore()
 
 const list = useLineList()
 const formState = useLineForm()
 const importState = useLineImport()
 
-const companies = ref([])
-const branches = ref([])
 const departments = ref([])
-const positions = ref([])
+const filterPositions = ref([])
+const formPositionRows = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const importVisible = ref(false)
@@ -66,8 +65,6 @@ const activeFilterCount = computed(() => {
 
     for (const field of [
         "search",
-        "companyId",
-        "branchId",
         "departmentId",
         "positionId",
     ]) {
@@ -83,36 +80,12 @@ const activeFilterCount = computed(() => {
     return count
 })
 
-const companyOptions = computed(() => [
-    {
-        id: "",
-        displayName: t("organization.line.allCompanies"),
-    },
-    ...companies.value,
-])
-
-const branchOptions = computed(() => [
-    {
-        id: "",
-        name: t("organization.line.allBranches"),
-    },
-    ...branches.value.filter(
-        (branch) =>
-            !list.query.companyId ||
-            branch.companyId === list.query.companyId,
-    ),
-])
-
 const departmentOptions = computed(() => [
     {
         id: "",
         name: t("organization.line.allDepartments"),
     },
-    ...departments.value.filter(
-        (department) =>
-            (!list.query.companyId || department.companyId === list.query.companyId) &&
-            (!list.query.branchId || department.branchId === list.query.branchId),
-    ),
+    ...departments.value,
 ])
 
 const positionOptions = computed(() => [
@@ -120,36 +93,23 @@ const positionOptions = computed(() => [
         id: "",
         title: t("organization.line.allPositions"),
     },
-    ...positions.value.filter(
-        (position) =>
-            (!list.query.companyId || position.companyId === list.query.companyId) &&
-            (!list.query.branchId || position.branchId === list.query.branchId) &&
-            (!list.query.departmentId || position.departmentId === list.query.departmentId),
-    ),
+    ...filterPositions.value,
 ])
 
-const formBranches = computed(() =>
-    branches.value.filter(
-        (branch) => branch.companyId === formState.form.companyId,
-    ),
+const workspaceCompanyName = computed(() =>
+    workspaceStore.selectedCompany?.displayName ||
+    workspaceStore.selectedCompany?.legalName ||
+    workspaceStore.selectedCompany?.code ||
+    "—",
 )
 
-const formDepartments = computed(() =>
-    departments.value.filter(
-        (department) =>
-            department.companyId === formState.form.companyId &&
-            department.branchId === formState.form.branchId,
-    ),
+const workspaceBranchName = computed(() =>
+    workspaceStore.selectedBranch?.name ||
+    workspaceStore.selectedBranch?.code ||
+    "—",
 )
 
-const formPositions = computed(() =>
-    positions.value.filter(
-        (position) =>
-            position.companyId === formState.form.companyId &&
-            position.branchId === formState.form.branchId &&
-            position.departmentId === formState.form.departmentId,
-    ),
-)
+const formPositions = computed(() => formPositionRows.value)
 
 const canUpdate = computed(() =>
     authStore.hasPermission(LINE_PERMISSIONS.UPDATE),
@@ -172,21 +132,14 @@ function translatedError(error) {
 }
 
 async function loadLookups() {
-    const [companyRows, branchRows, departmentRows, positionRows] =
-        await Promise.all([
-            lookupCompanies(),
-            lookupBranches(),
-            lookupDepartments(),
-            lookupPositions(),
-        ])
-
-    companies.value = companyRows
-    branches.value = branchRows
-    departments.value = departmentRows
-    positions.value = positionRows
+    departments.value = await lookupDepartments()
 }
 
 async function load() {
+    if (!workspaceStore.ready) {
+        return
+    }
+
     try {
         await Promise.all([
             list.load(),
@@ -203,28 +156,34 @@ async function load() {
 }
 
 function openCreate() {
-    formState.openCreate()
+    formState.openCreate({
+        companyId: workspaceStore.companyId,
+        branchId: workspaceStore.branchId,
+    })
+    formPositionRows.value = []
     formVisible.value = true
 }
 
-function openEdit(row) {
+async function openEdit(row) {
     formState.openEdit(row)
+    await loadFormPositions()
     formVisible.value = true
 }
 
-function onFormCompanyChange() {
-    formState.form.branchId = ""
-    formState.form.departmentId = ""
-    formState.form.leaderPositionId = null
+async function loadFormPositions() {
+    if (!formState.form.departmentId) {
+        formPositionRows.value = []
+        return
+    }
+
+    formPositionRows.value = await lookupPositions({
+        departmentId: formState.form.departmentId,
+    })
 }
 
-function onFormBranchChange() {
-    formState.form.departmentId = ""
+async function onFormDepartmentChange() {
     formState.form.leaderPositionId = null
-}
-
-function onFormDepartmentChange() {
-    formState.form.leaderPositionId = null
+    await loadFormPositions()
 }
 
 async function saveLine() {
@@ -349,19 +308,17 @@ function formatDateTime(value) {
     }).format(date)
 }
 
-function onFilterCompanyChange() {
-    list.query.branchId = ""
-    list.query.departmentId = ""
+async function onFilterDepartmentChange() {
     list.query.positionId = ""
-}
 
-function onFilterBranchChange() {
-    list.query.departmentId = ""
-    list.query.positionId = ""
-}
+    if (!list.query.departmentId) {
+        filterPositions.value = []
+        return
+    }
 
-function onFilterDepartmentChange() {
-    list.query.positionId = ""
+    filterPositions.value = await lookupPositions({
+        departmentId: list.query.departmentId,
+    })
 }
 
 function openImport() {
@@ -396,7 +353,12 @@ async function exportData() {
 
     try {
         await exportLines({
-            ...list.query,
+            search: list.query.search || undefined,
+            departmentId: list.query.departmentId || undefined,
+            positionId: list.query.positionId || undefined,
+            status: list.query.status,
+            sortBy: list.query.sortBy,
+            sortOrder: list.query.sortOrder,
             page: 1,
             limit: 100,
         })
@@ -447,6 +409,7 @@ onMounted(load)
                         outlined
                         icon="pi pi-file-import"
                         :label="t('common.import')"
+                        :disabled="!workspaceStore.ready"
                         @click="openImport"
                     />
 
@@ -467,6 +430,7 @@ onMounted(load)
                         icon="pi pi-file-export"
                         :label="t('common.export')"
                         :loading="exporting"
+                        :disabled="!workspaceStore.ready"
                         @click="exportData"
                     />
 
@@ -474,6 +438,7 @@ onMounted(load)
                         :permission="LINE_PERMISSIONS.CREATE"
                         icon="pi pi-plus"
                         :label="t('organization.line.newLine')"
+                        :disabled="!workspaceStore.ready"
                         @click="openCreate"
                     />
                 </template>
@@ -494,29 +459,6 @@ onMounted(load)
                             </span>
                         </EnterpriseFilterField>
 
-                        <EnterpriseFilterField :label="t('organization.line.company')">
-                            <Select
-                                v-model="list.query.companyId"
-                                :options="companyOptions"
-                                option-label="displayName"
-                                option-value="id"
-                                filter
-                                @change="onFilterCompanyChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField :label="t('organization.line.branch')">
-                            <Select
-                                v-model="list.query.branchId"
-                                :options="branchOptions"
-                                option-label="name"
-                                option-value="id"
-                                filter
-                                :disabled="!list.query.companyId"
-                                @change="onFilterBranchChange"
-                            />
-                        </EnterpriseFilterField>
-
                         <EnterpriseFilterField :label="t('organization.line.department')">
                             <Select
                                 v-model="list.query.departmentId"
@@ -524,7 +466,7 @@ onMounted(load)
                                 option-label="name"
                                 option-value="id"
                                 filter
-                                :disabled="!list.query.branchId"
+                                :disabled="!workspaceStore.ready"
                                 @change="onFilterDepartmentChange"
                             />
                         </EnterpriseFilterField>
@@ -576,6 +518,7 @@ onMounted(load)
                 :permission="LINE_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
                 :label="t('organization.line.newLine')"
+                :disabled="!workspaceStore.ready"
                 @click="openCreate"
             />
         </template>
@@ -628,16 +571,14 @@ onMounted(load)
         :mode="formState.mode.value"
         :form="formState.form"
         :errors="formState.errors.value"
-        :companies="companies"
-        :branches="formBranches"
-        :departments="formDepartments"
+        :company-name="workspaceCompanyName"
+        :branch-name="workspaceBranchName"
+        :departments="departments"
         :positions="formPositions"
         :saving="formState.saving.value"
         @save="saveLine"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
-        @company-change="onFormCompanyChange"
-        @branch-change="onFormBranchChange"
         @department-change="onFormDepartmentChange"
     />
 

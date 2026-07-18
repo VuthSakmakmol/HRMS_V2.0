@@ -79,6 +79,7 @@ router.post(
     "/import-jobs",
     requirePermission(LINE_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: lineListQuerySchema }),
     asyncHandler(startLineImportJobController),
 )
 
@@ -92,6 +93,7 @@ router.post(
     "/import",
     requirePermission(LINE_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: lineListQuerySchema }),
     asyncHandler(importLinesController),
 )
 

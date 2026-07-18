@@ -1,8 +1,6 @@
 import { apiClient } from "@/shared/services/apiClient.js"
 
 const ENDPOINT = "/organization/lines"
-const COMPANY_ENDPOINT = "/organization/companies"
-const BRANCH_ENDPOINT = "/organization/branches"
 const DEPARTMENT_ENDPOINT = "/organization/departments"
 const POSITION_ENDPOINT = "/organization/positions"
 
@@ -72,12 +70,6 @@ async function lookup(endpoint, params = {}, signal) {
 
     return unwrapData(response).items ?? []
 }
-
-export const lookupCompanies = (params, signal) =>
-    lookup(COMPANY_ENDPOINT, params, signal)
-
-export const lookupBranches = (params, signal) =>
-    lookup(BRANCH_ENDPOINT, params, signal)
 
 export const lookupDepartments = (params, signal) =>
     lookup(DEPARTMENT_ENDPOINT, params, signal)

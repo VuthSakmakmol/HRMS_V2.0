@@ -8,6 +8,7 @@ import { useI18n } from "vue-i18n"
 import { useToast } from "primevue/usetoast"
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
@@ -15,8 +16,6 @@ import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilt
 import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseListControls.vue"
 import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue"
 import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
-import { lookupBranches } from "@/modules/organization/branch/api/branch.api.js"
-import { lookupCompanies } from "@/modules/organization/company/api/company.api.js"
 import {
     resolveCalendarDay,
     resolveCalendarRange,
@@ -31,22 +30,20 @@ import { createCalendarColumns } from "../config/calendar.columns.js"
 import { createCalendarDayTypeOptions, createCalendarScopeOptions, createCalendarStatusOptions } from "../config/calendar.filters.js"
 import { CALENDAR_PERMISSIONS } from "../config/calendar.permissions.js"
 
-const { t } = useI18n(), toast = useToast(), auth = useAuthStore(), ui = useUiStore()
+const { t } = useI18n(), toast = useToast(), auth = useAuthStore(), ui = useUiStore(), workspaceStore = useWorkspaceStore()
 const list = useCalendarList(), formState = useCalendarForm(), importState = useCalendarImport()
-const companies = ref([]), branches = ref([]), formVisible = ref(false), archiveVisible = ref(false), archiveCandidate = ref(null), importVisible = ref(false), exporting = ref(false), downloading = ref(false)
+const formVisible = ref(false), archiveVisible = ref(false), archiveCandidate = ref(null), importVisible = ref(false), exporting = ref(false), downloading = ref(false)
 const columns = computed(() => createCalendarColumns(t))
 const statusOptions = computed(() => createCalendarStatusOptions(t)), scopeOptions = computed(() => createCalendarScopeOptions(t)), dayTypeOptions = computed(() => createCalendarDayTypeOptions(t))
 const canUpdate = computed(() => auth.hasPermission(CALENDAR_PERMISSIONS.UPDATE)), canArchive = computed(() => auth.hasPermission(CALENDAR_PERMISSIONS.ARCHIVE))
-const activeFilterCount = computed(() => [list.query.search, list.query.startDate, list.query.endDate, list.query.companyId, list.query.branchId, list.query.scopeLevel !== "ALL", list.query.dayType !== "ALL", list.query.status !== "ALL"].filter(Boolean).length)
-const companyOptions = computed(() => [{ id: "", displayName: t("organization.calendar.day.allCompanies") }, ...companies.value])
-const branchOptions = computed(() => [{ id: "", name: t("organization.calendar.day.allBranches") }, ...branches.value.filter((x) => !list.query.companyId || x.companyId === list.query.companyId)])
-const formBranches = computed(() => branches.value.filter((x) => !formState.form.companyId || x.companyId === formState.form.companyId))
+const activeFilterCount = computed(() => [list.query.search, list.query.startDate, list.query.endDate, list.query.scopeLevel !== "ALL", list.query.dayType !== "ALL", list.query.status !== "ALL"].filter(Boolean).length)
+const workspaceCompanyName = computed(() => workspaceStore.selectedCompany?.displayName || workspaceStore.selectedCompany?.legalName || workspaceStore.selectedCompany?.code || "—")
+const workspaceBranchName = computed(() => workspaceStore.selectedBranch?.name || workspaceStore.selectedBranch?.code || "—")
 function errorText(error) { const key = error?.response?.data?.error?.messageKey; return key && t(key) !== key ? t(key) : t("errors.internal") }
-async function load() { try { const [c, b] = await Promise.all([lookupCompanies({ limit: 100, status: "ACTIVE" }), lookupBranches({ limit: 100, status: "ACTIVE" })]); companies.value = c; branches.value = b; await list.load() } catch (e) { toast.add({ severity: "error", summary: t("organization.calendar.day.loadFailed"), detail: errorText(e), life: 4500 }) } }
-function openCreate() { formState.openCreate(); formVisible.value = true }
+async function load() { if (!workspaceStore.ready) return; try { await list.load() } catch (e) { toast.add({ severity: "error", summary: t("organization.calendar.day.loadFailed"), detail: errorText(e), life: 4500 }) } }
+function openCreate() { formState.openCreate({ companyId: workspaceStore.companyId, branchId: workspaceStore.branchId }); formVisible.value = true }
 function openEdit(row) { formState.openEdit(row); formVisible.value = true }
-function scopeChange() { formState.form.companyId = ""; formState.form.branchId = "" }
-function companyChange() { formState.form.branchId = "" }
+function scopeChange() { formState.form.companyId = formState.form.scopeLevel === "GLOBAL" ? "" : workspaceStore.companyId; formState.form.branchId = formState.form.scopeLevel === "BRANCH" ? workspaceStore.branchId : "" }
 async function save() { try { const edit = formState.isEdit.value; await formState.save(); formVisible.value = false; toast.add({ severity: "success", summary: t(edit ? "organization.calendar.day.updated" : "organization.calendar.day.created"), life: 3000 }); await list.load() } catch (e) { toast.add({ severity: "error", summary: t("organization.calendar.day.saveFailed"), detail: errorText(e), life: 5000 }) } }
 function askArchive(row) { archiveCandidate.value = row; archiveVisible.value = true }
 async function confirmArchive() { try { await list.archive(archiveCandidate.value.id); archiveVisible.value = false; archiveCandidate.value = null; toast.add({ severity: "success", summary: t("organization.calendar.day.archived"), life: 3000 }) } catch (e) { toast.add({ severity: "error", summary: t("organization.calendar.day.archiveFailed"), detail: errorText(e), life: 5000 }) } }
@@ -56,7 +53,6 @@ function dateTime(value) { if (!value) return "—"; const date = new Date(value
 async function template() { downloading.value = true; try { await downloadCalendarImportTemplate() } finally { downloading.value = false } }
 async function exportRows() { exporting.value = true; try { await exportCalendarDays({ ...list.query, page: undefined, limit: undefined }) } finally { exporting.value = false } }
 async function submitImport() { try { await importState.submit(); await list.load({ page: 1 }) } catch (e) { toast.add({ severity: "error", summary: t("organization.calendar.day.importFailed"), detail: errorText(e), life: 5000 }) } }
-function filterCompanyChanged() { list.query.branchId = "" }
 onMounted(load)
 </script>
 
@@ -76,14 +72,15 @@ onMounted(load)
                         :loading="downloading" @click="template" />
                     <PermissionButton :permission="CALENDAR_PERMISSIONS.IMPORT" severity="secondary" text
                         icon="pi pi-upload" :label="t('organization.calendar.day.importExcel')"
+                        :disabled="!workspaceStore.ready"
                         @click="importVisible = true" />
                     <PermissionButton :permission="CALENDAR_PERMISSIONS.EXPORT" severity="secondary" text
                         icon="pi pi-file-export" :label="t('organization.calendar.day.exportExcel')"
-                        :loading="exporting" @click="exportRows" />
+                        :loading="exporting" :disabled="!workspaceStore.ready" @click="exportRows" />
                 </template>
                 <template #actions>
                     <PermissionButton :permission="CALENDAR_PERMISSIONS.CREATE" icon="pi pi-plus"
-                        :label="t('organization.calendar.day.newDay')" @click="openCreate" />
+                        :label="t('organization.calendar.day.newDay')" :disabled="!workspaceStore.ready" @click="openCreate" />
                 </template>
                 <template #filters>
                     <EnterpriseFilterBar :loading="list.loading.value">
@@ -99,12 +96,6 @@ onMounted(load)
                         <EnterpriseFilterField :label="t('common.endDate')">
                             <EnterpriseCalendarDatePicker v-model="list.query.endDate" :show-status="false" />
                         </EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('organization.calendar.day.company')"><Select
-                                v-model="list.query.companyId" :options="companyOptions" option-label="displayName"
-                                option-value="id" filter @change="filterCompanyChanged" /></EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('organization.calendar.day.branch')"><Select
-                                v-model="list.query.branchId" :options="branchOptions" option-label="name"
-                                option-value="id" filter :disabled="!list.query.companyId" /></EnterpriseFilterField>
                         <EnterpriseFilterField :label="t('organization.calendar.day.scope')"><Select
                                 v-model="list.query.scopeLevel" :options="scopeOptions" option-label="label"
                                 option-value="value" /></EnterpriseFilterField>
@@ -123,7 +114,7 @@ onMounted(load)
         </template>
         <template #empty-action>
             <PermissionButton :permission="CALENDAR_PERMISSIONS.CREATE" icon="pi pi-plus"
-                :label="t('organization.calendar.day.newDay')" @click="openCreate" />
+                :label="t('organization.calendar.day.newDay')" :disabled="!workspaceStore.ready" @click="openCreate" />
         </template>
         <template #cell-dateKey="{ row }"><span class="enterprise-table__text enterprise-table__code">{{ row.dateKey
                 }}</span></template><template #cell-dayType="{ row }">
@@ -141,9 +132,9 @@ onMounted(load)
         </template>
     </EnterpriseListPage>
     <CalendarFormDialog v-model:visible="formVisible" :mode="formState.mode.value" :form="formState.form"
-        :errors="formState.errors.value" :companies="companies" :branches="formBranches"
+        :errors="formState.errors.value" :company-name="workspaceCompanyName" :branch-name="workspaceBranchName"
         :saving="formState.saving.value" @save="save" @clear-error="formState.clearError" @scope-change="scopeChange"
-        @company-change="companyChange" />
+    />
     <CalendarArchiveDialog v-model:visible="archiveVisible" :day="archiveCandidate" :busy="list.archiving.value"
         @confirm="confirmArchive" />
     <CalendarImportDialog v-model:visible="importVisible" :importing="importState.importing.value"

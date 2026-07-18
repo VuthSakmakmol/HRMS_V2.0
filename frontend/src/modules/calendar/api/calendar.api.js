@@ -39,7 +39,9 @@ export async function fetchCalendarDays(params = {}) {
 }
 
 export async function createCalendarDay(payload) {
-    const response = await apiClient.post(`${CALENDAR_ENDPOINT}/days`, payload)
+    const response = await apiClient.post(`${CALENDAR_ENDPOINT}/days`, payload, {
+        headers: { "x-skip-workspace-context": "1" },
+    })
     return unwrapData(response).day
 }
 

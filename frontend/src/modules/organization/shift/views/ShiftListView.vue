@@ -13,6 +13,7 @@ import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
@@ -23,8 +24,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadShiftTemplate,
     exportShifts,
-    lookupBranches,
-    lookupCompanies,
 } from "../api/shift.api.js"
 import ShiftArchiveDialog from "../components/ShiftArchiveDialog.vue"
 import ShiftFormDialog from "../components/ShiftFormDialog.vue"
@@ -39,6 +38,7 @@ const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+const workspaceStore = useWorkspaceStore()
 
 const list = useShiftList()
 const formState = useShiftForm()
@@ -75,8 +75,6 @@ const {
     error: importError,
 } = importState
 
-const companies = ref([])
-const branches = ref([])
 const archiveVisible = ref(false)
 const archiveCandidate = ref(null)
 const importVisible = ref(false)
@@ -95,41 +93,22 @@ const activeFilterCount = computed(() => {
     let count = 0
 
     if (list.query.search?.trim()) count += 1
-    if (list.query.companyId) count += 1
-    if (list.query.branchId) count += 1
     if (list.query.status !== "ALL") count += 1
 
     return count
 })
 
-const companyOptions = computed(() => [
-    {
-        id: "",
-        displayName: t("organization.shift.allCompanies"),
-    },
-    ...companies.value,
-])
+const workspaceCompanyName = computed(() =>
+    workspaceStore.selectedCompany?.displayName ||
+    workspaceStore.selectedCompany?.legalName ||
+    workspaceStore.selectedCompany?.code ||
+    "—",
+)
 
-const branchOptions = computed(() => [
-    {
-        id: "",
-        name: t("organization.shift.allBranches"),
-    },
-    ...branches.value.filter(
-        (branch) =>
-            !list.query.companyId ||
-            branch.companyId === list.query.companyId ||
-            branch.company?.id === list.query.companyId,
-    ),
-])
-
-const formBranchOptions = computed(() =>
-    branches.value.filter(
-        (branch) =>
-            !formState.form.companyId ||
-            branch.companyId === formState.form.companyId ||
-            branch.company?.id === formState.form.companyId,
-    ),
+const workspaceBranchName = computed(() =>
+    workspaceStore.selectedBranch?.name ||
+    workspaceStore.selectedBranch?.code ||
+    "—",
 )
 
 const canUpdate = computed(() =>
@@ -151,22 +130,13 @@ function translatedError(error) {
     return translated === key ? t("errors.internal") : translated
 }
 
-async function loadLookups() {
-    const [companyRows, branchRows] = await Promise.all([
-        lookupCompanies(),
-        lookupBranches(),
-    ])
-
-    companies.value = companyRows
-    branches.value = branchRows
-}
-
 async function load() {
+    if (!workspaceStore.ready) {
+        return
+    }
+
     try {
-        await Promise.all([
-            list.load(),
-            loadLookups(),
-        ])
+        await list.load()
     } catch (error) {
         toast.add({
             severity: "error",
@@ -178,15 +148,14 @@ async function load() {
 }
 
 function openCreate() {
-    formState.openCreate()
+    formState.openCreate({
+        companyId: workspaceStore.companyId,
+        branchId: workspaceStore.branchId,
+    })
 }
 
 function openEdit(row) {
     formState.openEdit(row)
-}
-
-function onFormCompanyChange() {
-    formState.form.branchId = ""
 }
 
 async function saveShift() {
@@ -332,8 +301,6 @@ async function exportRows() {
     try {
         await exportShifts({
             search: list.query.search || undefined,
-            companyId: list.query.companyId || undefined,
-            branchId: list.query.branchId || undefined,
             status: list.query.status,
             sortBy: list.query.sortBy,
             sortOrder: list.query.sortOrder,
@@ -407,10 +374,6 @@ async function submitImport() {
     }
 }
 
-function onFilterCompanyChange() {
-    list.query.branchId = ""
-}
-
 onMounted(load)
 </script>
 
@@ -461,6 +424,7 @@ onMounted(load)
                         text
                         icon="pi pi-upload"
                         :label="t('organization.shift.import')"
+                        :disabled="!workspaceStore.ready"
                         @click="importVisible = true"
                     />
 
@@ -471,6 +435,7 @@ onMounted(load)
                         icon="pi pi-file-export"
                         :label="t('organization.shift.export')"
                         :loading="exporting"
+                        :disabled="!workspaceStore.ready"
                         @click="exportRows"
                     />
                 </template>
@@ -480,6 +445,7 @@ onMounted(load)
                         :permission="SHIFT_PERMISSIONS.CREATE"
                         icon="pi pi-plus"
                         :label="t('organization.shift.newShift')"
+                        :disabled="!workspaceStore.ready"
                         @click="openCreate"
                     />
                 </template>
@@ -499,28 +465,6 @@ onMounted(load)
                                     @keyup.enter="list.applyFilters"
                                 />
                             </span>
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField :label="t('organization.shift.company')">
-                            <Select
-                                v-model="query.companyId"
-                                :options="companyOptions"
-                                option-label="displayName"
-                                option-value="id"
-                                filter
-                                @change="onFilterCompanyChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField :label="t('organization.shift.branch')">
-                            <Select
-                                v-model="query.branchId"
-                                :options="branchOptions"
-                                option-label="name"
-                                option-value="id"
-                                filter
-                                :disabled="!query.companyId"
-                            />
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField :label="t('common.status')">
@@ -559,6 +503,7 @@ onMounted(load)
                 :permission="SHIFT_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
                 :label="t('organization.shift.newShift')"
+                :disabled="!workspaceStore.ready"
                 @click="openCreate"
             />
         </template>
@@ -636,13 +581,12 @@ onMounted(load)
         :mode="formMode"
         :form="shiftForm"
         :errors="formErrors"
-        :companies="companies"
-        :branches="formBranchOptions"
+        :company-name="workspaceCompanyName"
+        :branch-name="workspaceBranchName"
         :saving="formSaving"
         @submit="saveShift"
         @close="formState.close"
         @clear-error="formState.clearErrors"
-        @company-change="onFormCompanyChange"
     />
 
     <ShiftImportDialog

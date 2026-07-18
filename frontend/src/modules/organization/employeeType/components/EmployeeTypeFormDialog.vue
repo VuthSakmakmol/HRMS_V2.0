@@ -23,13 +23,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     positions: {
         type: Array,
@@ -51,8 +51,6 @@ const emit = defineEmits([
     "clear-error",
     "add-child",
     "remove-child",
-    "company-change",
-    "branch-change",
 ])
 
 const { t } = useI18n()
@@ -74,8 +72,8 @@ const title = computed(() =>
         <EmployeeTypeForm
             :form="form"
             :errors="errors"
-            :companies="companies"
-            :branches="branches"
+            :company-name="companyName"
+            :branch-name="branchName"
             :positions="positions"
             :positions-loading="positionsLoading"
             :disabled="saving"
@@ -83,8 +81,6 @@ const title = computed(() =>
             @clear-error="emit('clear-error', $event)"
             @add-child="emit('add-child')"
             @remove-child="emit('remove-child', $event)"
-            @company-change="emit('company-change')"
-            @branch-change="emit('branch-change')"
         />
 
         <template #footer>

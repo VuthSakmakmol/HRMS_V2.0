@@ -389,11 +389,12 @@ async function findCompanyByCode(companyCode) {
     return Company.findOne({ code: companyCode, status: { $ne: "ARCHIVED" } }).lean()
 }
 
-async function findPositionsByCodes({ companyId, positionCodes }) {
+async function findPositionsByCodes({ companyId, branchId, positionCodes }) {
     if (positionCodes.length === 0) return []
 
     return Position.find({
         companyId,
+        branchId,
         code: { $in: positionCodes },
         status: { $ne: "ARCHIVED" },
     }).lean()
@@ -401,6 +402,7 @@ async function findPositionsByCodes({ companyId, positionCodes }) {
 
 async function findPositionMappingConflict({
     companyId,
+    branchId,
     positionIds,
     employeeTypeId = null,
 }) {
@@ -408,6 +410,7 @@ async function findPositionMappingConflict({
 
     const filter = {
         companyId,
+        branchId,
         status: { $ne: "ARCHIVED" },
         $or: [
             { positionIds: { $in: positionIds } },
@@ -476,6 +479,7 @@ export async function importEmployeeTypesFromRows({
     rows,
     parseErrors = [],
     user,
+    workspace,
 }) {
     const errors = [...parseErrors]
     const groups = groupRows(rows)
@@ -518,7 +522,10 @@ export async function importEmployeeTypesFromRows({
     for (const group of groups) {
         const company = await findCompanyByCode(group.companyCode)
 
-        if (!company) {
+        if (
+            !company ||
+            company._id.toString() !== workspace.companyId.toString()
+        ) {
             errors.push(buildImportError(group.rowNumbers[0], "companyCode", "errors.organization.employeeTypeImport.companyNotFound"))
             skipped += group.rowNumbers.length
             continue
@@ -533,6 +540,7 @@ export async function importEmployeeTypesFromRows({
 
         const positions = await findPositionsByCodes({
             companyId: company._id,
+            branchId: workspace.branchId,
             positionCodes: allPositionCodes,
         })
         const positionByCode = new Map(positions.map((position) => [position.code, position]))
@@ -546,6 +554,7 @@ export async function importEmployeeTypesFromRows({
 
         const existingEmployeeType = await EmployeeType.findOne({
             companyId: company._id,
+            branchId: workspace.branchId,
             code: group.employeeTypeCode,
         })
 
@@ -572,6 +581,7 @@ export async function importEmployeeTypesFromRows({
 
         const conflict = await findPositionMappingConflict({
             companyId: company._id,
+            branchId: workspace.branchId,
             positionIds: allPositionIds,
             employeeTypeId: existingEmployeeType?._id || null,
         })
@@ -584,6 +594,7 @@ export async function importEmployeeTypesFromRows({
 
         const updatePayload = {
             companyId: company._id,
+            branchId: workspace.branchId,
             code: group.employeeTypeCode,
             name: group.employeeTypeName,
             dashboardCategory: group.dashboardCategory,

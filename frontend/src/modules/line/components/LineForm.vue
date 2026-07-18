@@ -14,13 +14,13 @@ const props = defineProps({
         type: Object,
         default: () => ({}),
     },
-    companies: {
-        type: Array,
-        default: () => [],
+    companyName: {
+        type: String,
+        default: "—",
     },
-    branches: {
-        type: Array,
-        default: () => [],
+    branchName: {
+        type: String,
+        default: "—",
     },
     departments: {
         type: Array,
@@ -43,8 +43,6 @@ const props = defineProps({
 const emit = defineEmits([
     "clear-error",
     "normalize-code",
-    "company-change",
-    "branch-change",
     "department-change",
 ])
 
@@ -93,28 +91,18 @@ function message(field) {
             <div class="line-form__grid">
                 <label class="enterprise-form-field">
                     <span>{{ t("organization.line.company") }} *</span>
-                    <Select
-                        v-model="form.companyId"
-                        :options="companies"
-                        option-label="displayName"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || editing"
-                        @change="emit('company-change')"
+                    <InputText
+                        :model-value="companyName"
+                        disabled
                     />
                     <small v-if="message('companyId')">{{ message("companyId") }}</small>
                 </label>
 
                 <label class="enterprise-form-field">
                     <span>{{ t("organization.line.branch") }} *</span>
-                    <Select
-                        v-model="form.branchId"
-                        :options="branches"
-                        option-label="name"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || editing || !form.companyId"
-                        @change="emit('branch-change')"
+                    <InputText
+                        :model-value="branchName"
+                        disabled
                     />
                     <small v-if="message('branchId')">{{ message("branchId") }}</small>
                 </label>

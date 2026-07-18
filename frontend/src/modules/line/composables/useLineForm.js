@@ -65,11 +65,14 @@ export function useLineForm() {
         })
     }
 
-    function openCreate() {
+    function openCreate(workspace = {}) {
         mode.value = "create"
         lineId.value = null
         errors.value = {}
-        replaceForm()
+        replaceForm({
+            companyId: workspace.companyId || "",
+            branchId: workspace.branchId || "",
+        })
     }
 
     function openEdit(line) {

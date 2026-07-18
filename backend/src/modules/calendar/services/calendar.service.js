@@ -173,7 +173,9 @@ function getBranchScopeFilter(user) {
 }
 
 function getCalendarScopeFilter(user) {
-    if (user?.isRootAdmin) {
+    if (user?.isRootAdmin || (user?.roleAssignments || []).some(
+        (assignment) => assignment.roleScope === "GLOBAL",
+    )) {
         return {}
     }
 
@@ -369,6 +371,19 @@ async function ensureBranchExists({ companyId, branchId, user }) {
 
 async function resolveScopePayload({ payload, user }) {
     if (payload.scopeLevel === "GLOBAL") {
+        const canManageGlobal = Boolean(user?.isRootAdmin) ||
+            (user?.roleAssignments || []).some(
+                (assignment) => assignment.roleScope === "GLOBAL",
+            )
+
+        if (!canManageGlobal) {
+            throw new AppError({
+                statusCode: 403,
+                code: "CALENDAR_GLOBAL_SCOPE_FORBIDDEN",
+                messageKey: "errors.organization.calendar.globalScopeForbidden",
+            })
+        }
+
         return {
             companyId: null,
             branchId: null,
@@ -441,8 +456,10 @@ export async function listCalendarDays({ query, user }) {
     }
 
     const filter = {
-        ...getCalendarScopeFilter(user),
-        ...buildSearchFilter(query.search),
+        $and: [
+            getCalendarScopeFilter(user),
+            buildSearchFilter(query.search),
+        ],
     }
 
     if (query.startDate || query.endDate) {
@@ -463,7 +480,6 @@ export async function listCalendarDays({ query, user }) {
             user,
         })
 
-        filter.companyId = query.companyId
     }
 
     if (query.branchId) {
@@ -481,7 +497,34 @@ export async function listCalendarDays({ query, user }) {
             })
         }
 
-        filter.branchId = query.branchId
+    }
+
+    if (query.includeInherited && query.companyId && query.branchId) {
+        filter.$and = [
+            ...(filter.$and || []),
+            {
+                $or: [
+                    { scopeLevel: "GLOBAL" },
+                    {
+                        scopeLevel: "COMPANY",
+                        companyId: query.companyId,
+                    },
+                    {
+                        scopeLevel: "BRANCH",
+                        companyId: query.companyId,
+                        branchId: query.branchId,
+                    },
+                ],
+            },
+        ]
+    } else {
+        if (query.companyId) {
+            filter.companyId = query.companyId
+        }
+
+        if (query.branchId) {
+            filter.branchId = query.branchId
+        }
     }
 
     if (query.scopeLevel !== "ALL") {

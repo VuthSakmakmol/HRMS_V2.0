@@ -30,7 +30,7 @@ function setExcelHeaders(res, filename) {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     res.setHeader(
-        "Content-Disshift",
+        "Content-Disposition",
         `attachment; filename="${filename}"`,
     )
 }
@@ -173,6 +173,7 @@ async function processShiftImportJob({
     fileBuffer,
     user,
     req,
+    workspace,
 }) {
     try {
         updateImportJob(jobId, {
@@ -197,6 +198,7 @@ async function processShiftImportJob({
             rows,
             parseErrors: errors,
             user,
+            workspace,
             onProgress(progress) {
                 updateImportJob(jobId, {
                     status: "PROCESSING",
@@ -239,6 +241,31 @@ export async function startShiftImportJobController(req, res) {
         })
     }
 
+    const { companyId, branchId } = req.validatedQuery
+
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_SHIFT_WORKSPACE_REQUIRED",
+            messageKey: "errors.organization.shift.workspaceRequired",
+            fields: {
+                companyId: ["errors.organization.shift.workspaceRequired"],
+                branchId: ["errors.organization.shift.workspaceRequired"],
+            },
+        })
+    }
+
+    await listShifts({
+        query: {
+            ...req.validatedQuery,
+            companyId,
+            branchId,
+            page: 1,
+            limit: 1,
+        },
+        user: req.auth.user,
+    })
+
     const job = createImportJob({
         module: "ORGANIZATION.SHIFT",
         ownerAccountId: req.auth.user.accountId,
@@ -267,6 +294,7 @@ export async function startShiftImportJobController(req, res) {
             fileBuffer,
             user,
             req,
+            workspace: { companyId, branchId },
         })
     })
 

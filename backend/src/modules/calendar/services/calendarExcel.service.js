@@ -389,7 +389,18 @@ function makeCalendarKey(scopeKey, dateKey) {
     return `${scopeKey}::${dateKey}`
 }
 
-export async function importCalendarDaysFromRows({ rows, parseErrors, user }) {
+function hasGlobalScope(user) {
+    return Boolean(user?.isRootAdmin) || (user?.roleAssignments || []).some(
+        (assignment) => assignment.roleScope === "GLOBAL",
+    )
+}
+
+export async function importCalendarDaysFromRows({
+    rows,
+    parseErrors,
+    user,
+    workspace,
+}) {
     const summary = {
         totalRows: rows.length,
         created: 0,
@@ -408,7 +419,14 @@ export async function importCalendarDaysFromRows({ rows, parseErrors, user }) {
     const companyMap = await buildCompanyMap(companyCodes)
 
     for (const row of rows) {
-        if (row.scopeLevel !== "GLOBAL" && !companyMap.has(row.companyCode)) {
+        const company = companyMap.get(row.companyCode)
+
+        if (row.scopeLevel === "GLOBAL" && !hasGlobalScope(user)) {
+            summary.errors.push(buildImportError(row.rowNumber, "scopeLevel", "errors.organization.calendar.import.globalScopeForbidden"))
+        } else if (
+            row.scopeLevel !== "GLOBAL" &&
+            (!company || company._id.toString() !== workspace.companyId.toString())
+        ) {
             summary.errors.push(buildImportError(row.rowNumber, "companyCode", "errors.calendar.import.companyNotFound"))
         }
     }
@@ -434,7 +452,10 @@ export async function importCalendarDaysFromRows({ rows, parseErrors, user }) {
 
         const branch = branchMap.get(`${company._id.toString()}::${row.branchCode}`)
 
-        if (!branch) {
+        if (
+            !branch ||
+            branch._id.toString() !== workspace.branchId.toString()
+        ) {
             summary.errors.push(buildImportError(row.rowNumber, "branchCode", "errors.calendar.import.branchNotFound"))
         }
 

@@ -7,9 +7,9 @@ export function useCalendarList() {
     const archiving = ref(false)
     const error = ref(null)
     let controller = null
-    const query = reactive({ page: 1, limit: 10, search: "", startDate: "", endDate: "", companyId: "", branchId: "", scopeLevel: "ALL", dayType: "ALL", status: "ALL", sortBy: "dateKey", sortOrder: "asc" })
+    const query = reactive({ page: 1, limit: 10, search: "", startDate: "", endDate: "", includeInherited: true, scopeLevel: "ALL", dayType: "ALL", status: "ALL", sortBy: "dateKey", sortOrder: "asc" })
     const pagination = reactive({ page: 1, limit: 10, total: 0, totalPages: 0, hasNext: false, hasPrevious: false })
-    const hasActiveFilters = computed(() => Boolean(query.search || query.startDate || query.endDate || query.companyId || query.branchId) || query.scopeLevel !== "ALL" || query.dayType !== "ALL" || query.status !== "ALL")
+    const hasActiveFilters = computed(() => Boolean(query.search || query.startDate || query.endDate) || query.scopeLevel !== "ALL" || query.dayType !== "ALL" || query.status !== "ALL")
 
     async function load(overrides = {}) {
         Object.assign(query, overrides)
@@ -27,7 +27,7 @@ export function useCalendarList() {
     }
 
     function applyFilters() { return load({ page: 1 }) }
-    function clearFilters() { Object.assign(query, { search: "", startDate: "", endDate: "", companyId: "", branchId: "", scopeLevel: "ALL", dayType: "ALL", status: "ALL" }); return load({ page: 1 }) }
+    function clearFilters() { Object.assign(query, { search: "", startDate: "", endDate: "", scopeLevel: "ALL", dayType: "ALL", status: "ALL" }); return load({ page: 1 }) }
     function changePage(event) { return load({ page: event.page, limit: event.limit }) }
     function changeSort(event) { return load({ page: 1, sortBy: event.sortBy, sortOrder: event.sortOrder }) }
     async function archive(id) { archiving.value = true; try { await archiveCalendarDay(id); await load({ page: rows.value.length === 1 && query.page > 1 ? query.page - 1 : query.page }) } finally { archiving.value = false } }

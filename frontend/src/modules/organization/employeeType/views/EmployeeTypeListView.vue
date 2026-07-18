@@ -8,6 +8,7 @@ import { useI18n } from "vue-i18n"
 import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
@@ -19,8 +20,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadEmployeeTypeTemplate,
     exportEmployeeTypes,
-    lookupCompanies,
-    lookupBranchesByCompany,
     lookupPositions,
     lookupEmployeeTypeDashboardCategories,
 } from "../api/employeeType.api.js"
@@ -40,6 +39,7 @@ import { EMPLOYEE_TYPE_PERMISSIONS } from "../config/employeeType.permissions.js
 const { t } = useI18n()
 const toast = useToast()
 const authStore = useAuthStore()
+const workspaceStore = useWorkspaceStore()
 
 const list = useEmployeeTypeList()
 const formState = useEmployeeTypeForm()
@@ -73,8 +73,6 @@ const {
     error: importError,
 } = importState
 
-const companies = ref([])
-const branches = ref([])
 const positions = ref([])
 const positionsLoading = ref(false)
 const dashboardCategories = ref([])
@@ -89,23 +87,26 @@ const columns = computed(() => createEmployeeTypeColumns(t))
 const statusOptions = computed(() => createEmployeeTypeStatusOptions(t))
 const categoryOptions = computed(() => createDashboardCategoryOptions(t, dashboardCategories.value, true))
 
-const companyOptions = computed(() => [
-    {
-        id: "",
-        displayName: t("organization.employeeType.allCompanies"),
-    },
-    ...companies.value,
-])
-
 const activeFilterCount = computed(() => {
     return [
         query.search?.trim(),
-        query.companyId,
-        query.branchId,
         query.dashboardCategory !== "ALL",
         query.status !== "ALL",
     ].filter(Boolean).length
 })
+
+const workspaceCompanyName = computed(() =>
+    workspaceStore.selectedCompany?.displayName ||
+    workspaceStore.selectedCompany?.legalName ||
+    workspaceStore.selectedCompany?.code ||
+    "—",
+)
+
+const workspaceBranchName = computed(() =>
+    workspaceStore.selectedBranch?.name ||
+    workspaceStore.selectedBranch?.code ||
+    "—",
+)
 
 const canUpdate = computed(() => {
     return authStore.hasPermission(EMPLOYEE_TYPE_PERMISSIONS.UPDATE)
@@ -146,14 +147,7 @@ function translatedError(caught) {
 }
 
 async function loadLookups() {
-    const [companyRows, categoryRows] = await Promise.all([
-        lookupCompanies(),
-        lookupEmployeeTypeDashboardCategories(),
-    ])
-
-    companies.value = Array.isArray(companyRows)
-        ? companyRows
-        : []
+    const categoryRows = await lookupEmployeeTypeDashboardCategories()
 
     dashboardCategories.value = Array.isArray(categoryRows)
         ? categoryRows
@@ -201,21 +195,11 @@ async function loadPositions({
     }
 }
 
-async function loadBranches(companyId) {
-    branches.value = []
-
-    if (!companyId) {
+async function load() {
+    if (!workspaceStore.ready) {
         return
     }
 
-    const branchRows = await lookupBranchesByCompany(companyId)
-
-    branches.value = Array.isArray(branchRows)
-        ? branchRows
-        : []
-}
-
-async function load() {
     try {
         await Promise.all([
             list.load(),
@@ -231,59 +215,25 @@ async function load() {
     }
 }
 
-function openCreate() {
-    branches.value = []
+async function openCreate() {
     positions.value = []
-    formState.openCreate()
+    formState.openCreate({
+        companyId: workspaceStore.companyId,
+        branchId: workspaceStore.branchId,
+    })
+    await loadPositions()
     formVisible.value = true
 }
 
 async function openEdit(row) {
     formState.openEdit(row)
 
-    await loadBranches(form.companyId)
     await loadPositions({
         companyId: form.companyId,
         branchId: form.branchId,
     })
 
     formVisible.value = true
-}
-
-async function handleCompanyChange(companyId = form.companyId) {
-    form.companyId = String(companyId || form.companyId || "")
-    form.branchId = ""
-    branches.value = []
-    positions.value = []
-    form.positionIds.splice(0)
-
-    for (const child of form.children) {
-        child.positionIds = []
-    }
-
-    formState.clearError("companyId")
-    formState.clearError("branchId")
-    formState.clearError("positionIds")
-
-    await loadBranches(form.companyId)
-}
-
-async function handleBranchChange(branchId = form.branchId) {
-    form.branchId = String(branchId || form.branchId || "")
-    positions.value = []
-    form.positionIds.splice(0)
-
-    for (const child of form.children) {
-        child.positionIds = []
-    }
-
-    formState.clearError("branchId")
-    formState.clearError("positionIds")
-
-    await loadPositions({
-        companyId: form.companyId,
-        branchId: form.branchId,
-    })
 }
 
 async function saveEmployeeType() {
@@ -305,7 +255,7 @@ async function saveEmployeeType() {
             life: 3000,
         })
 
-        await Promise.all([list.load(), loadLookups()])
+        await list.load()
     } catch (caught) {
         toast.add({
             severity: "error",
@@ -433,8 +383,6 @@ async function exportRows() {
     try {
         await exportEmployeeTypes({
             search: query.search || undefined,
-            companyId: query.companyId || undefined,
-            branchId: query.branchId || undefined,
             dashboardCategory: query.dashboardCategory,
             status: query.status,
         })
@@ -521,6 +469,7 @@ onMounted(load)
                         severity="secondary"
                         outlined
                         size="small"
+                        :disabled="!workspaceStore.ready"
                         @click="importVisible = true"
                     />
 
@@ -543,6 +492,7 @@ onMounted(load)
                         outlined
                         size="small"
                         :loading="exporting"
+                        :disabled="!workspaceStore.ready"
                         @click="exportRows"
                     />
 
@@ -551,6 +501,7 @@ onMounted(load)
                         icon="pi pi-plus"
                         :label="t('organization.employeeType.newEmployeeType')"
                         size="small"
+                        :disabled="!workspaceStore.ready"
                         @click="openCreate"
                     />
                 </template>
@@ -570,34 +521,6 @@ onMounted(load)
                                     @keyup.enter="list.applyFilters"
                                 />
                             </span>
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
-                            :label="t('organization.employeeType.company')"
-                        >
-                            <Select
-                                v-model="query.companyId"
-                                :options="companyOptions"
-                                option-label="displayName"
-                                option-value="id"
-                                filter
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField
-                            :label="t('organization.employeeType.branch')"
-                        >
-                            <Select
-                                v-model="query.branchId"
-                                :options="branches"
-                                option-label="name"
-                                option-value="id"
-                                :placeholder="t('organization.employeeType.allBranches')"
-                                filter
-                                show-clear
-                                :disabled="!query.companyId"
-                                @before-show="loadBranches(query.companyId)"
-                            />
                         </EnterpriseFilterField>
 
                         <EnterpriseFilterField
@@ -629,6 +552,7 @@ onMounted(load)
                 :permission="EMPLOYEE_TYPE_PERMISSIONS.CREATE"
                 icon="pi pi-plus"
                 :label="t('organization.employeeType.newEmployeeType')"
+                :disabled="!workspaceStore.ready"
                 @click="openCreate"
             />
         </template>
@@ -693,8 +617,8 @@ onMounted(load)
         :mode="formMode"
         :form="form"
         :errors="formErrors"
-        :companies="companies"
-        :branches="branches"
+        :company-name="workspaceCompanyName"
+        :branch-name="workspaceBranchName"
         :positions="positions"
         :positions-loading="positionsLoading"
         :saving="formSaving"
@@ -703,8 +627,6 @@ onMounted(load)
         @clear-error="formState.clearError"
         @add-child="formState.addChild"
         @remove-child="formState.removeChild"
-        @company-change="handleCompanyChange"
-        @branch-change="handleBranchChange"
     />
 
     <EmployeeTypeArchiveDialog

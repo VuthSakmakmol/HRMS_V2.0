@@ -6,9 +6,9 @@ export function useEmployeeTypeList() {
     const archiving = ref(false)
     const error = ref(null)
     const requestController = ref(null)
-    const query = reactive({ page: 1, limit: 10, search: "", companyId: "", branchId: "", dashboardCategory: "ALL", status: "ALL" })
+    const query = reactive({ page: 1, limit: 10, search: "", dashboardCategory: "ALL", status: "ALL" })
     const pagination = reactive({ page: 1, limit: 10, total: 0, totalPages: 0 })
-    const hasActiveFilters = computed(() => Boolean(query.search || query.companyId || query.branchId) || query.dashboardCategory !== "ALL" || query.status !== "ALL")
+    const hasActiveFilters = computed(() => Boolean(query.search) || query.dashboardCategory !== "ALL" || query.status !== "ALL")
     async function load(overrides = {}) {
         Object.assign(query, overrides)
         requestController.value?.abort()
@@ -19,8 +19,6 @@ export function useEmployeeTypeList() {
             const result = await listEmployeeTypes({
                 page: query.page, limit: query.limit,
                 search: query.search || undefined,
-                companyId: query.companyId || undefined,
-                branchId: query.branchId || undefined,
                 dashboardCategory: query.dashboardCategory,
                 status: query.status,
             }, requestController.value.signal)
@@ -31,7 +29,7 @@ export function useEmployeeTypeList() {
         } finally { loading.value = false }
     }
     function applyFilters() { return load({ page: 1 }) }
-    function clearFilters() { query.search = ""; query.companyId = ""; query.branchId = ""; query.dashboardCategory = "ALL"; query.status = "ALL"; return load({ page: 1 }) }
+    function clearFilters() { query.search = ""; query.dashboardCategory = "ALL"; query.status = "ALL"; return load({ page: 1 }) }
     function changePage(event) { return load({ page: event.page, limit: event.limit }) }
     async function archive(id) { archiving.value = true; try { await archiveEmployeeType(id); await load({ page: rows.value.length === 1 && query.page > 1 ? query.page - 1 : query.page }) } finally { archiving.value = false } }
     onBeforeUnmount(() => requestController.value?.abort())

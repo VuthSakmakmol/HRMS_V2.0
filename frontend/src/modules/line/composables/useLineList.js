@@ -21,8 +21,6 @@ export function useLineList() {
         page: 1,
         limit: 10,
         search: "",
-        companyId: "",
-        branchId: "",
         departmentId: "",
         positionId: "",
         status: "ALL",
@@ -43,8 +41,6 @@ export function useLineList() {
         () =>
             Boolean(
                 query.search ||
-                    query.companyId ||
-                    query.branchId ||
                     query.departmentId ||
                     query.positionId,
             ) || query.status !== "ALL",
@@ -62,8 +58,6 @@ export function useLineList() {
                 {
                     ...query,
                     search: query.search || undefined,
-                    companyId: query.companyId || undefined,
-                    branchId: query.branchId || undefined,
                     departmentId: query.departmentId || undefined,
                     positionId: query.positionId || undefined,
                 },
@@ -92,8 +86,6 @@ export function useLineList() {
         Object.assign(query, {
             page: 1,
             search: "",
-            companyId: "",
-            branchId: "",
             departmentId: "",
             positionId: "",
             status: "ALL",

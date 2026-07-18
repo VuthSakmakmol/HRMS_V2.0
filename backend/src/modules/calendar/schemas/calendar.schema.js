@@ -56,6 +56,10 @@ export const calendarDayListQuerySchema = z
         endDate: dateKeySchema.optional(),
         companyId: optionalObjectIdSchema,
         branchId: optionalObjectIdSchema,
+        includeInherited: z.preprocess(
+            (value) => value === true || value === "true" || value === "1",
+            z.boolean(),
+        ).default(false),
         scopeLevel: z.enum(["ALL", ...CALENDAR_SCOPE_LEVELS]).default("ALL"),
         dayType: z.enum(["ALL", ...CALENDAR_DAY_TYPES]).default("ALL"),
         status: z.enum(["ALL", ...CALENDAR_STATUSES]).default("ALL"),

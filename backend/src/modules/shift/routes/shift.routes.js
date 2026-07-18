@@ -87,6 +87,7 @@ router.post(
     "/import-jobs",
     requirePermission(SHIFT_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: shiftListQuerySchema }),
     asyncHandler(startShiftImportJobController),
 )
 
@@ -100,6 +101,7 @@ router.post(
     "/import",
     requirePermission(SHIFT_PERMISSIONS.IMPORT),
     upload.single("file"),
+    validateRequest({ query: shiftListQuerySchema }),
     asyncHandler(importShiftsController),
 )
 

@@ -14,7 +14,7 @@ router.get("/resolve/day", validateRequest({ query: calendarResolveDayQuerySchem
 router.get("/resolve/range", validateRequest({ query: calendarResolveRangeQuerySchema }), asyncHandler(resolveCalendarRangeController))
 router.get("/days/import-template", requirePermission(P.VIEW), asyncHandler(downloadCalendarTemplateController))
 router.get("/days/export", requirePermission(P.EXPORT), validateRequest({ query: calendarDayListQuerySchema }), asyncHandler(exportCalendarDaysController))
-router.post("/days/import", requirePermission(P.IMPORT), upload.single("file"), asyncHandler(importCalendarDaysController))
+router.post("/days/import", requirePermission(P.IMPORT), upload.single("file"), validateRequest({ query: calendarDayListQuerySchema }), asyncHandler(importCalendarDaysController))
 router.get("/days", requirePermission(P.VIEW), validateRequest({ query: calendarDayListQuerySchema }), asyncHandler(listCalendarDaysController))
 router.post("/days", requirePermission(P.CREATE), validateRequest({ body: calendarDayCreateSchema }), asyncHandler(createCalendarDayController))
 router.get("/days/:calendarDayId", requirePermission(P.VIEW), validateRequest({ params: calendarDayIdParamSchema }), asyncHandler(getCalendarDayController))
