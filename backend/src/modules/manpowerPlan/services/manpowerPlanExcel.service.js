@@ -171,12 +171,12 @@ export async function parseManpowerPlanImportWorkbook(buffer) {
     return { rows, errors }
 }
 
-async function resolveImportReferences(values) {
+async function resolveImportReferences(values, workspace) {
     const companyCode = normalizeCode(values.companyCode)
     const branchCode = normalizeCode(values.branchCode)
-    const company = await Company.findOne({ code: companyCode, status: { $ne: "ARCHIVED" } }).lean()
+    const company = await Company.findOne({ _id: workspace.companyId, code: companyCode, status: { $ne: "ARCHIVED" } }).lean()
     if (!company) return { error: "company" }
-    const branch = await Branch.findOne({ companyId: company._id, code: branchCode, status: { $ne: "ARCHIVED" } }).lean()
+    const branch = await Branch.findOne({ _id: workspace.branchId, companyId: company._id, code: branchCode, status: { $ne: "ARCHIVED" } }).lean()
     if (!branch) return { error: "branch" }
 
     const departmentCode = normalizeCode(values.departmentCode)
@@ -191,7 +191,7 @@ async function resolveImportReferences(values) {
         positionCode ? Position.findOne({ companyId: company._id, branchId: branch._id, code: positionCode, status: { $ne: "ARCHIVED" } }).lean() : null,
         lineCode ? Line.findOne({ companyId: company._id, branchId: branch._id, code: lineCode, status: { $ne: "ARCHIVED" } }).lean() : null,
         shiftCode ? Shift.findOne({ companyId: company._id, branchId: branch._id, code: shiftCode, status: { $ne: "ARCHIVED" } }).lean() : null,
-        employeeTypeCode ? EmployeeType.findOne({ companyId: company._id, code: employeeTypeCode, status: { $ne: "ARCHIVED" } }).lean() : null,
+        employeeTypeCode ? EmployeeType.findOne({ companyId: company._id, branchId: branch._id, code: employeeTypeCode, status: { $ne: "ARCHIVED" } }).lean() : null,
     ])
 
     if (departmentCode && !department) return { error: "department" }
@@ -217,12 +217,12 @@ async function resolveImportReferences(values) {
     }
 }
 
-export async function importManpowerPlansFromRows({ rows, parseErrors = [], user }) {
+export async function importManpowerPlansFromRows({ rows, parseErrors = [], user, workspace }) {
     const summary = { created: 0, updated: 0, skipped: 0, errors: [...parseErrors] }
 
     for (const row of rows) {
         const values = row.values
-        const references = await resolveImportReferences(values)
+        const references = await resolveImportReferences(values, workspace)
         if (references.error) {
             summary.errors.push(buildImportError(row.rowNumber, references.error, `errors.report.manpowerPlanImport.${references.error}NotFound`))
             continue

@@ -451,6 +451,8 @@ export default {
         rootAdministrator: "Root Administrator"
     },
     workspace: {
+        selectCompany: "Select company",
+        selectBranch: "Select branch",
         eyebrow: "Secure Workspace",
         welcome: "Welcome back, {name}",
         description: "Your session is authenticated by the backend. This workspace only displays access that the backend has authorized.",
@@ -1343,7 +1345,11 @@ export default {
         import: "Import",
         export: "Export",
         new: "New",
+        planManpower: "Plan Manpower",
+        planScope: "Plan Period and Organization",
+        period: "Period",
         search: "Search",
+        searchPlaceholder: "Search manpower plans",
         company: "Company",
         branch: "Branch",
         year: "Year",
@@ -1367,19 +1373,53 @@ export default {
         editTitle: "Edit Manpower Plan",
         archiveTitle: "Archive Manpower Plan",
         archiveMessage: "Archive this manpower plan?",
+        archiveMessageWithPeriod: "Archive the manpower plan for {year}/{month}?",
         archive: "Archive",
         importTitle: "Import Manpower Plans",
         importResultTitle: "Import Result",
         chooseFile: "Choose Excel file",
+        importInstructionsTitle: "Import manpower plans",
+        importInstructions: "Download the sample, keep the column structure unchanged, then upload the completed Excel file.",
+        importFileHint: "Excel files only (.xlsx or .xls)",
+        removeSelectedFile: "Remove selected file",
+        importProgress: "Uploading and validating",
+        importResultSummary: "Created: {created}, updated: {updated}, skipped: {skipped}, failed: {failed}.",
+        importCompletedWithErrors: "Import completed with errors",
+        importSuccess: "Manpower plans imported successfully",
         all: "All",
         active: "Active",
         inactive: "Inactive",
         archived: "Archived",
         allMonths: "All Months",
+        allDepartments: "All Departments",
+        allPositions: "All Positions",
+        allLines: "All Lines",
+        allShifts: "All Shifts",
+        allEmployeeTypes: "All Employee Types",
+        allChildGroups: "All Child Groups",
+        noChildGroup: "No Child Group",
+        batchTitle: "Batch Manpower Planning",
+        loadGrid: "Load Grid",
+        loadGridHint: "Choose the planning period and optional employee type, then load the grid.",
+        gridLoadFailed: "Unable to load the manpower planning grid",
+        gridSearchPlaceholder: "Search department, position, line, or shift",
+        fillBudget: "Fill budget",
+        fillRoadmap: "Fill roadmap",
+        fillSelected: "Fill Selected",
+        current: "Current",
+        changed: "Changed",
+        saveAll: "Save All",
+        batchSaved: "Manpower plans saved",
+        batchSavedDetail: "{count} rows were saved successfully.",
+        downloadTemplate: "Download Sample",
+        empty: "No manpower plans found",
+        emptyDescription: "Adjust the filters or open Plan Manpower to create monthly targets in batch.",
         loadFailed: "Unable to load manpower plans",
         saveFailed: "Unable to save manpower plan",
         archiveFailed: "Unable to archive manpower plan",
         importFailed: "Unable to import manpower plans",
+        exportFailed: "Unable to export manpower plans",
+        templateFailed: "Unable to download the sample file",
         created: "Manpower plan created",
         updated: "Manpower plan updated",
         archivedMessage: "Manpower plan archived"
@@ -1409,6 +1449,9 @@ export default {
         },
         location: {
             entityNotFound: "Location type was not found.",
+            lookup: {
+                parentRequired: "Select the parent location before loading child locations."
+            },
             import: {
                 fileRequired: "Please choose an Excel file to import.",
                 hasErrors: "The import finished with validation errors. Please review the result."
@@ -1464,6 +1507,7 @@ export default {
             },
             department: {
                 invalidId: "Invalid department ID.",
+                workspaceRequired: "Select a company and branch in the top bar before working with departments.",
                 notFound: "Department was not found.",
                 parentNotFound: "Parent department was not found in the selected branch.",
                 parentSelf: "A department cannot be its own parent.",
@@ -1489,6 +1533,7 @@ export default {
             },
             position: {
                 invalidId: "Invalid position ID.",
+                workspaceRequired: "Select a company and branch in the top bar before working with positions.",
                 notFound: "The requested position was not found.",
                 departmentNotFound: "The selected department was not found or is outside your organization scope.",
                 reportsToNotFound: "The selected reporting position was not found.",
@@ -1524,6 +1569,7 @@ export default {
             },
             line: {
                 invalidId: "Invalid line ID.",
+                workspaceRequired: "Select a company and branch in the top bar before working with lines.",
                 notFound: "Line was not found.",
                 archived: "This line is archived and cannot be updated.",
                 codeExists: "This line code already exists inside the selected department.",
@@ -1555,6 +1601,7 @@ export default {
             },
             shift: {
                 invalidId: "Invalid shift ID.",
+                workspaceRequired: "Select a company and branch in the top bar before working with shifts.",
                 notFound: "Shift was not found.",
                 archived: "This shift is archived and cannot be updated.",
                 codeExists: "This shift code already exists inside the selected branch.",
@@ -1584,11 +1631,12 @@ export default {
             },
             employeeType: {
                 invalidId: "Invalid employee type ID.",
+                workspaceRequired: "Select a company and branch in the top bar before working with employee types.",
                 notFound: "Employee type was not found.",
                 archived: "This employee type is archived and cannot be updated.",
-                codeExists: "This employee type code already exists inside the selected company.",
+                codeExists: "This employee type code already exists inside the selected branch.",
                 duplicate: "This employee type already exists.",
-                positionNotFound: "One or more selected positions were not found in the selected company.",
+                positionNotFound: "One or more selected positions were not found in the selected branch.",
                 positionAlreadyMapped: "One or more selected positions are already mapped to another employee type."
             },
             employeeTypeImport: {
@@ -1610,6 +1658,8 @@ export default {
                 duplicatePositionInFile: "Duplicate position code found in this Excel file for the same employee type."
             },
             calendar: {
+                workspaceRequired: "Select a company and branch in the top bar before working with the calendar.",
+                globalScopeForbidden: "Only a root administrator or global-scope user can manage global calendar days.",
                 day: {
                     invalidId: "Invalid calendar day ID.",
                     notFound: "Calendar day was not found.",
@@ -1618,6 +1668,7 @@ export default {
                     rangeTooLarge: "Calendar date range is too large. Maximum range is 370 days."
                 },
                 import: {
+                    globalScopeForbidden: "Only a root administrator or global-scope user can import global calendar days.",
                     fileRequired: "Please choose an Excel file to import.",
                     invalidTemplate: "Invalid Excel template. Please download the sample and use the same columns.",
                     emptyFile: "The uploaded Excel file is empty.",

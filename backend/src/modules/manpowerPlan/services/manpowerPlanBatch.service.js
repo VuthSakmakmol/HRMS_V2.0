@@ -20,14 +20,20 @@ function getUserCompanyIds(user) {
     return [...new Set((user?.roleAssignments || []).map((item) => item.companyId).filter(Boolean))]
 }
 
+function hasGlobalScope(user) {
+    return (user?.roleAssignments || []).some(
+        (assignment) => assignment.roleScope === "GLOBAL",
+    )
+}
+
 function getCompanyScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
     const companyIds = getUserCompanyIds(user)
     return companyIds.length ? { _id: { $in: companyIds } } : { _id: { $in: [] } }
 }
 
 function getBranchScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
 
     const allBranchCompanyIds = []
     const branchIds = []

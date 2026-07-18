@@ -20,6 +20,7 @@ import {
     getManpowerPlanById,
     listManpowerPlans,
     updateManpowerPlan,
+    validateManpowerPlanWorkspace,
 } from "../services/manpowerPlan.service.js"
 import {
     getManpowerPlanningGrid,
@@ -230,6 +231,30 @@ router.post(
     upload.single("file"),
     async (req, res, next) => {
         try {
+            const query = parseRequest(
+                manpowerPlanListQuerySchema,
+                req.query,
+            )
+            if (!query.companyId || !query.branchId) {
+                throw new AppError({
+                    statusCode: 422,
+                    code: "MANPOWER_PLAN_WORKSPACE_REQUIRED",
+                    messageKey: "errors.validationFailed",
+                    fields: {
+                        companyId: ["errors.validationFailed"],
+                        branchId: ["errors.validationFailed"],
+                    },
+                })
+            }
+
+            // Validate that this user can access the selected workspace before
+            // parsing or writing any workbook row.
+            await validateManpowerPlanWorkspace({
+                companyId: query.companyId,
+                branchId: query.branchId,
+                user: req.auth.user,
+            })
+
             if (!req.file) {
                 throw new AppError({
                     statusCode: 422,
@@ -245,6 +270,10 @@ router.post(
                 rows,
                 parseErrors: errors,
                 user: req.auth.user,
+                workspace: {
+                    companyId: query.companyId,
+                    branchId: query.branchId,
+                },
             })
 
             res.status(summary.errors.length ? 207 : 200).json({

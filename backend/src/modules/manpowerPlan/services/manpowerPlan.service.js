@@ -41,14 +41,20 @@ function getUserCompanyIds(user) {
     return [...new Set((user?.roleAssignments || []).map((item) => item.companyId).filter(Boolean))]
 }
 
+function hasGlobalScope(user) {
+    return (user?.roleAssignments || []).some(
+        (assignment) => assignment.roleScope === "GLOBAL",
+    )
+}
+
 function getCompanyScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
     const companyIds = getUserCompanyIds(user)
     return companyIds.length ? { _id: { $in: companyIds } } : { _id: { $in: [] } }
 }
 
 function getBranchScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
 
     const allBranchCompanyIds = []
     const branchIds = []
@@ -65,7 +71,7 @@ function getBranchScopeFilter(user) {
 }
 
 function getPlanScopeFilter(user) {
-    if (user?.isRootAdmin) return {}
+    if (user?.isRootAdmin || hasGlobalScope(user)) return {}
 
     const allBranchCompanyIds = []
     const branchIds = []
@@ -224,7 +230,7 @@ async function validateReferences(payload, user) {
         [payload.positionId, Position, { companyId: payload.companyId, branchId: payload.branchId }, "positionId"],
         [payload.lineId, Line, { companyId: payload.companyId, branchId: payload.branchId }, "lineId"],
         [payload.shiftId, Shift, { companyId: payload.companyId, branchId: payload.branchId }, "shiftId"],
-        [payload.employeeTypeId, EmployeeType, { companyId: payload.companyId }, "employeeTypeId"],
+        [payload.employeeTypeId, EmployeeType, { companyId: payload.companyId, branchId: payload.branchId }, "employeeTypeId"],
     ]
 
     for (const [id, Model, extra, field] of optionalModels) {
@@ -242,8 +248,36 @@ async function validateReferences(payload, user) {
     }
 }
 
+export async function validateManpowerPlanWorkspace({ companyId, branchId, user }) {
+    ensureObjectId(companyId, "MANPOWER_PLAN_COMPANY_INVALID_ID", "errors.organization.company.invalidId")
+    ensureObjectId(branchId, "MANPOWER_PLAN_BRANCH_INVALID_ID", "errors.organization.branch.invalidId")
+
+    const company = await Company.exists({ _id: companyId, ...getCompanyScopeFilter(user) })
+    const branch = await Branch.exists({
+        _id: branchId,
+        companyId,
+        ...getBranchScopeFilter(user),
+    })
+
+    if (!company || !branch) {
+        throw new AppError({
+            statusCode: 403,
+            code: "MANPOWER_PLAN_WORKSPACE_FORBIDDEN",
+            messageKey: "errors.forbidden",
+        })
+    }
+}
+
 function buildListFilter(query, user) {
-    const filter = { ...getPlanScopeFilter(user), ...buildSearchFilter(query.search) }
+    const scopeFilter = getPlanScopeFilter(user)
+    const searchFilter = buildSearchFilter(query.search)
+    const filter = {}
+
+    if (Object.keys(scopeFilter).length && Object.keys(searchFilter).length) {
+        filter.$and = [scopeFilter, searchFilter]
+    } else {
+        Object.assign(filter, scopeFilter, searchFilter)
+    }
 
     for (const key of ["companyId", "branchId", "year", "month", "departmentId", "positionId", "lineId", "shiftId", "employeeTypeId", "employeeTypeChildId"]) {
         if (query[key]) filter[key] = query[key]
