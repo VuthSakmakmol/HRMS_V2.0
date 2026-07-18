@@ -30,34 +30,12 @@ export async function fetchEmployeeMovements(params = {}) {
     return response.data.data
 }
 
-export async function createEmployeeMovement(payload) {
-    const response = await apiClient.post(EMPLOYEE_MOVEMENT_ENDPOINT, payload)
+export async function fetchEmployeeMovement(movementId) {
+    const response = await apiClient.get(`${EMPLOYEE_MOVEMENT_ENDPOINT}/${movementId}`)
     return response.data.data.movement
-}
-
-export async function updateEmployeeMovement(movementId, payload) {
-    const response = await apiClient.patch(`${EMPLOYEE_MOVEMENT_ENDPOINT}/${movementId}`, payload)
-    return response.data.data.movement
-}
-
-export async function archiveEmployeeMovement(movementId) {
-    const response = await apiClient.patch(`${EMPLOYEE_MOVEMENT_ENDPOINT}/${movementId}/archive`)
-    return response.data.data.movement
-}
-
-export async function downloadEmployeeMovementImportTemplate() {
-    const response = await apiClient.get(`${EMPLOYEE_MOVEMENT_ENDPOINT}/import-template`, { responseType: "blob", timeout: 0 })
-    downloadBlob(response.data, getFilenameFromResponse(response, "employee-movement-import-template.xlsx"))
 }
 
 export async function exportEmployeeMovements(params = {}) {
     const response = await apiClient.get(`${EMPLOYEE_MOVEMENT_ENDPOINT}/export`, { params, responseType: "blob", timeout: 0 })
     downloadBlob(response.data, getFilenameFromResponse(response, "employee-movements-export.xlsx"))
-}
-
-export async function importEmployeeMovements(file, onUploadProgress) {
-    const formData = new FormData()
-    formData.append("file", file)
-    const response = await apiClient.post(`${EMPLOYEE_MOVEMENT_ENDPOINT}/import`, formData, { timeout: 0, onUploadProgress })
-    return response.data.data.summary
 }
