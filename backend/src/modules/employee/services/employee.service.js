@@ -539,6 +539,50 @@ export function serializeEmployee(employee) {
     }
 }
 
+export function serializeEmployeeListItem(employee) {
+    if (!employee) return null
+    const raw = typeof employee.toJSON === "function" ? employee.toJSON() : { ...employee }
+
+    return {
+        id: raw._id?.toString?.() || raw.id,
+        employeeCode: raw.employeeCode,
+        profileImageUrl: raw.profileImageUrl || "",
+        displayName: raw.displayName || [raw.englishFirstName, raw.englishLastName].filter(Boolean).join(" ") || [raw.khmerFirstName, raw.khmerLastName].filter(Boolean).join(" "),
+        khmerFirstName: raw.khmerFirstName || "",
+        khmerLastName: raw.khmerLastName || "",
+        englishFirstName: raw.englishFirstName || "",
+        englishLastName: raw.englishLastName || "",
+        gender: raw.gender || "UNKNOWN",
+        phoneNumber: raw.phoneNumber || "",
+        email: raw.email || "",
+        nationality: raw.nationality || "",
+        company: simpleOrg(raw.companyId),
+        branch: simpleOrg(raw.branchId),
+        department: simpleOrg(raw.departmentId),
+        position: simpleOrg(raw.positionId),
+        line: simpleOrg(raw.lineId),
+        shift: simpleOrg(raw.shiftId),
+        employeeType: serializeEmployeeType(raw.employeeTypeId),
+        employeeTypeChildName: raw.employeeTypeChildName || "",
+        joinDate: raw.joinDate,
+        employmentStatus: raw.employmentStatus,
+        recordStatus: raw.recordStatus,
+        updatedAt: raw.updatedAt,
+    }
+}
+
+function employeeListPopulate(query) {
+    return query
+        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender phoneNumber email nationality companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName joinDate employmentStatus recordStatus updatedAt")
+        .populate({ path: "companyId", select: "code displayName legalName status" })
+        .populate({ path: "branchId", select: "code name shortName status" })
+        .populate({ path: "departmentId", select: "code name shortName status" })
+        .populate({ path: "positionId", select: "code title shortName status" })
+        .populate({ path: "lineId", select: "code name shortName status" })
+        .populate({ path: "shiftId", select: "code name shortName status" })
+        .populate({ path: "employeeTypeId", select: "code name title displayName status recordStatus" })
+}
+
 function employeePopulate(query) {
     return query
         .populate({ path: "companyId", select: "code displayName legalName status" })
@@ -602,7 +646,16 @@ async function validateAssignment(payload, user) {
     const [department, position, line, shift] = await Promise.all([
         Department.findOne({ _id: payload.departmentId, companyId: payload.companyId, branchId: payload.branchId, status: { $ne: "ARCHIVED" } }).lean(),
         Position.findOne({ _id: payload.positionId, companyId: payload.companyId, branchId: payload.branchId, departmentId: payload.departmentId, status: { $ne: "ARCHIVED" } }).lean(),
-        Line.findOne({ _id: payload.lineId, companyId: payload.companyId, branchId: payload.branchId, departmentId: payload.departmentId, status: { $ne: "ARCHIVED" } }).lean(),
+        Line.findOne({
+            _id: payload.lineId,
+            companyId: payload.companyId,
+            branchId: payload.branchId,
+            status: { $ne: "ARCHIVED" },
+            $or: [
+                { departmentId: payload.departmentId },
+                { departmentIds: payload.departmentId },
+            ],
+        }).lean(),
         Shift.findOne({ _id: payload.shiftId, companyId: payload.companyId, branchId: payload.branchId, status: { $ne: "ARCHIVED" } }).lean(),
     ])
 
@@ -742,7 +795,7 @@ export async function listEmployees({ query, user }) {
     const skip = (page - 1) * limit
 
     const [items, total] = await Promise.all([
-        employeePopulate(Employee.find(filter))
+        employeeListPopulate(Employee.find(filter))
             .sort({ employeeCode: 1 })
             .skip(skip)
             .limit(limit)
@@ -751,7 +804,7 @@ export async function listEmployees({ query, user }) {
     ])
 
     const result = {
-        items: items.map(serializeEmployee),
+        items: items.map(serializeEmployeeListItem),
         pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) },
     }
 

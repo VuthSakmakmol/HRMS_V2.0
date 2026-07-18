@@ -468,6 +468,41 @@ async function findByCodeOrName(Model, value, parentFilter = {}) {
     }).lean()
 }
 
+async function findLineForEmployeeImport({
+    value,
+    companyId,
+    branchId,
+    departmentId,
+}) {
+    if (!value || !companyId || !branchId || !departmentId) {
+        return null
+    }
+
+    const code = normalizeCode(value)
+    const name = normalizeText(value)
+
+    return Line.findOne({
+        companyId,
+        branchId,
+        status: { $ne: "ARCHIVED" },
+        $and: [
+            {
+                $or: [
+                    { departmentId },
+                    { departmentIds: departmentId },
+                ],
+            },
+            {
+                $or: [
+                    { code },
+                    { name },
+                    { shortName: name },
+                ],
+            },
+        ],
+    }).lean()
+}
+
 async function findEmployeeType(value) {
     if (!value) return null
 
@@ -536,7 +571,14 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
 
         const department = await findByCodeOrName(Department, row.departmentCode, { companyId: company._id, branchId: branch._id })
         const position = department ? await findByCodeOrName(Position, row.positionCode, { companyId: company._id, branchId: branch._id, departmentId: department._id }) : null
-        const line = department ? await findByCodeOrName(Line, row.lineCode, { companyId: company._id, branchId: branch._id, departmentId: department._id }) : null
+        const line = department
+            ? await findLineForEmployeeImport({
+                value: row.lineCode,
+                companyId: company._id,
+                branchId: branch._id,
+                departmentId: department._id,
+            })
+            : null
         const shift = await findByCodeOrName(Shift, row.shiftCode, { companyId: company._id, branchId: branch._id })
         const introducer = row.introducerEmployeeCode ? await Employee.findOne({ employeeCode: row.introducerEmployeeCode, recordStatus: { $ne: "ARCHIVED" } }).lean() : null
         const employeeType = row.employeeTypeLookup ? await findEmployeeType(row.employeeTypeLookup) : null
