@@ -14,9 +14,9 @@ import Select from "primevue/select"
 import Tag from "primevue/tag"
 import Textarea from "primevue/textarea"
 
-import AppFilterBar from "@/shared/components/filter/AppFilterBar.vue"
+import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
+import EnterpriseTableActions from "@/shared/components/enterprise/EnterpriseTableActions.vue"
 import AppModuleToolbar from "@/shared/components/page/AppModuleToolbar.vue"
-import AppTableActions from "@/shared/components/table/AppTableActions.vue"
 import { useModulePermissions } from "@/shared/auth/useModulePermissions.js"
 
 import {
@@ -520,7 +520,7 @@ onMounted(async () => {
             />
         </AppModuleToolbar>
 
-        <AppFilterBar :loading="loading">
+        <EnterpriseFilterBar :loading="loading">
             <div class="app-filter-field app-filter-field--search">
                 <IconField>
                     <InputIcon class="pi pi-search" />
@@ -571,7 +571,7 @@ onMounted(async () => {
                     @click="loadRoles"
                 />
             </template>
-        </AppFilterBar>
+        </EnterpriseFilterBar>
 
         <section class="role-table-card hrms-card">
             <DataTable
@@ -671,7 +671,7 @@ onMounted(async () => {
                     style="width: 7rem"
                 >
                     <template #body="{ data }">
-                        <AppTableActions
+                        <EnterpriseTableActions
                             :can-edit="access.canUpdate.value"
                             :can-delete="access.canDelete.value && !data.isSystem"
                             @edit="openEdit(data)"
