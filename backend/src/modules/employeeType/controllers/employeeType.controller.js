@@ -13,6 +13,7 @@ import {
     createEmployeeType,
     getEmployeeTypeById,
     listEmployeeTypes,
+    listEmployeeTypePositionAssignments,
     listEmployeeTypeDashboardCategories,
     updateEmployeeType,
 } from "../services/employeeType.service.js"
@@ -51,6 +52,15 @@ export async function listEmployeeTypesController(req, res) {
     return sendList(req, res, result)
 }
 
+export async function listEmployeeTypePositionAssignmentsController(req, res) {
+    const items = await listEmployeeTypePositionAssignments({
+        query: req.validatedQuery,
+        user: req.auth.user,
+    })
+
+    return sendSuccess(req, res, { data: { items } })
+}
+
 export async function getEmployeeTypeController(req, res) {
     const employeeType = await getEmployeeTypeById({
         employeeTypeId: req.validatedParams.employeeTypeId,
@@ -86,11 +96,12 @@ export async function createEmployeeTypeController(req, res) {
 export async function updateEmployeeTypeController(req, res) {
     const employeeTypeId = req.validatedParams.employeeTypeId
     const before = await getEmployeeTypeById({ employeeTypeId, user: req.auth.user })
-    const employeeType = await updateEmployeeType({
+    const result = await updateEmployeeType({
         employeeTypeId,
         payload: req.validatedBody,
         user: req.auth.user,
     })
+    const { employeeType, reconciliation } = result
 
     await writeAuditLog({
         req,
@@ -104,7 +115,7 @@ export async function updateEmployeeTypeController(req, res) {
     })
 
     return sendSuccess(req, res, {
-        data: { employeeType },
+        data: { employeeType, reconciliation },
         messageKey: "messages.organization.employeeType.updated",
     })
 }

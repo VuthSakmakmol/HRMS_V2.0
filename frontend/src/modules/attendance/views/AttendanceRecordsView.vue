@@ -1,489 +1,67 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue"
-import { useI18n } from "vue-i18n"
-import { useToast } from "primevue/usetoast"
-
 import Button from "primevue/button"
-import Column from "primevue/column"
-import DataTable from "primevue/datatable"
-import Dialog from "primevue/dialog"
 import InputText from "primevue/inputtext"
-import ProgressBar from "primevue/progressbar"
 import Select from "primevue/select"
 import Tag from "primevue/tag"
-import Textarea from "primevue/textarea"
-
-import AppFilterBar from "@/shared/components/filter/AppFilterBar.vue"
-import AppTableActions from "@/shared/components/table/AppTableActions.vue"
-import { useModulePermissions } from "@/shared/auth/useModulePermissions.js"
+import { computed,onBeforeUnmount,onMounted,reactive,ref,watch } from "vue"
+import { useToast } from "primevue/usetoast"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
+import { useAuthStore } from "@/app/stores/auth.store.js"
+import { lookupDepartments } from "@/modules/organization/department/api/department.api.js"
+import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
+import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
+import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
+import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
+import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseListControls.vue"
+import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue"
+import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
+import AttendanceImportDialog from "../components/AttendanceImportDialog.vue"
+import AttendanceRecordDialog from "../components/AttendanceRecordDialog.vue"
+import AttendanceUnmatchedDialog from "../components/AttendanceUnmatchedDialog.vue"
+import { ATTENDANCE_PERMISSIONS,attendanceColumns,attendanceStatusOptions,verificationOptions } from "../config/attendance.config.js"
 import { useAttendanceStore } from "../stores/attendance.store.js"
-import "../styles/attendance-enterprise.css"
 
-const { t } = useI18n()
-const toast = useToast()
-const attendanceStore = useAttendanceStore()
-
-function localDateKey(date = new Date()) {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
-    return `${year}-${month}-${day}`
-}
-
-const today = localDateKey()
-const firstDay = `${today.slice(0, 8)}01`
-
-const filters = reactive({
-    page: 1,
-    limit: 20,
-    search: "",
-    dateFrom: firstDay,
-    dateTo: today,
-    status: "ALL",
-})
-
-const dialogVisible = ref(false)
-const selectedId = ref(null)
-const importDialogVisible = ref(false)
-const selectedFile = ref(null)
-
-const form = reactive({
-    employeeCode: "",
-    attendanceDate: today,
-    firstInAt: "",
-    lastOutAt: "",
-    note: "",
-})
-
-const { canCreate, canUpdate, canImport } = useModulePermissions({
-    view: "ATTENDANCE.RECORD.VIEW",
-    create: "ATTENDANCE.RECORD.CREATE",
-    update: "ATTENDANCE.RECORD.UPDATE",
-    import: "ATTENDANCE.RECORD.IMPORT",
-})
-
-const statusOptions = computed(() => [
-    { label: t("attendance.status.all"), value: "ALL" },
-    { label: t("attendance.status.present"), value: "PRESENT" },
-    { label: t("attendance.status.late"), value: "LATE" },
-    { label: t("attendance.status.earlyLeave"), value: "EARLY_LEAVE" },
-    { label: t("attendance.status.missingIn"), value: "MISSING_IN" },
-    { label: t("attendance.status.missingOut"), value: "MISSING_OUT" },
-    { label: t("attendance.status.absent"), value: "ABSENT" },
-    { label: t("attendance.status.restDay"), value: "REST_DAY" },
-    { label: t("attendance.status.holiday"), value: "HOLIDAY" },
-])
-
-const dialogTitle = computed(() =>
-    selectedId.value ? t("attendance.editRecord") : t("attendance.addRecord"),
-)
-
-function toDateTimeValue(value) {
-    if (!value) {
-        return ""
-    }
-
-    const date = new Date(value)
-    const offset = date.getTimezoneOffset() * 60_000
-    return new Date(date.getTime() - offset).toISOString().slice(0, 16)
-}
-
-function formatDate(value) {
-    if (!value) {
-        return "-"
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).format(new Date(value))
-}
-
-function formatTime(value) {
-    if (!value) {
-        return "-"
-    }
-
-    return new Intl.DateTimeFormat(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-    }).format(new Date(value))
-}
-
-function formatWorkedMinutes(value) {
-    const minutes = Number(value || 0)
-    const hours = Math.floor(minutes / 60)
-    const remaining = minutes % 60
-
-    if (!hours) {
-        return `${remaining}m`
-    }
-
-    return remaining ? `${hours}h ${remaining}m` : `${hours}h`
-}
-
-function statusLabel(status) {
-    const key = `attendance.status.${String(status || "").toLowerCase()}`
-    const translated = t(key)
-    return translated === key ? status || "-" : translated
-}
-
-function statusSeverity(status) {
-    if (status === "PRESENT") {
-        return "success"
-    }
-
-    if (["LATE", "EARLY_LEAVE", "LATE_AND_EARLY_LEAVE"].includes(status)) {
-        return "warn"
-    }
-
-    if (["MISSING_IN", "MISSING_OUT", "ABSENT"].includes(status)) {
-        return "danger"
-    }
-
-    return "info"
-}
-
-async function loadRecords(page = filters.page, force = false) {
-    filters.page = page
-    await attendanceStore.load({ ...filters }, { force })
-}
-
-function resetFilters() {
-    filters.search = ""
-    filters.dateFrom = firstDay
-    filters.dateTo = today
-    filters.status = "ALL"
-    loadRecords(1, true)
-}
-
-function resetForm() {
-    selectedId.value = null
-    Object.assign(form, {
-        employeeCode: "",
-        attendanceDate: today,
-        firstInAt: "",
-        lastOutAt: "",
-        note: "",
-    })
-}
-
-function openCreate() {
-    resetForm()
-    dialogVisible.value = true
-}
-
-function openEdit(record) {
-    selectedId.value = record.id
-    Object.assign(form, {
-        employeeCode: record.employeeCode || "",
-        attendanceDate: String(record.attendanceDate || "").slice(0, 10),
-        firstInAt: toDateTimeValue(record.firstInAt),
-        lastOutAt: toDateTimeValue(record.lastOutAt),
-        note: record.note || "",
-    })
-    dialogVisible.value = true
-}
-
-async function saveRecord() {
-    await attendanceStore.save(
-        {
-            employeeCode: form.employeeCode,
-            attendanceDate: form.attendanceDate,
-            firstInAt: form.firstInAt || null,
-            lastOutAt: form.lastOutAt || null,
-            note: form.note,
-        },
-        selectedId.value,
-    )
-
-    dialogVisible.value = false
-    toast.add({
-        severity: "success",
-        summary: t("common.success"),
-        detail: t("attendance.saved"),
-        life: 2500,
-    })
-    await loadRecords(filters.page, true)
-}
-
-function onFileChange(event) {
-    selectedFile.value = event.target.files?.[0] || null
-}
-
-async function runImport() {
-    if (!selectedFile.value) {
-        return
-    }
-
-    await attendanceStore.importFile(selectedFile.value)
-    importDialogVisible.value = false
-    selectedFile.value = null
-    await loadRecords(1, true)
-}
-
-onMounted(() => {
-    loadRecords(1)
-})
+const toast=useToast(),workspace=useWorkspaceStore(),auth=useAuthStore(),store=useAttendanceStore()
+function dateKey(date=new Date()){return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`}
+const today=dateKey(),firstDay=`${today.slice(0,8)}01`
+const query=reactive({page:1,limit:10,search:"",dateFrom:firstDay,dateTo:today,status:"ALL",verificationStatus:"ALL",departmentId:""})
+const departments=ref([]),dialogVisible=ref(false),importVisible=ref(false),unmatchedVisible=ref(false),unmatchedRevision=ref(0),selectedId=ref(""),selectedFile=ref(null)
+const form=reactive({employeeCode:"",attendanceDate:today,firstInAt:"",lastOutAt:"",note:""})
+let timer
+const rows=computed(()=>store.items.map(item=>({...item,employeeName:item.employeeId?.displayName||"—",department:item.departmentId?.name||"—",position:item.positionId?.title||item.positionId?.name||"—",line:item.lineId?.name||"—",shift:item.shiftId?.name||item.shiftId?.code||"—"})))
+const departmentOptions=computed(()=>[{id:"",name:"All Departments"},...departments.value])
+const activeFilterCount=computed(()=>[query.search,query.departmentId,query.status!=="ALL",query.verificationStatus!=="ALL",query.dateFrom!==firstDay,query.dateTo!==today].filter(Boolean).length)
+function errorMessage(e){return e?.response?.data?.error?.message||e?.message||"The request could not be completed."}
+async function load(overrides={},force=false){if(!workspace.ready)return;Object.assign(query,overrides);try{await store.load({...query,companyId:workspace.companyId,branchId:workspace.branchId},{force})}catch(e){toast.add({severity:"error",summary:"Unable to load attendance",detail:errorMessage(e),life:4500})}}
+async function loadLookups(){departments.value=workspace.ready?await lookupDepartments({companyId:workspace.companyId,branchId:workspace.branchId,status:"ACTIVE"}):[]}
+function delayedSearch(){clearTimeout(timer);timer=setTimeout(()=>load({page:1}),350)}
+function clearFilters(){Object.assign(query,{page:1,search:"",dateFrom:firstDay,dateTo:today,status:"ALL",verificationStatus:"ALL",departmentId:""});load({},true)}
+function resetForm(){selectedId.value="";Object.assign(form,{employeeCode:"",attendanceDate:today,firstInAt:"",lastOutAt:"",note:""})}
+function localDateTime(value){if(!value)return"";const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16)}
+function openCreate(){resetForm();dialogVisible.value=true}
+function openEdit(row){selectedId.value=row.id;Object.assign(form,{employeeCode:row.employeeCode,attendanceDate:String(row.attendanceDate).slice(0,10),firstInAt:localDateTime(row.firstInAt),lastOutAt:localDateTime(row.lastOutAt),note:row.note||"Manual correction"});dialogVisible.value=true}
+async function save(){try{await store.save({...form,companyId:workspace.companyId,branchId:workspace.branchId,firstInAt:form.firstInAt||null,lastOutAt:form.lastOutAt||null},selectedId.value||null);dialogVisible.value=false;toast.add({severity:"success",summary:"Attendance saved",life:2500});await load({},true)}catch(e){toast.add({severity:"error",summary:"Save failed",detail:errorMessage(e),life:4500})}}
+async function importFile(){if(!selectedFile.value)return;try{const summary=await store.importFile(selectedFile.value);const hasIssues=summary.errorCount>0||summary.unmatchedCount>0;if(!hasIssues)importVisible.value=false;unmatchedRevision.value+=1;toast.add({severity:hasIssues?"warn":"success",summary:hasIssues?"Import completed with issues":"Import completed",detail:hasIssues?`${summary.successCount} imported, ${summary.unmatchedCount} unmatched, ${summary.errorCount} invalid.`:undefined,life:5000});await load({page:1},true)}catch(e){toast.add({severity:"error",summary:"Import failed",detail:errorMessage(e),life:5000})}}
+function formatDate(v){const d=new Date(v);return Number.isNaN(d.getTime())?"—":new Intl.DateTimeFormat(undefined,{dateStyle:"medium"}).format(d)}
+function formatTime(v){if(!v)return"—";return new Intl.DateTimeFormat(undefined,{hour:"2-digit",minute:"2-digit"}).format(new Date(v))}
+function duration(v){const m=Number(v||0);return `${Math.floor(m/60)}h ${m%60}m`}
+function severity(v){if(v==="PRESENT")return"success";if(["LATE","EARLY_LEAVE","LATE_AND_EARLY_LEAVE"].includes(v))return"warn";if(["ABSENT","MISSING_IN","MISSING_OUT"].includes(v))return"danger";return"info"}
+function actions(row){return[{label:"Correct Record",icon:"pi pi-pencil",visible:auth.hasPermission(ATTENDANCE_PERMISSIONS.RECORD_UPDATE)&&!["PAYROLL_LOCKED","FINALIZED"].includes(row.lockStatus),command:()=>openEdit(row)}]}
+watch(()=>workspace.revision,async()=>{query.page=1;await Promise.all([loadLookups(),load({},true)])})
+onMounted(()=>Promise.all([loadLookups(),load()]))
+onBeforeUnmount(()=>clearTimeout(timer))
 </script>
 
 <template>
-    <section class="attendance-enterprise-page hrms-list-page">
-        <AppFilterBar :loading="attendanceStore.loading">
-            <InputText
-                v-model.trim="filters.search"
-                class="app-filter-field app-filter-field--search"
-                :placeholder="t('attendance.searchPlaceholder')"
-                @keyup.enter="loadRecords(1)"
-            />
-
-            <input
-                v-model="filters.dateFrom"
-                type="date"
-                class="app-filter-field attendance-native-control"
-                :aria-label="t('common.dateFrom')"
-            />
-
-            <input
-                v-model="filters.dateTo"
-                type="date"
-                class="app-filter-field attendance-native-control"
-                :aria-label="t('common.dateTo')"
-            />
-
-            <Select
-                v-model="filters.status"
-                class="app-filter-field"
-                :options="statusOptions"
-                option-label="label"
-                option-value="value"
-            />
-
-            <template #actions>
-                <Button
-                    icon="pi pi-search"
-                    :label="t('common.search')"
-                    :loading="attendanceStore.loading"
-                    @click="loadRecords(1)"
-                />
-                <Button
-                    icon="pi pi-filter-slash"
-                    severity="secondary"
-                    outlined
-                    :aria-label="t('common.reset')"
-                    @click="resetFilters"
-                />
-                <Button
-                    v-if="canImport"
-                    icon="pi pi-download"
-                    :label="t('attendance.template')"
-                    severity="secondary"
-                    outlined
-                    @click="attendanceStore.downloadTemplate()"
-                />
-                <Button
-                    v-if="canImport"
-                    icon="pi pi-upload"
-                    :label="t('attendance.import')"
-                    severity="secondary"
-                    @click="importDialogVisible = true"
-                />
-                <Button
-                    v-if="canCreate"
-                    icon="pi pi-plus"
-                    :label="t('attendance.addRecord')"
-                    @click="openCreate"
-                />
-            </template>
-        </AppFilterBar>
-
-        <section class="hrms-list-card">
-            <div class="hrms-table-wrap">
-                <DataTable
-                    :value="attendanceStore.items"
-                    :loading="attendanceStore.loading"
-                    data-key="id"
-                    striped-rows
-                    scrollable
-                    paginator
-                    lazy
-                    :rows="attendanceStore.pagination.limit"
-                    :total-records="attendanceStore.pagination.total"
-                    class="hrms-standard-table hrms-standard-table--horizontal"
-                    paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-                    current-page-report-template="{first}-{last} / {totalRecords}"
-                    :rows-per-page-options="[20, 50, 100]"
-                    @page="loadRecords($event.page + 1)"
-                >
-                    <template #empty>
-                        <div class="hrms-empty-state">No attendance records found.</div>
-                    </template>
-
-                    <Column :header="t('attendance.date')" style="min-width: 7.5rem">
-                        <template #body="{ data }">
-                            {{ formatDate(data.attendanceDate) }}
-                        </template>
-                    </Column>
-
-                    <Column field="employeeCode" :header="t('attendance.employeeId')" style="min-width: 8.5rem" />
-
-                    <Column :header="t('attendance.employeeName')" style="min-width: 12rem">
-                        <template #body="{ data }">
-                            <span class="attendance-cell-primary">
-                                {{ data.employeeId?.displayName || data.employeeName || "-" }}
-                            </span>
-                        </template>
-                    </Column>
-
-                    <Column :header="t('attendance.shift')" style="min-width: 7rem">
-                        <template #body="{ data }">
-                            {{ data.shiftId?.code || data.shiftSnapshot?.code || "-" }}
-                        </template>
-                    </Column>
-
-                    <Column :header="t('attendance.firstIn')" style="min-width: 7rem">
-                        <template #body="{ data }">
-                            {{ formatTime(data.firstInAt) }}
-                        </template>
-                    </Column>
-
-                    <Column :header="t('attendance.lastOut')" style="min-width: 7rem">
-                        <template #body="{ data }">
-                            {{ formatTime(data.lastOutAt) }}
-                        </template>
-                    </Column>
-
-                    <Column :header="t('attendance.workedMinutes')" style="min-width: 8rem">
-                        <template #body="{ data }">
-                            {{ formatWorkedMinutes(data.workedMinutes) }}
-                        </template>
-                    </Column>
-
-                    <Column :header="t('attendance.statusLabel')" style="min-width: 9rem">
-                        <template #body="{ data }">
-                            <Tag
-                                class="attendance-table-status"
-                                :value="statusLabel(data.status)"
-                                :severity="statusSeverity(data.status)"
-                            />
-                        </template>
-                    </Column>
-
-                    <Column
-                        v-if="canUpdate"
-                        :header="t('common.actions')"
-                        style="min-width: 5rem"
-                    >
-                        <template #body="{ data }">
-                            <AppTableActions
-                                :can-edit="canUpdate"
-                                :edit-label="t('common.edit')"
-                                @edit="openEdit(data)"
-                            />
-                        </template>
-                    </Column>
-                </DataTable>
-            </div>
-        </section>
-
-        <Dialog
-            v-model:visible="dialogVisible"
-            modal
-            :header="dialogTitle"
-            class="hrms-standard-dialog"
-        >
-            <div class="hrms-form-grid">
-                <label class="hrms-form-field">
-                    <span>{{ t("attendance.employeeId") }}</span>
-                    <InputText
-                        v-model.trim="form.employeeCode"
-                        :disabled="Boolean(selectedId)"
-                    />
-                </label>
-
-                <label class="hrms-form-field">
-                    <span>{{ t("attendance.date") }}</span>
-                    <input
-                        v-model="form.attendanceDate"
-                        type="date"
-                        class="attendance-native-control"
-                    />
-                </label>
-
-                <label class="hrms-form-field">
-                    <span>{{ t("attendance.firstIn") }}</span>
-                    <input
-                        v-model="form.firstInAt"
-                        type="datetime-local"
-                        class="attendance-native-control"
-                    />
-                </label>
-
-                <label class="hrms-form-field">
-                    <span>{{ t("attendance.lastOut") }}</span>
-                    <input
-                        v-model="form.lastOutAt"
-                        type="datetime-local"
-                        class="attendance-native-control"
-                    />
-                </label>
-
-                <label class="hrms-form-field hrms-form-field--wide">
-                    <span>{{ t("common.note") }}</span>
-                    <Textarea v-model="form.note" rows="3" auto-resize />
-                </label>
-            </div>
-
-            <template #footer>
-                <Button
-                    :label="t('common.cancel')"
-                    severity="secondary"
-                    outlined
-                    @click="dialogVisible = false"
-                />
-                <Button
-                    :label="t('common.save')"
-                    icon="pi pi-check"
-                    :loading="attendanceStore.saving"
-                    @click="saveRecord"
-                />
-            </template>
-        </Dialog>
-
-        <Dialog
-            v-model:visible="importDialogVisible"
-            modal
-            :header="t('attendance.importTitle')"
-            class="hrms-standard-dialog--small"
-        >
-            <div class="attendance-upload-box">
-                <input type="file" accept=".xlsx,.xls" @change="onFileChange" />
-                <p class="attendance-dialog-note">
-                    Select the completed attendance Excel file. Existing records are validated by the backend before import.
-                </p>
-                <ProgressBar
-                    v-if="attendanceStore.importing"
-                    :value="attendanceStore.importProgress"
-                />
-            </div>
-
-            <template #footer>
-                <Button
-                    :label="t('common.cancel')"
-                    severity="secondary"
-                    outlined
-                    :disabled="attendanceStore.importing"
-                    @click="importDialogVisible = false"
-                />
-                <Button
-                    :label="t('attendance.import')"
-                    icon="pi pi-upload"
-                    :disabled="!selectedFile"
-                    :loading="attendanceStore.importing"
-                    @click="runImport"
-                />
-            </template>
-        </Dialog>
-    </section>
+<EnterpriseListPage :rows="rows" :columns="attendanceColumns" :loading="store.loading" :error="store.error" :pagination="store.pagination" row-key="id" empty-title="No attendance records" empty-description="Import scans or run verification for this period." @retry="load({},true)" @page-change="load({page:$event.page,limit:$event.limit})">
+ <template #controls><EnterpriseListControls filter-label="Filters" hide-filter-label="Hide Filters" :active-filter-count="activeFilterCount">
+  <template #start><Button label="Refresh" icon="pi pi-refresh" severity="secondary" text :loading="store.loading" @click="load({},true)"/><PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT" label="Sample" icon="pi pi-download" severity="secondary" text @click="store.downloadTemplate()"/><PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT" label="Import" icon="pi pi-upload" severity="secondary" text @click="importVisible=true"/><PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_VIEW" label="Unmatched" icon="pi pi-exclamation-triangle" severity="warn" text @click="unmatchedVisible=true"/><PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT" label="Export" icon="pi pi-file-export" severity="secondary" text :loading="store.exporting" @click="store.exportFile({...query,companyId:workspace.companyId,branchId:workspace.branchId})"/></template>
+  <template #actions><PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_CREATE" label="Add Record" icon="pi pi-plus" :disabled="!workspace.ready" @click="openCreate"/></template>
+  <template #filters><EnterpriseFilterBar :loading="store.loading"><EnterpriseFilterField class="attendance-search" label="Search" search><span class="search-input"><i class="pi pi-search"/><InputText v-model="query.search" placeholder="Employee ID or name" @input="delayedSearch" @keyup.enter="load({page:1})"/></span></EnterpriseFilterField><EnterpriseFilterField label="From"><EnterpriseCalendarDatePicker v-model="query.dateFrom" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false"/></EnterpriseFilterField><EnterpriseFilterField label="To"><EnterpriseCalendarDatePicker v-model="query.dateTo" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false"/></EnterpriseFilterField><EnterpriseFilterField label="Department"><Select v-model="query.departmentId" :options="departmentOptions" option-label="name" option-value="id" filter/></EnterpriseFilterField><EnterpriseFilterField label="Status"><Select v-model="query.status" :options="attendanceStatusOptions" option-label="label" option-value="value"/></EnterpriseFilterField><EnterpriseFilterField label="Verification"><Select v-model="query.verificationStatus" :options="verificationOptions" option-label="label" option-value="value"/></EnterpriseFilterField><template #actions><Button label="Clear" icon="pi pi-times" severity="secondary" outlined :disabled="!activeFilterCount" @click="clearFilters"/><Button label="Apply" icon="pi pi-check" :loading="store.loading" @click="load({page:1},true)"/></template></EnterpriseFilterBar></template>
+ </EnterpriseListControls></template>
+ <template #cell-attendanceDate="{row}">{{formatDate(row.attendanceDate)}}</template><template #cell-firstInAt="{row}">{{formatTime(row.firstInAt)}}</template><template #cell-lastOutAt="{row}">{{formatTime(row.lastOutAt)}}</template><template #cell-workedMinutes="{row}">{{duration(row.workedMinutes)}}</template><template #cell-lateMinutes="{row}">{{row.lateMinutes||0}}m</template><template #cell-earlyLeaveMinutes="{row}">{{row.earlyLeaveMinutes||0}}m</template><template #cell-status="{row}"><Tag :value="row.status.replaceAll('_',' ')" :severity="severity(row.status)"/></template><template #cell-verificationStatus="{row}"><Tag :value="row.verificationStatus.replaceAll('_',' ')" :severity="row.verificationStatus==='NEEDS_REVIEW'?'warn':'secondary'"/></template><template #actions="{row}"><EnterpriseActionMenu :items="actions(row)" aria-label="Attendance actions"/></template>
+</EnterpriseListPage>
+<AttendanceRecordDialog v-model:visible="dialogVisible" :form="form" :editing="Boolean(selectedId)" :saving="store.saving" :company-id="workspace.companyId" :branch-id="workspace.branchId" @save="save"/><AttendanceImportDialog v-model:visible="importVisible" :importing="store.importing" :progress="store.importProgress" :result="store.importSummary" @file-change="selectedFile=$event" @template="store.downloadTemplate()" @import="importFile"/>
+<AttendanceUnmatchedDialog v-model:visible="unmatchedVisible" :company-id="workspace.companyId" :branch-id="workspace.branchId" :revision="unmatchedRevision"/>
 </template>
+<style scoped>.attendance-search{min-width:min(18rem,100%);flex:1 1 20rem}.search-input{position:relative;display:block}.search-input>i{position:absolute;z-index:1;left:.7rem;top:50%;transform:translateY(-50%);color:var(--p-text-muted-color);font-size:.75rem}.search-input :deep(.p-inputtext){width:100%;padding-left:2rem}</style>

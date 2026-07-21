@@ -9,13 +9,16 @@ import Dialog from "primevue/dialog"
 import Message from "primevue/message"
 import ProgressSpinner from "primevue/progressspinner"
 
-import AppFilterBar from "@/shared/components/filter/AppFilterBar.vue"
+import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
+import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import { useModulePermissions } from "@/shared/auth/useModulePermissions.js"
 import { runAttendanceVerification } from "../services/attendance.api.js"
 import "../styles/attendance-enterprise.css"
 
 const { t } = useI18n()
 const toast = useToast()
+const workspace = useWorkspaceStore()
 
 const permissions = useModulePermissions({
     run: "ATTENDANCE.VERIFICATION.RUN",
@@ -72,7 +75,11 @@ async function runVerification() {
     summary.value = null
 
     try {
-        summary.value = await runAttendanceVerification({ ...form })
+        summary.value = await runAttendanceVerification({
+            ...form,
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+        })
 
         toast.add({
             severity: "success",
@@ -88,22 +95,26 @@ async function runVerification() {
 
 <template>
     <section class="attendance-enterprise-page hrms-list-page">
-        <AppFilterBar :loading="running">
+        <EnterpriseFilterBar :loading="running">
             <label class="app-filter-field hrms-form-field">
                 <span>{{ t("common.dateFrom") }}</span>
-                <input
+                <EnterpriseCalendarDatePicker
                     v-model="form.dateFrom"
-                    type="date"
-                    class="attendance-native-control"
+                    :company-id="workspace.companyId"
+                    :branch-id="workspace.branchId"
+                    compact
+                    :show-status="false"
                 />
             </label>
 
             <label class="app-filter-field hrms-form-field">
                 <span>{{ t("common.dateTo") }}</span>
-                <input
+                <EnterpriseCalendarDatePicker
                     v-model="form.dateTo"
-                    type="date"
-                    class="attendance-native-control"
+                    :company-id="workspace.companyId"
+                    :branch-id="workspace.branchId"
+                    compact
+                    :show-status="false"
                 />
             </label>
 
@@ -127,10 +138,11 @@ async function runVerification() {
                     icon="pi pi-play"
                     :label="t('attendance.verification.run')"
                     :loading="running"
+                    :disabled="!workspace.ready"
                     @click="openConfirmation"
                 />
             </template>
-        </AppFilterBar>
+        </EnterpriseFilterBar>
 
         <section v-if="running" class="hrms-list-card attendance-running-state">
             <ProgressSpinner stroke-width="4" />

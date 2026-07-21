@@ -11,8 +11,10 @@ import {
     exportEmployeesController,
     getEmployeeApprovalPreviewController,
     getEmployeeController,
+    getEmployeeImportJobController,
     importEmployeesController,
     listEmployeesController,
+    startEmployeeImportJobController,
     updateEmployeeController,
 } from "../controllers/employee.controller.js"
 import {
@@ -40,6 +42,8 @@ router.use(requireAuthentication)
 router.get("/approval-preview", requirePermission(EMPLOYEE_PERMISSIONS.VIEW), validateRequest({ query: employeeApprovalPreviewQuerySchema }), asyncHandler(getEmployeeApprovalPreviewController))
 router.get("/import-template", requirePermission(EMPLOYEE_PERMISSIONS.VIEW), asyncHandler(downloadEmployeeImportTemplateController))
 router.get("/export", requirePermission(EMPLOYEE_PERMISSIONS.EXPORT), validateRequest({ query: employeeListQuerySchema }), asyncHandler(exportEmployeesController))
+router.post("/import-jobs", requirePermission(EMPLOYEE_PERMISSIONS.IMPORT), upload.single("file"), validateRequest({ query: employeeImportQuerySchema }), asyncHandler(startEmployeeImportJobController))
+router.get("/import-jobs/:jobId", requirePermission(EMPLOYEE_PERMISSIONS.IMPORT), asyncHandler(getEmployeeImportJobController))
 router.post("/import", requirePermission(EMPLOYEE_PERMISSIONS.IMPORT), upload.single("file"), validateRequest({ query: employeeImportQuerySchema }), asyncHandler(importEmployeesController))
 router.get("/", requirePermission(EMPLOYEE_PERMISSIONS.VIEW), validateRequest({ query: employeeListQuerySchema }), asyncHandler(listEmployeesController))
 router.post("/", requirePermission(EMPLOYEE_PERMISSIONS.CREATE), validateRequest({ body: employeeCreateSchema }), asyncHandler(createEmployeeController))

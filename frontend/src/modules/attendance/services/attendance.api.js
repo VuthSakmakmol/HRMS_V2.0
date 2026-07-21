@@ -2,6 +2,14 @@ import { apiClient } from "@/shared/services/apiClient.js"
 
 const ATTENDANCE_ENDPOINT = "/attendance"
 
+function withoutBlankParams(params = {}) {
+    return Object.fromEntries(
+        Object.entries(params).filter(
+            ([, value]) => value !== "" && value !== null && value !== undefined,
+        ),
+    )
+}
+
 function downloadBlob(blob, filename) {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement("a")
@@ -16,7 +24,9 @@ function downloadBlob(blob, filename) {
 }
 
 export async function fetchAttendanceRecords(params) {
-    const response = await apiClient.get(ATTENDANCE_ENDPOINT, { params })
+    const response = await apiClient.get(ATTENDANCE_ENDPOINT, {
+        params: withoutBlankParams(params),
+    })
     return response.data.data
 }
 
@@ -37,6 +47,7 @@ export async function downloadAttendanceTemplate() {
     const response = await apiClient.get(
         `${ATTENDANCE_ENDPOINT}/import-template`,
         {
+            params: { downloadVersion: Date.now() },
             responseType: "blob",
             timeout: 0,
         },
@@ -61,6 +72,24 @@ export async function importAttendance(file, onUploadProgress) {
     return response.data.data.summary
 }
 
+export async function fetchAttendanceImportIssues(params = {}) {
+    const response = await apiClient.get(
+        `${ATTENDANCE_ENDPOINT}/import-issues`,
+        { params: withoutBlankParams(params) },
+    )
+
+    return response.data.data
+}
+
+export async function exportAttendanceRecords(params = {}) {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/export`, {
+        params: withoutBlankParams(params),
+        responseType: "blob",
+        timeout: 0,
+    })
+    downloadBlob(response.data, "attendance-records.xlsx")
+}
+
 
 const POLICY_ENDPOINT = "/attendance/policies"
 const SCAN_ENDPOINT = "/attendance/scans"
@@ -69,7 +98,12 @@ const VERIFICATION_ENDPOINT = "/attendance/verification"
 
 export async function fetchAttendancePolicies(params = {}) {
     const response = await apiClient.get(POLICY_ENDPOINT, { params })
-    return response.data.data.items || []
+    return response.data.data
+}
+
+export async function archiveAttendancePolicy(policyId) {
+    const response = await apiClient.patch(`${POLICY_ENDPOINT}/${policyId}/archive`)
+    return response.data.data.policy
 }
 
 export async function createAttendancePolicy(payload) {

@@ -256,17 +256,6 @@ export function serializeLine(line) {
             ? serializeBranch(raw.branchId)
             : null
 
-    const populatedDepartment =
-        raw.departmentId && typeof raw.departmentId === "object"
-            ? serializeDepartment(raw.departmentId)
-            : null
-
-
-    const leaderPosition =
-        raw.leaderPositionId && typeof raw.leaderPositionId === "object"
-            ? serializePosition(raw.leaderPositionId)
-            : null
-
     return {
         id: raw._id?.toString?.() || raw.id,
         companyId:
@@ -275,30 +264,15 @@ export function serializeLine(line) {
             raw.companyId,
         branchId:
             populatedBranch?.id || raw.branchId?.toString?.() || raw.branchId,
-        departmentId:
-            populatedDepartment?.id ||
-            raw.departmentId?.toString?.() ||
-            raw.departmentId,
-
         code: raw.code,
         name: raw.name,
         description: raw.description || "",
         status: raw.status,
 
-        allowedPositionIds: [],
         allowsAllPositions: true,
-
-        leaderPositionId:
-            leaderPosition?.id ||
-            raw.leaderPositionId?.toString?.() ||
-            raw.leaderPositionId ||
-            null,
 
         company: populatedCompany,
         branch: populatedBranch,
-        department: populatedDepartment,
-        allowedPositions: [],
-        leaderPosition,
 
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
@@ -313,8 +287,6 @@ function buildUpdatePayload(payload, accountId) {
     for (const field of [
         "code",
         "name",
-        "allowedPositionIds",
-        "leaderPositionId",
         "description",
         "status",
     ]) {
@@ -511,30 +483,6 @@ export async function listLines({ query, user }) {
         filter.branchId = query.branchId
     }
 
-    if (query.departmentId) {
-        filter.departmentId = query.departmentId
-    }
-
-    if (query.positionId) {
-        ensureValidObjectId(
-            query.positionId,
-            "ORGANIZATION_POSITION_INVALID_ID",
-            "errors.organization.position.invalidId",
-        )
-
-        const position = await Position.findOne({
-            _id: query.positionId,
-            status: { $ne: "ARCHIVED" },
-            ...getLineScopeFilter(user),
-        }).select("departmentId").lean()
-
-        if (!position) {
-            filter._id = { $in: [] }
-        } else {
-            filter.departmentId = position.departmentId
-        }
-    }
-
     if (query.status !== "ALL") {
         filter.status = query.status
     }
@@ -552,14 +500,6 @@ export async function listLines({ query, user }) {
             .populate({
                 path: "branchId",
                 select: "companyId code name shortName status isHeadOffice",
-            })
-            .populate({
-                path: "departmentId",
-                select: "companyId branchId code name status",
-            })
-            .populate({
-                path: "leaderPositionId",
-                select: "companyId branchId departmentId code title level isManager status",
             })
             .sort({
                 [query.sortBy]: query.sortOrder === "desc" ? -1 : 1,
@@ -605,14 +545,6 @@ export async function getLineById({ lineId, user }) {
             path: "branchId",
             select: "companyId code name shortName status isHeadOffice",
         })
-        .populate({
-            path: "departmentId",
-            select: "companyId branchId code name status",
-        })
-        .populate({
-            path: "leaderPositionId",
-            select: "companyId branchId departmentId code title level isManager status",
-        })
         .lean()
 
     if (!line) {
@@ -638,30 +570,20 @@ export async function createLine({ payload, user }) {
         user,
     })
 
-    await ensureDepartmentExists({
+    const duplicate = await Line.exists({
         companyId: payload.companyId,
         branchId: payload.branchId,
-        departmentId: payload.departmentId,
-        user,
+        code: payload.code,
+        status: { $ne: "ARCHIVED" },
     })
-
-    const leaderPositionId = await validateLeaderPosition({
-        companyId: payload.companyId,
-        branchId: payload.branchId,
-        departmentId: payload.departmentId,
-        leaderPositionId: payload.leaderPositionId,
-        user,
-    })
+    if (duplicate) handleDuplicateError({ code: 11000 })
 
     try {
         const line = await Line.create({
             companyId: payload.companyId,
             branchId: payload.branchId,
-            departmentId: payload.departmentId,
             code: payload.code,
             name: payload.name,
-            allowedPositionIds: [],
-            leaderPositionId,
             description: payload.description || "",
             status: payload.status || "ACTIVE",
             createdByAccountId: user.accountId,
@@ -707,18 +629,16 @@ export async function updateLine({ lineId, payload, user }) {
         })
     }
 
-    if (payload.leaderPositionId !== undefined) {
-        payload.leaderPositionId = await validateLeaderPosition({
+    if (payload.code && payload.code !== existingLine.code) {
+        const duplicate = await Line.exists({
+            _id: { $ne: existingLine._id },
             companyId: existingLine.companyId,
             branchId: existingLine.branchId,
-            departmentId: existingLine.departmentId,
-            leaderPositionId: payload.leaderPositionId,
-            user,
+            code: payload.code,
+            status: { $ne: "ARCHIVED" },
         })
+        if (duplicate) handleDuplicateError({ code: 11000 })
     }
-
-    // All positions in the department are always allowed. Clear legacy limits.
-    payload.allowedPositionIds = []
 
     try {
         const updatedLine = await Line.findByIdAndUpdate(

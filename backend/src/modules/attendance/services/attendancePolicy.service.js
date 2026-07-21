@@ -2,6 +2,8 @@ import AttendancePolicy from "../models/AttendancePolicy.js"
 import { AppError } from "../../../shared/errors/AppError.js"
 import { clearCacheByPrefix, getCache, setCache } from "../../../shared/cache/memoryCache.js"
 import { endOfBusinessDay, startOfBusinessDay } from "../utils/attendanceDate.util.js"
+import Branch from "../../organization/models/Branch.js"
+import { attendanceScopeFilter, assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const CACHE_PREFIX = "attendance:policies:"
 const CACHE_TTL_MS = 60_000
@@ -20,50 +22,71 @@ function normalizePayload(payload) {
     }
 }
 
-async function deactivateOtherActivePolicies({ companyId, branchId, excludeId, user }) {
-    const filter = {
-        companyId,
-        branchId: branchId || null,
+async function ensureNoActiveOverlap(payload, excludeId = null) {
+    if (payload.status !== "ACTIVE") return
+
+    const start = payload.effectiveFrom || new Date("1900-01-01T00:00:00.000Z")
+    const end = payload.effectiveTo || new Date("2999-12-31T23:59:59.999Z")
+    const overlap = await AttendancePolicy.exists({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
         status: "ACTIVE",
-    }
-    if (excludeId) filter._id = { $ne: excludeId }
-    await AttendancePolicy.updateMany(filter, {
-        $set: {
-            status: "INACTIVE",
-            updatedByAccountId: user.accountId,
-        },
+        ...(excludeId ? { _id: { $ne: excludeId } } : {}),
+        $and: [
+            { $or: [{ effectiveFrom: null }, { effectiveFrom: { $lte: end } }] },
+            { $or: [{ effectiveTo: null }, { effectiveTo: { $gte: start } }] },
+        ],
     })
+    if (overlap) {
+        throw new AppError({
+            statusCode: 409,
+            code: "ATTENDANCE_POLICY_DATE_OVERLAP",
+            messageKey: "errors.attendance.policyDateOverlap",
+        })
+    }
 }
 
-export async function listAttendancePolicies({ query }) {
-    const cacheKey = `${CACHE_PREFIX}list:${JSON.stringify(query)}`
+async function validatePolicyScope(payload, user) {
+    assertAttendanceScope(user, payload.companyId, payload.branchId)
+    const branch = await Branch.exists({ _id: payload.branchId, companyId: payload.companyId, status: { $ne: "ARCHIVED" } })
+    if (!branch) throw new AppError({ statusCode: 422, code: "ATTENDANCE_POLICY_BRANCH_INVALID", messageKey: "errors.attendance.policyBranchInvalid" })
+}
+
+export async function listAttendancePolicies({ query, user }) {
+    const cacheKey = `${CACHE_PREFIX}list:${user?.accountId || "anonymous"}:${JSON.stringify(query)}`
     const cached = getCache(cacheKey)
     if (cached) return cached
 
-    const filter = {}
+    const filter = { ...attendanceScopeFilter(user) }
     if (query.companyId) filter.companyId = query.companyId
     if (query.branchId) filter.branchId = query.branchId
     if (query.status !== "ALL") filter.status = query.status
 
-    const items = await AttendancePolicy.find(filter)
+    if (query.search) filter.$and = [{ $or: [
+        { code: { $regex: query.search, $options: "i" } },
+        { name: { $regex: query.search, $options: "i" } },
+    ] }]
+    const skip = (query.page - 1) * query.limit
+    const [items, total] = await Promise.all([
+        AttendancePolicy.find(filter)
         .populate("companyId", "code displayName")
         .populate("branchId", "code name")
-        .sort({ companyId: 1, branchId: 1, status: 1, effectiveFrom: -1, name: 1 })
-        .lean()
+        .sort({ status: 1, effectiveFrom: -1, name: 1 })
+        .skip(skip).limit(query.limit).lean(),
+        AttendancePolicy.countDocuments(filter),
+    ])
 
-    const result = items.map((item) => ({ ...item, id: item._id.toString(), _id: undefined }))
+    const result = {
+        items: items.map((item) => ({ ...item, id: item._id.toString(), _id: undefined })),
+        pagination: { page: query.page, limit: query.limit, total, totalPages: Math.max(1, Math.ceil(total / query.limit)) },
+    }
     return setCache(cacheKey, result, CACHE_TTL_MS)
 }
 
 export async function createAttendancePolicy({ payload, user }) {
+    await validatePolicyScope(payload, user)
     const normalized = normalizePayload(payload)
-    if (normalized.status === "ACTIVE") {
-        await deactivateOtherActivePolicies({
-            companyId: normalized.companyId,
-            branchId: normalized.branchId,
-            user,
-        })
-    }
+    await ensureNoActiveOverlap(normalized)
     const policy = await AttendancePolicy.create({
         ...normalized,
         createdByAccountId: user.accountId,
@@ -74,17 +97,11 @@ export async function createAttendancePolicy({ payload, user }) {
 }
 
 export async function updateAttendancePolicy({ policyId, payload, user }) {
+    await validatePolicyScope(payload, user)
     const normalized = normalizePayload(payload)
-    if (normalized.status === "ACTIVE") {
-        await deactivateOtherActivePolicies({
-            companyId: normalized.companyId,
-            branchId: normalized.branchId,
-            excludeId: policyId,
-            user,
-        })
-    }
-    const policy = await AttendancePolicy.findByIdAndUpdate(
-        policyId,
+    await ensureNoActiveOverlap(normalized, policyId)
+    const policy = await AttendancePolicy.findOneAndUpdate(
+        { _id: policyId, ...attendanceScopeFilter(user) },
         { $set: { ...normalized, updatedByAccountId: user.accountId } },
         { returnDocument: "after", runValidators: true },
     )
@@ -95,6 +112,17 @@ export async function updateAttendancePolicy({ policyId, payload, user }) {
             messageKey: "errors.attendance.policyNotFound",
         })
     }
+    invalidateCache()
+    return policy.toJSON()
+}
+
+export async function archiveAttendancePolicy({ policyId, user }) {
+    const policy = await AttendancePolicy.findOneAndUpdate(
+        { _id: policyId, ...attendanceScopeFilter(user) },
+        { $set: { status: "ARCHIVED", updatedByAccountId: user.accountId } },
+        { returnDocument: "after", runValidators: true },
+    )
+    if (!policy) throw new AppError({ statusCode: 404, code: "ATTENDANCE_POLICY_NOT_FOUND", messageKey: "errors.attendance.policyNotFound" })
     invalidateCache()
     return policy.toJSON()
 }
@@ -117,11 +145,5 @@ export async function resolveAttendancePolicy({ companyId, branchId, workDate = 
             .lean()
         if (branchPolicy) return branchPolicy
     }
-    return AttendancePolicy.findOne({
-        ...effectiveFilter,
-        companyId,
-        branchId: null,
-    })
-        .sort({ effectiveFrom: -1, updatedAt: -1 })
-        .lean()
+    return null
 }

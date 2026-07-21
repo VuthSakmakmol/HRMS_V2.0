@@ -32,12 +32,6 @@ const lineSchema = new Schema(
             required: true,
         },
 
-        departmentId: {
-            type: Schema.Types.ObjectId,
-            ref: "Department",
-            required: true,
-        },
-
         code: {
             type: String,
             required: true,
@@ -55,20 +49,6 @@ const lineSchema = new Schema(
             minlength: 2,
             maxlength: 160,
             set: normalizeText,
-        },
-
-        // Legacy compatibility only. An empty array means every active position
-        // in the line department is automatically allowed. New writes always
-        // keep this field empty.
-        allowedPositionIds: {
-            type: [{ type: Schema.Types.ObjectId, ref: "Position" }],
-            default: [],
-        },
-
-        leaderPositionId: {
-            type: Schema.Types.ObjectId,
-            ref: "Position",
-            default: null,
         },
 
         description: {
@@ -109,12 +89,10 @@ lineSchema.index(
     {
         companyId: 1,
         branchId: 1,
-        departmentId: 1,
         code: 1,
     },
     {
-        unique: true,
-        name: "uq_line_department_code",
+        name: "idx_line_branch_code",
     },
 )
 
@@ -122,12 +100,11 @@ lineSchema.index(
     {
         companyId: 1,
         branchId: 1,
-        departmentId: 1,
         status: 1,
         name: 1,
     },
     {
-        name: "idx_line_department_status_name",
+        name: "idx_line_branch_status_name",
     },
 )
 

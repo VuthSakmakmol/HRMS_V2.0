@@ -3,10 +3,21 @@ import Button from "primevue/button"
 import Message from "primevue/message"
 import ProgressBar from "primevue/progressbar"
 import { computed,ref } from "vue"
+import { useI18n } from "vue-i18n"
 import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue"
 import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue"
-defineProps({visible:Boolean,importing:Boolean,progress:{type:Number,default:0},result:{type:Object,default:null}})
+const props=defineProps({visible:Boolean,importing:Boolean,progress:{type:Number,default:0},phase:{type:String,default:"IDLE"},phaseMessageKey:{type:String,default:""},processedRows:{type:Number,default:0},totalRows:{type:Number,default:0},result:{type:Object,default:null}})
 const emit=defineEmits(['update:visible','file-change','download-template','import','close']);const inputRef=ref(null),file=ref(null);const fileName=computed(()=>file.value?.name||'')
+const { t, te } = useI18n()
+const requiredFields = ["employeeCode", "departmentCode", "positionCode", "lineCode", "shiftCode", "joinDate"]
+const optionalExamples = "Names, gender, dateOfBirth, email, phoneNumber, employeeType, addresses, documents, skills and account creation"
+function fieldLabel(field) { return String(field || "employee").replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, value => value.toUpperCase()) }
+function errorText(item) { return item?.messageKey && te(item.messageKey) ? t(item.messageKey) : (item?.message || item?.messageKey || "Invalid value") }
+const progressText=computed(()=>{
+    if(props.phaseMessageKey&&te(props.phaseMessageKey))return t(props.phaseMessageKey)
+    const labels={UPLOADING:"Uploading file",UPLOADED:"File uploaded",READING_FILE:"Reading Excel file",VALIDATING:"Validating rows",RESOLVING_REFERENCES:"Checking master data",SAVING_ROWS:"Saving employees",COMPLETED:"Import completed",FAILED:"Import failed"}
+    return labels[props.phase]||"Processing import"
+})
 function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file.value)}function close(){if(file.value){file.value=null;emit('file-change',null)}emit('update:visible',false);emit('close')}
 </script>
 <template>
@@ -22,8 +33,7 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
                 <div>
                     <h3>Import Employees</h3>
                     <p>
-                        Download the enterprise template, complete it without
-                        changing columns, then upload the Excel file.
+                        Download the template and keep its column names. The complete file is validated before anything is saved.
                     </p>
                 </div>
 
@@ -35,6 +45,12 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
                     :disabled="importing"
                     @click="emit('download-template')"
                 />
+            </section>
+
+            <section class="employee-import__guide">
+                <div><strong>Required columns</strong><span>{{ requiredFields.join(", ") }}</span></div>
+                <div><strong>Optional columns</strong><span>{{ optionalExamples }}</span></div>
+                <div><strong>Important formats</strong><span>Dates: DD/MM/YYYY · phone numbers: digits only · codes must match active master data.</span></div>
             </section>
 
             <input
@@ -61,6 +77,10 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
                 :value="progress"
                 :show-value="true"
             />
+            <div v-if="importing" class="employee-import__progress-copy">
+                <strong>{{ progressText }}</strong>
+                <span v-if="totalRows">{{ processedRows }} / {{ totalRows }} rows</span>
+            </div>
 
             <Message
                 v-if="result"
@@ -88,8 +108,12 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
                             class="employee-import__error"
                         >
                             <strong>Row {{ item.rowNumber ?? "—" }}</strong>
-                            <span>{{ item.field || "employee" }}</span>
-                            <span>{{ item.messageKey || item.message }}</span>
+                            <span>{{ fieldLabel(item.field) }}</span>
+                            <span class="employee-import__reason">
+                                <strong>{{ errorText(item) }}</strong>
+                                <small v-if="item.value">Received: {{ item.value }}</small>
+                                <small v-if="item.expected">Expected: {{ item.expected }}</small>
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -146,6 +170,22 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
     cursor: pointer;
 }
 
+.employee-import__guide {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--p-content-border-color, #dbe3ef);
+    border-radius: 0.45rem;
+    background: var(--p-surface-50, #f8fafc);
+    font-size: 0.72rem;
+}
+
+.employee-import__guide div { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 0.65rem; }
+.employee-import__guide span, .employee-import__reason small { color: var(--p-text-muted-color, #64748b); }
+.employee-import__reason { display: grid; gap: 0.15rem; }
+.employee-import__reason strong { font-weight: 600; }
+.employee-import__progress-copy { display: flex; justify-content: space-between; gap: 1rem; color: var(--p-text-muted-color, #64748b); font-size: 0.72rem; }
+
 .employee-import__dropzone:hover:not(:disabled) {
     border-color: var(--p-primary-color);
     background: var(--p-primary-50, #eff6ff);
@@ -196,7 +236,8 @@ function changed(e){file.value=e.target.files?.[0]||null;emit('file-change',file
     }
 
     .employee-import__result-summary,
-    .employee-import__error {
+    .employee-import__error,
+    .employee-import__guide div {
         grid-template-columns: minmax(0, 1fr);
     }
 }

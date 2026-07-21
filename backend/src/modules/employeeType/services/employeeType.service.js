@@ -1,4 +1,4 @@
-import { Types } from "mongoose"
+import mongoose, { Types } from "mongoose"
 
 import {
     clearCacheByPrefix,
@@ -10,6 +10,8 @@ import { AppError } from "../../../shared/errors/AppError.js"
 import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
 import Position from "../../organization/models/Position.js"
+import Employee from "../../employee/models/Employee.js"
+import EmployeeMovement from "../../employeeMovement/models/EmployeeMovement.js"
 import EmployeeType from "../models/EmployeeType.js"
 
 function escapeRegExp(value) {
@@ -381,10 +383,7 @@ function normalizeChildGroups(children = []) {
         dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
-        positionIds:
-            child.positionAssignmentMode === "ALL_POSITIONS"
-                ? []
-                : [...new Set(child.positionIds || [])],
+        positionIds: [...new Set(child.positionIds || [])],
     }))
 }
 
@@ -397,15 +396,141 @@ function flattenAssignmentPositionIds({ positionIds = [], children = [] }) {
     ]
 }
 
+function assignmentByPosition(employeeType) {
+    const assignments = new Map()
+
+    for (const positionId of employeeType.positionIds || []) {
+        assignments.set(toId(positionId), {
+            employeeTypeChildId: null,
+            employeeTypeChildCode: "",
+            employeeTypeChildName: "",
+        })
+    }
+
+    for (const child of employeeType.children || []) {
+        for (const positionId of child.positionIds || []) {
+            assignments.set(toId(positionId), {
+                employeeTypeChildId: child._id || child.id || null,
+                employeeTypeChildCode: child.code || "",
+                employeeTypeChildName: child.name || "",
+            })
+        }
+    }
+
+    return assignments
+}
+
+function employeeAssignmentSnapshot(employee, overrides = {}) {
+    return {
+        companyId: employee.companyId || null,
+        branchId: employee.branchId || null,
+        departmentId: employee.departmentId || null,
+        positionId: employee.positionId || null,
+        lineId: employee.lineId || null,
+        shiftId: employee.shiftId || null,
+        employeeTypeId: employee.employeeTypeId || null,
+        employeeTypeChildId: employee.employeeTypeChildId || null,
+        employeeTypeChildCode: employee.employeeTypeChildCode || "",
+        employeeTypeChildName: employee.employeeTypeChildName || "",
+        employmentStatus: employee.employmentStatus || "",
+        ...overrides,
+    }
+}
+
+async function buildEmployeeReconciliationPreview({ existingEmployeeType, normalizedPayload }) {
+    const oldAssignments = assignmentByPosition(existingEmployeeType)
+    const newAssignments = assignmentByPosition(normalizedPayload)
+    const affectedPositionIds = [...new Set([...oldAssignments.keys(), ...newAssignments.keys()])]
+
+    if (!affectedPositionIds.length) {
+        return { totalAffected: 0, reassigned: 0, reviewRequired: 0, employees: [] }
+    }
+
+    const employees = await Employee.find({
+        companyId: normalizedPayload.companyId,
+        branchId: normalizedPayload.branchId,
+        positionId: { $in: affectedPositionIds },
+        recordStatus: { $ne: "ARCHIVED" },
+    })
+        .select("employeeCode companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildId employeeTypeChildCode employeeTypeChildName employeeTypeReviewRequired employmentStatus")
+        .lean()
+
+    const changes = []
+    for (const employee of employees) {
+        const target = newAssignments.get(toId(employee.positionId))
+        const desiredTypeId = target ? toId(existingEmployeeType._id) : null
+        const alreadyCorrect =
+            toId(employee.employeeTypeId) === desiredTypeId &&
+            toId(employee.employeeTypeChildId) === toId(target?.employeeTypeChildId)
+
+        if (alreadyCorrect && !employee.employeeTypeReviewRequired) continue
+
+        changes.push({ employee, target: target || null })
+    }
+
+    return {
+        totalAffected: changes.length,
+        reassigned: changes.filter((item) => item.target).length,
+        reviewRequired: changes.filter((item) => !item.target).length,
+        employees: changes,
+    }
+}
+
+async function applyEmployeeReconciliation({ preview, employeeTypeId, accountId, session }) {
+    if (!preview.totalAffected) return
+
+    const employeeOperations = []
+    const movementRows = []
+
+    for (const { employee, target } of preview.employees) {
+        const next = target
+            ? {
+                  employeeTypeId,
+                  employeeTypeChildId: target.employeeTypeChildId || null,
+                  employeeTypeChildCode: target.employeeTypeChildCode,
+                  employeeTypeChildName: target.employeeTypeChildName,
+                  employeeTypeReviewRequired: false,
+                  employeeTypeReviewReason: "",
+              }
+            : {
+                  employeeTypeId: null,
+                  employeeTypeChildId: null,
+                  employeeTypeChildCode: "",
+                  employeeTypeChildName: "",
+                  employeeTypeReviewRequired: true,
+                  employeeTypeReviewReason: "POSITION_UNASSIGNED",
+              }
+
+        employeeOperations.push({
+            updateOne: {
+                filter: { _id: employee._id },
+                update: { $set: { ...next, updatedByAccountId: accountId } },
+            },
+        })
+        movementRows.push({
+            employeeId: employee._id,
+            movementType: "EMPLOYEE_TYPE_CHANGE",
+            effectiveDate: new Date(),
+            from: employeeAssignmentSnapshot(employee),
+            to: employeeAssignmentSnapshot(employee, next),
+            reason: target
+                ? "Automatically reconciled after Employee Type position assignment changed."
+                : "Position removed from Employee Type assignment; HR review required.",
+            source: "SYSTEM",
+            createdByAccountId: accountId,
+            updatedByAccountId: accountId,
+        })
+    }
+
+    await Employee.bulkWrite(employeeOperations, { session })
+    await EmployeeMovement.insertMany(movementRows, { session })
+}
+
 function normalizeAssignmentPayload(payload) {
     const normalized = { ...payload }
 
     if (!normalized.positionAssignmentMode) {
         normalized.positionAssignmentMode = "SPECIFIC_POSITIONS"
-    }
-
-    if (normalized.positionAssignmentMode === "ALL_POSITIONS") {
-        normalized.positionIds = []
     }
 
     if (normalized.children !== undefined) {
@@ -544,6 +669,44 @@ async function ensurePositionsExist({ companyId, branchId, positionIds, user }) 
     return positions
 }
 
+async function getAllActivePositionIds({ companyId, branchId, user }) {
+    const positions = await Position.find({
+        companyId,
+        branchId,
+        status: "ACTIVE",
+        ...getPositionScopeFilter(user),
+    })
+        .select("_id")
+        .lean()
+
+    return positions.map((position) => position._id.toString())
+}
+
+async function resolveAssignmentPositionIds({ payload, user }) {
+    const allActivePositionIds = await getAllActivePositionIds({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        user,
+    })
+
+    const normalized = { ...payload }
+
+    if ((normalized.children || []).length > 0) {
+        normalized.children = normalized.children.map((child) => ({
+            ...child,
+            positionIds:
+                child.positionAssignmentMode === "ALL_POSITIONS"
+                    ? [...allActivePositionIds]
+                    : [...new Set(child.positionIds || [])],
+        }))
+        normalized.positionIds = []
+    } else if (normalized.positionAssignmentMode === "ALL_POSITIONS") {
+        normalized.positionIds = [...allActivePositionIds]
+    }
+
+    return normalized
+}
+
 async function ensurePositionsNotAlreadyMapped({
     companyId,
     branchId,
@@ -563,6 +726,8 @@ async function ensurePositionsNotAlreadyMapped({
         $or: [
             { positionIds: { $in: uniquePositionIds } },
             { "children.positionIds": { $in: uniquePositionIds } },
+            { positionAssignmentMode: "ALL_POSITIONS" },
+            { "children.positionAssignmentMode": "ALL_POSITIONS" },
         ],
     }
 
@@ -787,6 +952,70 @@ export async function listEmployeeTypes({ query, user }) {
     return setCache(cacheKey, result, 30_000)
 }
 
+export async function listEmployeeTypePositionAssignments({ query, user }) {
+    await ensureCompanyExists({ companyId: query.companyId, user })
+    await ensureBranchExists({
+        companyId: query.companyId,
+        branchId: query.branchId,
+        user,
+    })
+
+    const employeeTypes = await EmployeeType.find({
+        companyId: query.companyId,
+        branchId: query.branchId,
+        status: { $ne: "ARCHIVED" },
+        ...getEmployeeTypeScopeFilter(user),
+    })
+        .select("code name positionAssignmentMode positionIds children")
+        .lean()
+
+    const allActivePositionIds = await getAllActivePositionIds({
+        companyId: query.companyId,
+        branchId: query.branchId,
+        user,
+    })
+
+    const assignments = []
+
+    for (const employeeType of employeeTypes) {
+        const directIds =
+            employeeType.positionAssignmentMode === "ALL_POSITIONS"
+                ? allActivePositionIds
+                : employeeType.positionIds || []
+
+        for (const positionId of directIds) {
+            assignments.push({
+                positionId: toId(positionId),
+                employeeTypeId: toId(employeeType._id),
+                employeeTypeCode: employeeType.code,
+                employeeTypeName: employeeType.name,
+                childCode: null,
+                childName: null,
+            })
+        }
+
+        for (const child of employeeType.children || []) {
+            const childIds =
+                child.positionAssignmentMode === "ALL_POSITIONS"
+                    ? allActivePositionIds
+                    : child.positionIds || []
+
+            for (const positionId of childIds) {
+                assignments.push({
+                    positionId: toId(positionId),
+                    employeeTypeId: toId(employeeType._id),
+                    employeeTypeCode: employeeType.code,
+                    employeeTypeName: employeeType.name,
+                    childCode: child.code,
+                    childName: child.name,
+                })
+            }
+        }
+    }
+
+    return assignments
+}
+
 export async function getEmployeeTypeById({ employeeTypeId, user }) {
     ensureValidObjectId(
         employeeTypeId,
@@ -820,7 +1049,10 @@ export async function createEmployeeType({ payload, user }) {
         user,
     })
 
-    const normalizedPayload = normalizeAssignmentPayload(payload)
+    const normalizedPayload = await resolveAssignmentPositionIds({
+        payload: normalizeAssignmentPayload(payload),
+        user,
+    })
     const allPositionIds = flattenAssignmentPositionIds(normalizedPayload)
 
     await ensurePositionsExist({
@@ -879,9 +1111,13 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         })
     }
 
-    const normalizedPayload = normalizeAssignmentPayload({
+    const confirmEmployeeReconciliation = payload.confirmEmployeeReconciliation === true
+    const cleanPayload = { ...payload }
+    delete cleanPayload.confirmEmployeeReconciliation
+
+    let normalizedPayload = normalizeAssignmentPayload({
         ...existingEmployeeType,
-        ...payload,
+        ...cleanPayload,
     })
 
     await ensureCompanyExists({
@@ -895,12 +1131,19 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         user,
     })
 
-    const patchPayload = normalizeAssignmentPayload(payload)
+    normalizedPayload = await resolveAssignmentPositionIds({
+        payload: normalizedPayload,
+        user,
+    })
+
+    let patchPayload = normalizeAssignmentPayload(cleanPayload)
 
     if (
         patchPayload.positionIds !== undefined ||
         patchPayload.children !== undefined ||
-        patchPayload.positionAssignmentMode !== undefined
+        patchPayload.positionAssignmentMode !== undefined ||
+        patchPayload.companyId !== undefined ||
+        patchPayload.branchId !== undefined
     ) {
         const allPositionIds = flattenAssignmentPositionIds(normalizedPayload)
 
@@ -917,10 +1160,40 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
             positionIds: allPositionIds,
             employeeTypeId,
         })
+
+        patchPayload = {
+            ...patchPayload,
+            positionAssignmentMode: normalizedPayload.positionAssignmentMode,
+            positionIds: normalizedPayload.positionIds,
+            children: normalizedPayload.children,
+        }
     }
 
+    const reconciliationPreview = await buildEmployeeReconciliationPreview({
+        existingEmployeeType,
+        normalizedPayload,
+    })
+
+    if (reconciliationPreview.totalAffected > 0 && !confirmEmployeeReconciliation) {
+        throw new AppError({
+            statusCode: 409,
+            code: "ORGANIZATION_EMPLOYEE_TYPE_RECONCILIATION_CONFIRMATION_REQUIRED",
+            messageKey: "errors.organization.employeeType.reconciliationConfirmationRequired",
+            details: {
+                reconciliation: {
+                    totalAffected: reconciliationPreview.totalAffected,
+                    reassigned: reconciliationPreview.reassigned,
+                    reviewRequired: reconciliationPreview.reviewRequired,
+                },
+            },
+        })
+    }
+
+    const session = await mongoose.startSession()
     try {
-        const updatedEmployeeType = await EmployeeType.findOneAndUpdate(
+        let updatedEmployeeType
+        await session.withTransaction(async () => {
+            updatedEmployeeType = await EmployeeType.findOneAndUpdate(
             {
                 _id: employeeTypeId,
                 ...getEmployeeTypeScopeFilter(user),
@@ -934,17 +1207,36 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
             {
                 new: true,
                 runValidators: true,
+                session,
             },
-        )
+            )
+
+            await applyEmployeeReconciliation({
+                preview: reconciliationPreview,
+                employeeTypeId: updatedEmployeeType._id,
+                accountId: user?.accountId || null,
+                session,
+            })
+        })
 
         clearEmployeeTypeRelatedCaches()
 
-        return getEmployeeTypeById({
+        const employeeType = await getEmployeeTypeById({
             employeeTypeId: updatedEmployeeType._id,
             user,
         })
+        return {
+            employeeType,
+            reconciliation: {
+                totalAffected: reconciliationPreview.totalAffected,
+                reassigned: reconciliationPreview.reassigned,
+                reviewRequired: reconciliationPreview.reviewRequired,
+            },
+        }
     } catch (error) {
         handleDuplicateEmployeeTypeError(error)
+    } finally {
+        await session.endSession()
     }
 }
 

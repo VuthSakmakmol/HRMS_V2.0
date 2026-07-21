@@ -6,7 +6,7 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 export const rawScanListQuerySchema = z
     .object({
         page: z.coerce.number().int().min(1).default(1),
-        limit: z.coerce.number().int().min(1).max(500).default(50),
+        limit: z.coerce.number().int().min(1).max(100).default(10),
         search: z.string().trim().max(100).optional().default(""),
         dateFrom: dateSchema,
         dateTo: dateSchema,

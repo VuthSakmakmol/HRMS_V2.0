@@ -1,23 +1,19 @@
 import ExcelJS from "exceljs"
+import mongoose from "mongoose"
 
 import { clearCacheByPrefix } from "../../../shared/cache/memoryCache.js"
 import { AppError } from "../../../shared/errors/AppError.js"
 
 import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
-import Department from "../../organization/models/Department.js"
-import Position from "../../organization/models/Position.js"
-
 import Line from "../models/Line.js"
 import { listLines } from "./line.service.js"
 
 const TEMPLATE_HEADERS = [
     "companyCode",
     "branchCode",
-    "departmentCode",
     "lineCode",
     "lineName",
-    "leaderPositionCode",
     "status",
     "description",
 ]
@@ -78,11 +74,12 @@ function getRowObject(row) {
     return result
 }
 
-function buildImportError(rowNumber, field, messageKey) {
+function buildImportError(rowNumber, field, messageKey, details = {}) {
     return {
         rowNumber,
         field,
         messageKey,
+        ...details,
     }
 }
 
@@ -120,14 +117,8 @@ function buildWorkbookBase(title) {
     worksheet.columns = [
         { header: "companyCode", key: "companyCode", width: 18 },
         { header: "branchCode", key: "branchCode", width: 18 },
-        { header: "departmentCode", key: "departmentCode", width: 20 },
         { header: "lineCode", key: "lineCode", width: 18 },
         { header: "lineName", key: "lineName", width: 30 },
-        {
-            header: "leaderPositionCode",
-            key: "leaderPositionCode",
-            width: 24,
-        },
         { header: "status", key: "status", width: 14 },
         { header: "description", key: "description", width: 44 },
     ]
@@ -159,10 +150,8 @@ export async function buildLineImportTemplateWorkbook() {
     worksheet.addRow({
         companyCode: "TRAX",
         branchCode: "PP-HQ",
-        departmentCode: "SEWING",
         lineCode: "LINE_A",
         lineName: "Sewing Line A",
-        leaderPositionCode: "LINE_LEADER",
         status: "ACTIVE",
         description: "Main sewing production line A",
     })
@@ -170,12 +159,10 @@ export async function buildLineImportTemplateWorkbook() {
     worksheet.addRow({
         companyCode: "TRAX",
         branchCode: "PP-HQ",
-        departmentCode: "SEWING",
         lineCode: "LINE_B",
         lineName: "Sewing Line B",
-        leaderPositionCode: "",
         status: "ACTIVE",
-        description: "All active positions in this department are automatically allowed.",
+        description: "Available to every employee in the selected branch.",
     })
 
     const instructionSheet = workbook.addWorksheet("Instructions")
@@ -198,24 +185,14 @@ export async function buildLineImportTemplateWorkbook() {
             rule: "Must match an existing active branch code inside the company.",
         },
         {
-            field: "departmentCode",
-            required: "Yes",
-            rule: "Must match an existing active department code inside the branch.",
-        },
-        {
             field: "lineCode",
             required: "Yes",
-            rule: "Unique inside selected company, branch, and department.",
+            rule: "Unique inside the selected company and branch.",
         },
         {
             field: "lineName",
             required: "Yes",
             rule: "Line display name.",
-        },
-        {
-            field: "leaderPositionCode",
-            required: "No",
-            rule: "Optional. Must be an active position in the same department. All department positions are automatically allowed.",
         },
         {
             field: "status",
@@ -243,10 +220,8 @@ export async function buildLineExportWorkbook({ lines }) {
         worksheet.addRow({
             companyCode: line.company?.code || "",
             branchCode: line.branch?.code || "",
-            departmentCode: line.department?.code || "",
             lineCode: line.code || "",
             lineName: line.name || "",
-            leaderPositionCode: line.leaderPosition?.code || "",
             status: line.status || "",
             description: line.description || "",
         })
@@ -293,10 +268,8 @@ export async function parseLineImportWorkbook(buffer) {
             rowNumber,
             companyCode: normalizeCode(raw.companyCode),
             branchCode: normalizeCode(raw.branchCode),
-            departmentCode: normalizeCode(raw.departmentCode),
             lineCode: normalizeCode(raw.lineCode),
             lineName: normalizeText(raw.lineName),
-            leaderPositionCode: normalizeCode(raw.leaderPositionCode),
             status: normalizeStatus(raw.status),
             description: normalizeText(raw.description),
         }
@@ -317,16 +290,6 @@ export async function parseLineImportWorkbook(buffer) {
                     rowNumber,
                     "branchCode",
                     "errors.organization.lineImport.branchCodeRequired",
-                ),
-            )
-        }
-
-        if (!normalized.departmentCode) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "departmentCode",
-                    "errors.organization.lineImport.departmentCodeRequired",
                 ),
             )
         }
@@ -380,79 +343,58 @@ export async function parseLineImportWorkbook(buffer) {
     }
 }
 
-async function buildCompanyMap(companyCodes) {
-    const companies = await Company.find({
-        code: { $in: [...companyCodes] },
-        status: { $ne: "ARCHIVED" },
-    }).lean()
+function mongooseValidationErrors(error, row) {
+    if (!error?.errors) {
+        return [
+            buildImportError(
+                row.rowNumber,
+                "row",
+                "errors.organization.lineImport.rowInvalid",
+                { received: row.lineCode },
+            ),
+        ]
+    }
 
-    return new Map(companies.map((company) => [company.code, company]))
-}
-
-async function buildBranchMap({ branchCodes, companyIds }) {
-    const branches = await Branch.find({
-        companyId: { $in: [...companyIds] },
-        code: { $in: [...branchCodes] },
-        status: { $ne: "ARCHIVED" },
-    }).lean()
-
-    return new Map(
-        branches.map((branch) => [
-            `${branch.companyId.toString()}::${branch.code}`,
-            branch,
-        ]),
+    return Object.values(error.errors).map((item) =>
+        buildImportError(
+            row.rowNumber,
+            item.path || "row",
+            "errors.organization.lineImport.fieldInvalid",
+            {
+                received: item.value ?? "",
+                reason: item.message,
+            },
+        ),
     )
 }
 
-async function buildDepartmentMap({ departmentCodes, branchIds }) {
-    const departments = await Department.find({
-        branchId: { $in: [...branchIds] },
-        code: { $in: [...departmentCodes] },
-        status: { $ne: "ARCHIVED" },
-    }).lean()
+async function validateResolvedRows({ rows, company, branch, user }) {
+    const errors = []
 
-    return new Map(
-        departments.map((department) => [
-            `${department.branchId.toString()}::${department.code}`,
-            department,
-        ]),
-    )
-}
+    for (const [index, row] of rows.entries()) {
+        const candidate = new Line({
+            companyId: company._id,
+            branchId: branch._id,
+            code: row.lineCode,
+            name: row.lineName,
+            status: row.status,
+            description: row.description,
+            createdByAccountId: user.accountId,
+            updatedByAccountId: user.accountId,
+        })
 
-async function buildPositionMap(departmentIds) {
-    const positions = await Position.find({
-        departmentId: { $in: [...departmentIds] },
-        status: { $ne: "ARCHIVED" },
-    }).lean()
+        try {
+            await candidate.validate()
+        } catch (error) {
+            errors.push(...mongooseValidationErrors(error, row))
+        }
 
-    return new Map(
-        positions.map((position) => [
-            `${position.departmentId.toString()}::${position.code}`,
-            position,
-        ]),
-    )
-}
+        if ((index + 1) % 25 === 0) {
+            await new Promise((resolve) => setImmediate(resolve))
+        }
+    }
 
-async function buildLineMap(departmentIds) {
-    const lines = await Line.find({
-        departmentId: { $in: [...departmentIds] },
-        status: { $ne: "ARCHIVED" },
-    }).lean()
-
-    return new Map(
-        lines.map((line) => [
-            `${line.departmentId.toString()}::${line.code}`,
-            line,
-        ]),
-    )
-}
-
-function makeDepartmentLineKey(departmentId, lineCode) {
-    return `${departmentId.toString()}::${lineCode}`
-}
-
-function makeDepartmentPositionKey(departmentId, positionCode) {
-    return `${departmentId.toString()}::${positionCode}`
+    return errors
 }
 
 export async function importLinesFromRows({
@@ -460,6 +402,7 @@ export async function importLinesFromRows({
     parseErrors,
     user,
     workspace,
+    onProgress,
 }) {
     const summary = {
         totalRows: rows.length,
@@ -471,117 +414,41 @@ export async function importLinesFromRows({
 
     if (summary.errors.length > 0) {
         summary.skipped = rows.length
+        onProgress?.({ phase: "VALIDATED", percent: 55, processedRows: rows.length, totalRows: rows.length })
         return summary
     }
 
-    const companyCodes = new Set(rows.map((row) => row.companyCode))
-    const branchCodes = new Set(rows.map((row) => row.branchCode))
-    const departmentCodes = new Set(rows.map((row) => row.departmentCode))
+    const [company, branch, existingLines] = await Promise.all([
+        Company.findOne({ _id: workspace.companyId, status: { $ne: "ARCHIVED" } }).lean(),
+        Branch.findOne({ _id: workspace.branchId, companyId: workspace.companyId, status: { $ne: "ARCHIVED" } }).lean(),
+        Line.find({ companyId: workspace.companyId, branchId: workspace.branchId, status: { $ne: "ARCHIVED" } }).lean(),
+    ])
 
-    const companyMap = await buildCompanyMap(companyCodes)
-
-    for (const row of rows) {
-        const company = companyMap.get(row.companyCode)
-
-        if (
-            !company ||
-            company._id.toString() !== workspace.companyId.toString()
-        ) {
-            summary.errors.push(
-                buildImportError(
-                    row.rowNumber,
-                    "companyCode",
-                    "errors.organization.lineImport.companyNotFound",
-                ),
-            )
-        }
-    }
-
-    if (summary.errors.length > 0) {
+    if (!company || !branch) {
+        summary.errors.push(buildImportError(1, "workspace", "errors.organization.line.workspaceRequired"))
         summary.skipped = rows.length
         return summary
     }
 
-    const companyIds = new Set(
-        [...companyMap.values()].map((company) => company._id),
-    )
-
-    const branchMap = await buildBranchMap({
-        branchCodes,
-        companyIds,
-    })
-
-    const branchRows = rows.map((row) => {
-        const company = companyMap.get(row.companyCode)
-        const branch = branchMap.get(
-            `${company._id.toString()}::${row.branchCode}`,
-        )
-
-        if (
-            !branch ||
-            branch._id.toString() !== workspace.branchId.toString()
-        ) {
-            summary.errors.push(
-                buildImportError(
-                    row.rowNumber,
-                    "branchCode",
-                    "errors.organization.lineImport.branchNotFound",
-                ),
-            )
+    const resolvedRows = rows.map((row) => {
+        if (row.companyCode !== company.code) {
+            summary.errors.push(buildImportError(row.rowNumber, "companyCode", "errors.organization.lineImport.companyNotFound"))
         }
-
-        return {
-            ...row,
-            company,
-            branch,
+        if (row.branchCode !== branch.code) {
+            summary.errors.push(buildImportError(row.rowNumber, "branchCode", "errors.organization.lineImport.branchNotFound"))
         }
+        return { ...row, company, branch }
     })
 
     if (summary.errors.length > 0) {
         summary.skipped = rows.length
         return summary
     }
-
-    const branchIds = new Set(branchRows.map((row) => row.branch._id))
-
-    const departmentMap = await buildDepartmentMap({
-        departmentCodes,
-        branchIds,
-    })
-
-    const resolvedRows = branchRows.map((row) => {
-        const department = departmentMap.get(
-            `${row.branch._id.toString()}::${row.departmentCode}`,
-        )
-
-        if (!department) {
-            summary.errors.push(
-                buildImportError(
-                    row.rowNumber,
-                    "departmentCode",
-                    "errors.organization.lineImport.departmentNotFound",
-                ),
-            )
-        }
-
-        return {
-            ...row,
-            department,
-        }
-    })
-
-    if (summary.errors.length > 0) {
-        summary.skipped = rows.length
-        return summary
-    }
-
-    const departmentIds = new Set(resolvedRows.map((row) => row.department._id))
-    const positionMap = await buildPositionMap(departmentIds)
-    const lineMap = await buildLineMap(departmentIds)
+    const lineMap = new Map(existingLines.map((line) => [line.code, line]))
     const seenLineKeys = new Set()
 
     for (const row of resolvedRows) {
-        const lineKey = makeDepartmentLineKey(row.department._id, row.lineCode)
+        const lineKey = row.lineCode
 
         if (seenLineKeys.has(lineKey)) {
             summary.errors.push(
@@ -595,29 +462,6 @@ export async function importLinesFromRows({
 
         seenLineKeys.add(lineKey)
 
-        if (row.leaderPositionCode) {
-            const leaderPosition = positionMap.get(
-                makeDepartmentPositionKey(
-                    row.department._id,
-                    row.leaderPositionCode,
-                ),
-            )
-
-            if (!leaderPosition) {
-                summary.errors.push(
-                    buildImportError(
-                        row.rowNumber,
-                        "leaderPositionCode",
-                        "errors.organization.lineImport.leaderPositionNotFound",
-                    ),
-                )
-            } else {
-                row.leaderPositionId = leaderPosition._id
-            }
-
-        } else {
-            row.leaderPositionId = null
-        }
     }
 
     if (summary.errors.length > 0) {
@@ -625,51 +469,84 @@ export async function importLinesFromRows({
         return summary
     }
 
-    for (const row of resolvedRows) {
-        const lineKey = makeDepartmentLineKey(row.department._id, row.lineCode)
-        const existingLine = lineMap.get(lineKey)
+    onProgress?.({
+        phase: "VALIDATING_ROWS",
+        percent: 35,
+        processedRows: 0,
+        totalRows: resolvedRows.length,
+        messageKey: "organization.line.importPhaseValidatingRows",
+    })
 
-        if (existingLine) {
-            const updatedLine = await Line.findByIdAndUpdate(
-                existingLine._id,
-                {
-                    $set: {
-                        name: row.lineName,
-                        allowedPositionIds: [],
-                        leaderPositionId: row.leaderPositionId,
-                        status: row.status,
-                        description: row.description,
-                        updatedByAccountId: user.accountId,
-                    },
-                },
-                {
-                    new: true,
-                    runValidators: true,
-                    context: "query",
-                },
-            ).lean()
+    const modelErrors = await validateResolvedRows({
+        rows: resolvedRows,
+        company,
+        branch,
+        user,
+    })
 
-            lineMap.set(lineKey, updatedLine)
-            summary.updated += 1
-        } else {
-            const createdLine = await Line.create({
-                companyId: row.company._id,
-                branchId: row.branch._id,
-                departmentId: row.department._id,
-                code: row.lineCode,
-                name: row.lineName,
-                allowedPositionIds: [],
-                leaderPositionId: row.leaderPositionId,
-                status: row.status,
-                description: row.description,
-                createdByAccountId: user.accountId,
-                updatedByAccountId: user.accountId,
-            })
-
-            lineMap.set(lineKey, createdLine.toObject())
-            summary.created += 1
-        }
+    if (modelErrors.length > 0) {
+        summary.errors.push(...modelErrors)
+        summary.skipped = rows.length
+        return summary
     }
+
+    const operations = resolvedRows.map((row) => ({
+        updateOne: {
+            filter: {
+                companyId: company._id,
+                branchId: branch._id,
+                code: row.lineCode,
+            },
+            update: {
+                $set: {
+                    name: row.lineName,
+                    status: row.status,
+                    description: row.description,
+                    updatedByAccountId: user.accountId,
+                },
+                $setOnInsert: {
+                    companyId: company._id,
+                    branchId: branch._id,
+                    code: row.lineCode,
+                    createdByAccountId: user.accountId,
+                },
+            },
+            upsert: true,
+        },
+    }))
+
+    onProgress?.({
+        phase: "SAVING_ROWS",
+        percent: 75,
+        processedRows: 0,
+        totalRows: resolvedRows.length,
+        messageKey: "organization.line.importPhaseSavingRows",
+    })
+
+    const session = await mongoose.startSession()
+    let writeResult
+
+    try {
+        await session.withTransaction(async () => {
+            writeResult = await Line.bulkWrite(operations, {
+                ordered: true,
+                session,
+            })
+        })
+    } finally {
+        await session.endSession()
+    }
+
+    summary.created = Number(writeResult?.upsertedCount ?? 0)
+    summary.updated = resolvedRows.length - summary.created
+
+    onProgress?.({
+        phase: "SAVING_ROWS",
+        percent: 95,
+        processedRows: resolvedRows.length,
+        totalRows: resolvedRows.length,
+        messageKey: "organization.line.importPhaseSavingRows",
+    })
 
     clearCacheByPrefix("line:list:")
 

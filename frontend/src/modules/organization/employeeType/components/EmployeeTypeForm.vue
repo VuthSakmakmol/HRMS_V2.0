@@ -115,6 +115,43 @@ function message(field) {
 function clearFieldError(field) {
     emit("clear-error", field)
 }
+
+function positionsForChild(currentIndex) {
+    const selectedByOtherChildren = new Set()
+    let anotherChildUsesAllPositions = false
+
+    for (const [index, child] of (props.form.children || []).entries()) {
+        if (index === currentIndex) {
+            continue
+        }
+
+        if (child.positionAssignmentMode === "ALL_POSITIONS") {
+            anotherChildUsesAllPositions = true
+            continue
+        }
+
+        for (const positionId of child.positionIds || []) {
+            selectedByOtherChildren.add(String(positionId))
+        }
+    }
+
+    return companyPositions.value.map((position) => {
+        const selectedInAnotherChild =
+            anotherChildUsesAllPositions ||
+            selectedByOtherChildren.has(String(position.id))
+        const unavailable =
+            Boolean(position.assignedElsewhere) ||
+            selectedInAnotherChild
+
+        return {
+            ...position,
+            unavailable,
+            displayTitle: selectedInAnotherChild
+                ? `${position.title} — ${t("organization.employeeType.selectedInAnotherChild")}`
+                : position.displayTitle,
+        }
+    })
+}
 </script>
 
 <template>
@@ -296,7 +333,8 @@ function clearFieldError(field) {
                     <MultiSelect
                         v-model="form.positionIds"
                         :options="companyPositions"
-                        option-label="title"
+                        option-label="displayTitle"
+                        option-disabled="assignedElsewhere"
                         :loading="positionsLoading"
                         option-value="id"
                         filter
@@ -421,8 +459,9 @@ function clearFieldError(field) {
 
                                 <MultiSelect
                                     v-model="child.positionIds"
-                                    :options="companyPositions"
-                                    option-label="title"
+                                    :options="positionsForChild(index)"
+                                    option-label="displayTitle"
+                                    option-disabled="unavailable"
                                     option-value="id"
                                     filter
                                     :virtual-scroller-options="{ itemSize: 38 }"

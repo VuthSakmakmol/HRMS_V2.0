@@ -61,8 +61,6 @@ export const lineListQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(10),
     companyId: objectIdSchema.optional(),
     branchId: objectIdSchema.optional(),
-    departmentId: objectIdSchema.optional(),
-    positionId: objectIdSchema.optional(),
     status: z.enum(["ALL", ...LINE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
     sortBy: z.enum(LINE_SORT_FIELDS).default("name"),
@@ -72,10 +70,8 @@ export const lineListQuerySchema = z.object({
 export const lineCreateSchema = z.object({
     companyId: objectIdSchema,
     branchId: objectIdSchema,
-    departmentId: objectIdSchema,
     code: codeSchema,
     name: textSchema(2, 160),
-    leaderPositionId: nullableObjectIdSchema.optional(),
     description: optionalTextSchema(500),
     status: z.enum(LINE_MUTATION_STATUSES).default("ACTIVE"),
 })
@@ -84,7 +80,6 @@ export const lineUpdateSchema = z
     .object({
         code: codeSchema.optional(),
         name: textSchema(2, 160).optional(),
-        leaderPositionId: nullableObjectIdSchema.optional(),
         description: optionalTextSchema(500),
         status: z.enum(LINE_MUTATION_STATUSES).optional(),
     })

@@ -28,14 +28,6 @@ const props = defineProps({
         type: String,
         default: "—",
     },
-    departments: {
-        type: Array,
-        default: () => [],
-    },
-    positions: {
-        type: Array,
-        default: () => [],
-    },
     saving: Boolean,
 })
 
@@ -44,7 +36,6 @@ const emit = defineEmits([
     "save",
     "clear-error",
     "normalize-code",
-    "department-change",
 ])
 
 const { t } = useI18n()
@@ -68,13 +59,9 @@ const title = computed(() =>
             :errors="errors"
             :company-name="companyName"
             :branch-name="branchName"
-            :departments="departments"
-            :positions="positions"
             :disabled="saving"
-            :editing="mode === 'edit'"
             @clear-error="emit('clear-error', $event)"
             @normalize-code="emit('normalize-code')"
-            @department-change="emit('department-change')"
         />
 
         <template #footer>

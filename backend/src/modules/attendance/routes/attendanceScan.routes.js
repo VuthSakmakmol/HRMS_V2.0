@@ -44,7 +44,7 @@ router.get(
     async (req, res, next) => {
         try {
             const query = parseRequest(rawScanListQuerySchema, req.query)
-            const result = await listRawScans({ query })
+            const result = await listRawScans({ query, user: req.auth.user })
             res.status(200).json({ success: true, data: result })
         } catch (error) {
             next(error)
@@ -92,6 +92,8 @@ router.post(
             const summary = await importRawScans({
                 buffer: req.file.buffer,
                 user: req.auth.user,
+                companyId: req.query.companyId || req.headers["x-workspace-company-id"],
+                branchId: req.query.branchId || req.headers["x-workspace-branch-id"],
             })
 
             res.status(summary.errorCount > 0 ? 207 : 200).json({

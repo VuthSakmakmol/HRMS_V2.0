@@ -73,7 +73,7 @@ const employeeMovementSchema = new Schema(
 
         source: {
             type: String,
-            enum: ["MANUAL", "EMPLOYEE_PROFILE", "IMPORT"],
+            enum: ["MANUAL", "EMPLOYEE_PROFILE", "IMPORT", "SYSTEM"],
             default: "MANUAL",
             required: true,
         },

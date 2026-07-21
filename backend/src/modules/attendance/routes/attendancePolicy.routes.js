@@ -12,6 +12,7 @@ import {
 } from "../schemas/attendancePolicy.schema.js"
 import {
     createAttendancePolicy,
+    archiveAttendancePolicy,
     listAttendancePolicies,
     updateAttendancePolicy,
 } from "../services/attendancePolicy.service.js"
@@ -41,8 +42,8 @@ router.get(
     async (req, res, next) => {
         try {
             const query = parseRequest(attendancePolicyListQuerySchema, req.query)
-            const items = await listAttendancePolicies({ query })
-            res.status(200).json({ success: true, data: { items } })
+            const result = await listAttendancePolicies({ query, user: req.auth.user })
+            res.status(200).json({ success: true, data: result })
         } catch (error) {
             next(error)
         }
@@ -85,6 +86,18 @@ router.patch(
         } catch (error) {
             next(error)
         }
+    },
+)
+
+router.patch(
+    "/:policyId/archive",
+    requirePermission("ATTENDANCE.POLICY.ARCHIVE"),
+    async (req, res, next) => {
+        try {
+            const { policyId } = parseRequest(attendancePolicyIdParamSchema, req.params)
+            const policy = await archiveAttendancePolicy({ policyId, user: req.auth.user })
+            res.status(200).json({ success: true, data: { policy } })
+        } catch (error) { next(error) }
     },
 )
 

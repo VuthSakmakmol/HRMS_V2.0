@@ -268,6 +268,7 @@ export const employeeTypeUpdateSchema = z
             ),
         description: optionalTextSchema(500),
         status: z.enum(EMPLOYEE_TYPE_UPDATE_STATUSES).optional(),
+        confirmEmployeeReconciliation: z.boolean().optional().default(false),
     })
     .refine((value) => Object.keys(value).length > 0, {
         message: "At least one field is required.",

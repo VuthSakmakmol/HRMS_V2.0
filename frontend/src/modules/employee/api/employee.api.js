@@ -70,13 +70,13 @@ export async function exportEmployees(params = {}) {
     downloadBlob(response.data, getFilenameFromResponse(response, "employees-export.xlsx"))
 }
 
-export async function importEmployees(file, params = {}, onUploadProgress) {
+export async function startEmployeeImportJob(file, params = {}, onUploadProgress) {
     const formData = new FormData()
     formData.append("file", file)
 
     try {
         const response = await apiClient.post(
-            `${EMPLOYEE_ENDPOINT}/import`,
+            `${EMPLOYEE_ENDPOINT}/import-jobs`,
             formData,
             {
                 params,
@@ -85,13 +85,35 @@ export async function importEmployees(file, params = {}, onUploadProgress) {
             },
         )
 
-        return response.data.data.summary
+        return response.data.data.job
     } catch (error) {
         error.importSummary =
-            error?.response?.data?.error?.details?.importSummary ??
+            error?.details?.importSummary ??
+            error?.cause?.response?.data?.error?.details?.importSummary ??
             null
 
         throw error
+    }
+}
+
+export async function getEmployeeImportJob(jobId, signal) {
+    const response = await apiClient.get(`${EMPLOYEE_ENDPOINT}/import-jobs/${jobId}`, { signal })
+    return response.data.data.job
+}
+
+export async function waitForEmployeeImportJob(jobId, { onProgress, signal, intervalMs = 500 } = {}) {
+    while (true) {
+        if (signal?.aborted) throw new DOMException("Import polling aborted.", "AbortError")
+        const job = await getEmployeeImportJob(jobId, signal)
+        onProgress?.(job)
+        if (["COMPLETED", "FAILED"].includes(job.status)) return job
+        await new Promise((resolve, reject) => {
+            const timer = window.setTimeout(resolve, intervalMs)
+            signal?.addEventListener("abort", () => {
+                window.clearTimeout(timer)
+                reject(new DOMException("Import polling aborted.", "AbortError"))
+            }, { once: true })
+        })
     }
 }
 
@@ -151,12 +173,11 @@ export function fetchEmployeePositions({ companyId, branchId, departmentId }) {
     })
 }
 
-export function fetchEmployeeLines({ companyId, branchId, departmentId }) {
-    if (!companyId || !branchId || !departmentId) return Promise.resolve([])
+export function fetchEmployeeLines({ companyId, branchId }) {
+    if (!companyId || !branchId) return Promise.resolve([])
     return fetchPage("/organization/lines", {
         companyId,
         branchId,
-        departmentId,
     })
 }
 

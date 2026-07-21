@@ -5,7 +5,7 @@ const { Schema } = mongoose
 const attendancePolicySchema = new Schema(
     {
         companyId: { type: Schema.Types.ObjectId, ref: "Company", required: true },
-        branchId: { type: Schema.Types.ObjectId, ref: "Branch", default: null },
+        branchId: { type: Schema.Types.ObjectId, ref: "Branch", required: true },
         name: { type: String, required: true, trim: true, maxlength: 160 },
         code: { type: String, required: true, trim: true, uppercase: true, maxlength: 40 },
         graceInMinutes: { type: Number, min: 0, max: 240, default: 0 },

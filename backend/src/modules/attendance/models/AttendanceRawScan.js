@@ -4,6 +4,21 @@ const { Schema } = mongoose
 
 const attendanceRawScanSchema = new Schema(
     {
+        employeeId: {
+            type: Schema.Types.ObjectId,
+            ref: "Employee",
+            required: true,
+        },
+        companyId: {
+            type: Schema.Types.ObjectId,
+            ref: "Company",
+            required: true,
+        },
+        branchId: {
+            type: Schema.Types.ObjectId,
+            ref: "Branch",
+            required: true,
+        },
         employeeCode: {
             type: String,
             required: true,
@@ -61,6 +76,11 @@ attendanceRawScanSchema.index(
         unique: true,
         name: "uq_attendance_raw_scan",
     },
+)
+
+attendanceRawScanSchema.index(
+    { companyId: 1, branchId: 1, scannedAt: -1, employeeCode: 1 },
+    { name: "idx_attendance_raw_scan_scope" },
 )
 
 attendanceRawScanSchema.index(

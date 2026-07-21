@@ -2,6 +2,9 @@ import crypto from "node:crypto"
 import ExcelJS from "exceljs"
 
 import AttendanceRawScan from "../models/AttendanceRawScan.js"
+import Employee from "../../employee/models/Employee.js"
+import { AppError } from "../../../shared/errors/AppError.js"
+import { attendanceScopeFilter } from "../utils/attendanceScope.util.js"
 import { endOfBusinessDay, startOfBusinessDay } from "../utils/attendanceDate.util.js"
 
 function normalizeDirection(value) {
@@ -42,13 +45,20 @@ export async function buildRawScanTemplate() {
     return workbook
 }
 
-export async function importRawScans({ buffer, user }) {
+export async function importRawScans({ buffer, user, companyId, branchId }) {
+    if (!companyId || !branchId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ATTENDANCE_WORKSPACE_REQUIRED",
+            messageKey: "errors.attendance.workspaceRequired",
+        })
+    }
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer)
 
     const sheet = workbook.worksheets[0]
     const importBatchId = crypto.randomUUID()
-    const operations = []
+    const parsedRows = []
     const errors = []
 
     sheet.eachRow((row, rowNumber) => {
@@ -71,19 +81,54 @@ export async function importRawScans({ buffer, user }) {
             return
         }
 
-        operations.push({
+        parsedRows.push({ employeeCode, scannedAt, direction, deviceCode, rowNumber })
+    })
+
+    const parseErrorCount = errors.length
+    const totalRows = parsedRows.length + parseErrorCount
+    const codes = [...new Set(parsedRows.map((row) => row.employeeCode))]
+    const employees = await Employee.find({
+        employeeCode: { $in: codes },
+        companyId,
+        branchId,
+        recordStatus: "ACTIVE",
+        ...attendanceScopeFilter(user),
+    }).select("_id employeeCode companyId branchId").lean()
+    const employeeMap = new Map(employees.map((employee) => [employee.employeeCode, employee]))
+
+    for (const row of parsedRows) {
+        if (!employeeMap.has(row.employeeCode)) {
+            errors.push({ row: row.rowNumber, message: `Employee ${row.employeeCode} was not found in the active workspace.` })
+        }
+    }
+
+    if (errors.length) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ATTENDANCE_SCAN_IMPORT_VALIDATION_FAILED",
+            messageKey: "errors.attendance.importValidationFailed",
+            details: { importSummary: { totalRows, importedCount: 0, duplicateCount: 0, errorCount: errors.length, errors } },
+        })
+    }
+
+    const operations = parsedRows.map((row) => {
+        const employee = employeeMap.get(row.employeeCode)
+        return {
             updateOne: {
                 filter: {
-                    employeeCode,
-                    scannedAt,
-                    deviceCode,
+                    employeeCode: row.employeeCode,
+                    scannedAt: row.scannedAt,
+                    deviceCode: row.deviceCode,
                 },
                 update: {
                     $setOnInsert: {
-                        employeeCode,
-                        scannedAt,
-                        direction,
-                        deviceCode,
+                        employeeId: employee._id,
+                        companyId: employee.companyId,
+                        branchId: employee.branchId,
+                        employeeCode: row.employeeCode,
+                        scannedAt: row.scannedAt,
+                        direction: row.direction,
+                        deviceCode: row.deviceCode,
                         source: "EXCEL_IMPORT",
                         importBatchId,
                         createdByAccountId: user.accountId,
@@ -91,7 +136,7 @@ export async function importRawScans({ buffer, user }) {
                 },
                 upsert: true,
             },
-        })
+        }
     })
 
     let importedCount = 0
@@ -105,7 +150,7 @@ export async function importRawScans({ buffer, user }) {
 
     return {
         importBatchId,
-        totalRows: operations.length + errors.length,
+        totalRows,
         importedCount,
         duplicateCount: Math.max(0, operations.length - importedCount),
         errorCount: errors.length,
@@ -113,15 +158,19 @@ export async function importRawScans({ buffer, user }) {
     }
 }
 
-export async function listRawScans({ query }) {
+export async function listRawScans({ query, user }) {
     const start = startOfBusinessDay(query.dateFrom)
     const end = endOfBusinessDay(query.dateTo)
     const filter = {
+        ...attendanceScopeFilter(user),
         scannedAt: {
             $gte: start,
             $lte: end,
         },
     }
+
+    if (query.companyId) filter.companyId = query.companyId
+    if (query.branchId) filter.branchId = query.branchId
 
     if (query.search) {
         filter.employeeCode = {
@@ -133,6 +182,7 @@ export async function listRawScans({ query }) {
     const skip = (query.page - 1) * query.limit
     const [items, total] = await Promise.all([
         AttendanceRawScan.find(filter)
+            .populate("employeeId", "employeeCode displayName")
             .sort({ scannedAt: -1 })
             .skip(skip)
             .limit(query.limit)

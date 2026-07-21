@@ -24,8 +24,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadLineTemplate,
     exportLines,
-    lookupDepartments,
-    lookupPositions,
 } from "../api/line.api.js"
 import LineArchiveDialog from "../components/LineArchiveDialog.vue"
 import LineFormDialog from "../components/LineFormDialog.vue"
@@ -47,9 +45,6 @@ const list = useLineList()
 const formState = useLineForm()
 const importState = useLineImport()
 
-const departments = ref([])
-const filterPositions = ref([])
-const formPositionRows = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const importVisible = ref(false)
@@ -63,11 +58,7 @@ const statusOptions = computed(() => createLineStatusOptions(t))
 const activeFilterCount = computed(() => {
     let count = 0
 
-    for (const field of [
-        "search",
-        "departmentId",
-        "positionId",
-    ]) {
+    for (const field of ["search"]) {
         if (list.query[field]) {
             count += 1
         }
@@ -79,22 +70,6 @@ const activeFilterCount = computed(() => {
 
     return count
 })
-
-const departmentOptions = computed(() => [
-    {
-        id: "",
-        name: t("organization.line.allDepartments"),
-    },
-    ...departments.value,
-])
-
-const positionOptions = computed(() => [
-    {
-        id: "",
-        title: t("organization.line.allPositions"),
-    },
-    ...filterPositions.value,
-])
 
 const workspaceCompanyName = computed(() =>
     workspaceStore.selectedCompany?.displayName ||
@@ -108,8 +83,6 @@ const workspaceBranchName = computed(() =>
     workspaceStore.selectedBranch?.code ||
     "—",
 )
-
-const formPositions = computed(() => formPositionRows.value)
 
 const canUpdate = computed(() =>
     authStore.hasPermission(LINE_PERMISSIONS.UPDATE),
@@ -131,20 +104,13 @@ function translatedError(error) {
     return translated === key ? t("errors.internal") : translated
 }
 
-async function loadLookups() {
-    departments.value = await lookupDepartments()
-}
-
 async function load() {
     if (!workspaceStore.ready) {
         return
     }
 
     try {
-        await Promise.all([
-            list.load(),
-            loadLookups(),
-        ])
+        await list.load()
     } catch (error) {
         toast.add({
             severity: "error",
@@ -160,30 +126,12 @@ function openCreate() {
         companyId: workspaceStore.companyId,
         branchId: workspaceStore.branchId,
     })
-    formPositionRows.value = []
     formVisible.value = true
 }
 
 async function openEdit(row) {
     formState.openEdit(row)
-    await loadFormPositions()
     formVisible.value = true
-}
-
-async function loadFormPositions() {
-    if (!formState.form.departmentId) {
-        formPositionRows.value = []
-        return
-    }
-
-    formPositionRows.value = await lookupPositions({
-        departmentId: formState.form.departmentId,
-    })
-}
-
-async function onFormDepartmentChange() {
-    formState.form.leaderPositionId = null
-    await loadFormPositions()
 }
 
 async function saveLine() {
@@ -308,19 +256,6 @@ function formatDateTime(value) {
     }).format(date)
 }
 
-async function onFilterDepartmentChange() {
-    list.query.positionId = ""
-
-    if (!list.query.departmentId) {
-        filterPositions.value = []
-        return
-    }
-
-    filterPositions.value = await lookupPositions({
-        departmentId: list.query.departmentId,
-    })
-}
-
 function openImport() {
     importState.reset()
     importVisible.value = true
@@ -354,8 +289,6 @@ async function exportData() {
     try {
         await exportLines({
             search: list.query.search || undefined,
-            departmentId: list.query.departmentId || undefined,
-            positionId: list.query.positionId || undefined,
             status: list.query.status,
             sortBy: list.query.sortBy,
             sortOrder: list.query.sortOrder,
@@ -459,29 +392,6 @@ onMounted(load)
                             </span>
                         </EnterpriseFilterField>
 
-                        <EnterpriseFilterField :label="t('organization.line.department')">
-                            <Select
-                                v-model="list.query.departmentId"
-                                :options="departmentOptions"
-                                option-label="name"
-                                option-value="id"
-                                filter
-                                :disabled="!workspaceStore.ready"
-                                @change="onFilterDepartmentChange"
-                            />
-                        </EnterpriseFilterField>
-
-                        <EnterpriseFilterField :label="t('organization.line.position')">
-                            <Select
-                                v-model="list.query.positionId"
-                                :options="positionOptions"
-                                option-label="title"
-                                option-value="id"
-                                filter
-                                :disabled="!list.query.departmentId"
-                            />
-                        </EnterpriseFilterField>
-
                         <EnterpriseFilterField :label="t('common.status')">
                             <Select
                                 v-model="list.query.status"
@@ -541,15 +451,6 @@ onMounted(load)
             <span class="enterprise-table__text">{{ row.branch?.name || "—" }}</span>
         </template>
 
-        <template #cell-department="{ row }">
-            <span class="enterprise-table__text">{{ row.department?.name || "—" }}</span>
-        </template>
-
-
-        <template #cell-leaderPosition="{ row }">
-            <span class="enterprise-table__text">{{ row.leaderPosition?.title || "—" }}</span>
-        </template>
-
         <template #cell-status="{ row }">
             <Tag
                 :value="statusLabel(row.status)"
@@ -573,13 +474,10 @@ onMounted(load)
         :errors="formState.errors.value"
         :company-name="workspaceCompanyName"
         :branch-name="workspaceBranchName"
-        :departments="departments"
-        :positions="formPositions"
         :saving="formState.saving.value"
         @save="saveLine"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
-        @department-change="onFormDepartmentChange"
     />
 
     <LineImportDialog

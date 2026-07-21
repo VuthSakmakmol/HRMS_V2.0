@@ -129,6 +129,7 @@ export const PERMISSION_REGISTRY = Object.freeze([
         "VIEW",
         "CREATE",
         "UPDATE",
+        "ARCHIVE",
     ]),
 
     ...permissionGroup("ATTENDANCE.SCAN", [
@@ -194,6 +195,8 @@ export const PERMISSION_REGISTRY = Object.freeze([
         "CREATE",
         "UPDATE",
         "ARCHIVE",
+        "IMPORT",
+        "EXPORT",
     ]),
     ...permissionGroup("ORGANIZATION.EXIT_REASON", [
         "VIEW",

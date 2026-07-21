@@ -1,5 +1,4 @@
 import ExcelJS from "exceljs"
-import mongoose from "mongoose"
 
 import { clearCacheByPrefix } from "../../../shared/cache/memoryCache.js"
 import { AppError } from "../../../shared/errors/AppError.js"
@@ -14,27 +13,11 @@ import Province from "../../location/models/Province.js"
 import District from "../../location/models/District.js"
 import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
+import EmployeeType from "../../employeeType/models/EmployeeType.js"
 
 import Employee from "../models/Employee.js"
 import { listEmployees } from "./employee.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
-
-function getEmployeeTypeModel() {
-    if (!mongoose.models.EmployeeType) {
-        const employeeTypeFallbackSchema = new mongoose.Schema(
-            {},
-            {
-                collection: "employee_types",
-                strict: false,
-                versionKey: false,
-            },
-        )
-
-        return mongoose.model("EmployeeType", employeeTypeFallbackSchema)
-    }
-
-    return mongoose.models.EmployeeType
-}
 
 const TEMPLATE_HEADERS = [
     "employeeCode",
@@ -276,8 +259,27 @@ function normalizeDate(value) {
     const raw = excelValueToString(primitive).trim()
     if (!raw) return null
     if (/^\d+(\.\d+)?$/.test(raw)) return excelSerialToDate(Number(raw))
-    const date = new Date(raw)
-    return Number.isNaN(date.getTime()) ? null : date
+
+    const dayFirstMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (dayFirstMatch) {
+        const [, dayText, monthText, yearText] = dayFirstMatch
+        const day = Number(dayText)
+        const month = Number(monthText)
+        const year = Number(yearText)
+        const date = new Date(Date.UTC(year, month - 1, day))
+
+        if (
+            date.getUTCFullYear() === year &&
+            date.getUTCMonth() === month - 1 &&
+            date.getUTCDate() === day
+        ) {
+            return date
+        }
+
+        return null
+    }
+
+    return null
 }
 
 function getCellValue(row, index) {
@@ -285,12 +287,53 @@ function getCellValue(row, index) {
     return excelValueToPrimitive(cell.value)
 }
 
-function buildError(rowNumber, field, messageKey) {
-    return { rowNumber, field, messageKey }
+function buildError(rowNumber, field, messageKey, { value = "", expected = "" } = {}) {
+    return { rowNumber, field, messageKey, value, expected }
+}
+
+const REQUIRED_IMPORT_HEADERS = [
+    "employeeCode",
+    "departmentCode",
+    "positionCode",
+    "lineCode",
+    "shiftCode",
+    "joinDate",
+]
+
+function isValidEmail(value) {
+    return !value || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+}
+
+function isDigitsOnly(value) {
+    return !value || /^\d+$/.test(value)
+}
+
+function isAtLeast18(date) {
+    if (!date) return true
+    const today = new Date()
+    const cutoff = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate())
+    return date <= cutoff
 }
 
 function makeLookupKey(...parts) {
     return parts.map((part) => normalizeCode(part)).join("::")
+}
+
+function addDocumentAliases(map, document, prefix = "") {
+    const aliases = [
+        document.code,
+        document.typeCode,
+        document.name,
+        document.typeName,
+        document.title,
+        document.displayName,
+        document.shortName,
+    ]
+
+    for (const alias of aliases) {
+        if (!alias) continue
+        map.set(`${prefix}${normalizeCode(alias)}`, document)
+    }
 }
 
 function addCellHeaderStyle(worksheet) {
@@ -314,7 +357,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         englishFirstName: "Dara",
         englishLastName: "Sok",
         gender: "MALE",
-        dateOfBirth: "1995-05-12",
+        dateOfBirth: "12/05/1995",
         phoneNumber: "0979866163",
         createAccount: "YES",
         maritalStatus: "SINGLE",
@@ -331,7 +374,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         positionCode: "SEWER",
         lineCode: "LINE_A",
         shiftCode: "DAY",
-        joinDate: "2024-08-15",
+        joinDate: "15/08/2024",
         employmentStatus: "WORKING",
         employeeType: "DIRECT",
         singleNeedle: 1,
@@ -345,6 +388,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         { header: "Description", key: "description", width: 100 },
     ]
     instructions.addRows([
+        { rule: "Date format", description: "Enter every date as DD/MM/YYYY, for example 20/07/2026. Native Excel date cells are also accepted." },
         { rule: "Required codes", description: "Use companyCode, branchCode, departmentCode, positionCode, lineCode, and shiftCode for reliable import." },
         { rule: "Address columns", description: "Only Birth Address and Permanent Address are supported. Living, emergency contact, and family address columns are no longer imported." },
         { rule: "Age", description: "Do not import age. Backend calculates age from dateOfBirth." },
@@ -371,6 +415,15 @@ export async function parseEmployeeImportWorkbook(buffer) {
 
     const rows = []
     const errors = []
+    const importedHeaders = new Set(headerMap.values())
+    for (const requiredHeader of REQUIRED_IMPORT_HEADERS) {
+        if (!importedHeaders.has(requiredHeader)) {
+            errors.push(buildError(1, requiredHeader, "errors.employee.import.headerRequired", {
+                expected: requiredHeader,
+            }))
+        }
+    }
+
     worksheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return
         const raw = {}
@@ -438,11 +491,36 @@ export async function parseEmployeeImportWorkbook(buffer) {
         }
 
         if (!normalized.employeeCode) errors.push(buildError(rowNumber, "employeeCode", "errors.employee.import.employeeCodeRequired"))
-        if (!normalized.joinDate) errors.push(buildError(rowNumber, "joinDate", "errors.employee.import.joinDateRequired"))
+        if (raw.joinDate && !normalized.joinDate) errors.push(buildError(rowNumber, "joinDate", "errors.employee.import.dateInvalid", { value: normalizeText(raw.joinDate), expected: "DD/MM/YYYY or an Excel date" }))
+        else if (!normalized.joinDate) errors.push(buildError(rowNumber, "joinDate", "errors.employee.import.joinDateRequired"))
         if (!normalized.departmentCode) errors.push(buildError(rowNumber, "departmentCode", "errors.employee.import.departmentRequired"))
         if (!normalized.positionCode) errors.push(buildError(rowNumber, "positionCode", "errors.employee.import.positionRequired"))
         if (!normalized.lineCode) errors.push(buildError(rowNumber, "lineCode", "errors.employee.import.lineRequired"))
         if (!normalized.shiftCode) errors.push(buildError(rowNumber, "shiftCode", "errors.employee.import.shiftRequired"))
+        if (raw.dateOfBirth && !normalized.dateOfBirth) errors.push(buildError(rowNumber, "dateOfBirth", "errors.employee.import.dateInvalid", { value: normalizeText(raw.dateOfBirth), expected: "DD/MM/YYYY or an Excel date" }))
+        if (normalized.dateOfBirth && !isAtLeast18(normalized.dateOfBirth)) errors.push(buildError(rowNumber, "dateOfBirth", "errors.employee.import.minimumAge", { value: normalizeText(raw.dateOfBirth), expected: "Employee must be at least 18 years old" }))
+        for (const field of [
+            "resignDate",
+            "idCardExpireDate",
+            "passportExpireDate",
+            "visaExpireDate",
+            "medicalCheckDate",
+        ]) {
+            if (raw[field] && !normalized[field]) {
+                errors.push(buildError(rowNumber, field, "errors.employee.import.dateInvalid", {
+                    value: normalizeText(raw[field]),
+                    expected: "DD/MM/YYYY or an Excel date",
+                }))
+            }
+        }
+        if (!isValidEmail(normalized.email)) errors.push(buildError(rowNumber, "email", "errors.employee.import.emailInvalid", { value: normalized.email, expected: "name@example.com" }))
+        if (!isDigitsOnly(normalized.phoneNumber)) errors.push(buildError(rowNumber, "phoneNumber", "errors.employee.import.phoneInvalid", { value: normalized.phoneNumber, expected: "Digits only, for example 0979866163" }))
+        if (!isDigitsOnly(normalized.agentPhoneNumber)) errors.push(buildError(rowNumber, "agentPhoneNumber", "errors.employee.import.phoneInvalid", { value: normalized.agentPhoneNumber, expected: "Digits only" }))
+        if (normalized.maritalStatus !== "MARRIED") {
+            normalized.spouseName = ""
+            normalized.spouseContactNumber = ""
+        }
+        if (normalized.employmentStatus !== "WORKING" && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required when employmentStatus is not WORKING" }))
 
         rows.push(normalized)
     })
@@ -506,7 +584,6 @@ async function findLineForEmployeeImport({
 async function findEmployeeType(value) {
     if (!value) return null
 
-    const EmployeeType = getEmployeeTypeModel()
     const code = normalizeCode(value)
     const name = normalizeText(value)
 
@@ -537,7 +614,7 @@ async function resolveLocation({ provinceName, districtName, communeName, villag
     }
 }
 
-export async function importEmployeesFromRows({ rows, parseErrors, context, user }) {
+export async function importEmployeesFromRows({ rows, parseErrors, context, user, onProgress }) {
     const summary = {
         totalRows: rows.length,
         created: 0,
@@ -550,47 +627,72 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     }
     if (summary.errors.length > 0) {
         summary.skipped = rows.length
+        onProgress?.({ phase: "VALIDATED", percent: 55, processedRows: rows.length, totalRows: rows.length })
         return summary
     }
 
     const fallbackCompany = context.companyId ? await Company.findById(context.companyId).lean() : null
-    const fallbackBranch = context.branchId ? await Branch.findById(context.branchId).lean() : null
+    const fallbackBranch = context.branchId ? await Branch.findOne({ _id: context.branchId, companyId: context.companyId }).lean() : null
 
-    for (const row of rows) {
-        const company = row.companyCode ? await findByCodeOrName(Company, row.companyCode) : fallbackCompany
-        const branch = company && row.branchCode ? await findByCodeOrName(Branch, row.branchCode, { companyId: company._id }) : fallbackBranch
+    if (!fallbackCompany || !fallbackBranch) {
+        summary.errors.push(buildError(1, "workspace", "errors.employee.import.workspaceRequired", {
+            expected: "Select a company and branch in the top bar before importing",
+        }))
+        summary.skipped = rows.length
+        return summary
+    }
 
-        if (!company) {
-            summary.errors.push(buildError(row.rowNumber, "companyCode", "errors.employee.import.companyRequired"))
-            continue
-        }
-        if (!branch) {
-            summary.errors.push(buildError(row.rowNumber, "branchCode", "errors.employee.import.branchRequired"))
-            continue
-        }
+    const [departments, positions, lines, shifts, introducers, employeeTypes] = await Promise.all([
+        Department.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
+        Position.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
+        Line.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
+        Shift.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
+        Employee.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, recordStatus: { $ne: "ARCHIVED" } }).select("_id employeeCode").lean(),
+        EmployeeType.find({ companyId: fallbackCompany._id, status: { $ne: "ARCHIVED" } }).lean(),
+    ])
 
-        const department = await findByCodeOrName(Department, row.departmentCode, { companyId: company._id, branchId: branch._id })
-        const position = department ? await findByCodeOrName(Position, row.positionCode, { companyId: company._id, branchId: branch._id, departmentId: department._id }) : null
-        const line = department
-            ? await findLineForEmployeeImport({
-                value: row.lineCode,
-                companyId: company._id,
-                branchId: branch._id,
-                departmentId: department._id,
-            })
-            : null
-        const shift = await findByCodeOrName(Shift, row.shiftCode, { companyId: company._id, branchId: branch._id })
-        const introducer = row.introducerEmployeeCode ? await Employee.findOne({ employeeCode: row.introducerEmployeeCode, recordStatus: { $ne: "ARCHIVED" } }).lean() : null
-        const employeeType = row.employeeTypeLookup ? await findEmployeeType(row.employeeTypeLookup) : null
+    const departmentMap = new Map()
+    const positionMap = new Map()
+    const lineMap = new Map()
+    const shiftMap = new Map()
+    const introducerMap = new Map()
+    const employeeTypeMap = new Map()
+
+    for (const department of departments) addDocumentAliases(departmentMap, department)
+    for (const position of positions) addDocumentAliases(positionMap, position, `${position.departmentId?.toString()}::`)
+    for (const line of lines) addDocumentAliases(lineMap, line)
+    for (const shift of shifts) addDocumentAliases(shiftMap, shift)
+    for (const introducer of introducers) introducerMap.set(normalizeCode(introducer.employeeCode), introducer)
+    for (const employeeType of employeeTypes) addDocumentAliases(employeeTypeMap, employeeType)
+
+    for (const [index, row] of rows.entries()) {
+        const company = fallbackCompany
+        const branch = fallbackBranch
+        const department = departmentMap.get(normalizeCode(row.departmentCode)) || null
+        const departmentPrefix = department ? `${department._id.toString()}::` : ""
+        const position = department ? positionMap.get(`${departmentPrefix}${normalizeCode(row.positionCode)}`) || null : null
+        const line = lineMap.get(normalizeCode(row.lineCode)) || null
+        const shift = shiftMap.get(normalizeCode(row.shiftCode)) || null
+        const introducer = row.introducerEmployeeCode ? introducerMap.get(normalizeCode(row.introducerEmployeeCode)) || null : null
+        const employeeType = row.employeeTypeLookup ? employeeTypeMap.get(normalizeCode(row.employeeTypeLookup)) || null : null
 
         if (!department) summary.errors.push(buildError(row.rowNumber, "departmentCode", "errors.employee.import.departmentNotFound"))
         if (!position) summary.errors.push(buildError(row.rowNumber, "positionCode", "errors.employee.import.positionNotFound"))
-        if (!line) summary.errors.push(buildError(row.rowNumber, "lineCode", "errors.employee.import.lineNotFound"))
+        if (!line) summary.errors.push(buildError(row.rowNumber, "lineCode", "errors.employee.import.lineNotFound", {
+            value: row.lineCode,
+            expected: `An active line in branch ${branch.code || branch.name}`,
+        }))
         if (!shift) summary.errors.push(buildError(row.rowNumber, "shiftCode", "errors.employee.import.shiftNotFound"))
         if (row.introducerEmployeeCode && !introducer) summary.errors.push(buildError(row.rowNumber, "introducerEmployeeCode", "errors.employee.import.introducerNotFound"))
         if (row.employeeTypeLookup && !employeeType) summary.errors.push(buildError(row.rowNumber, "employeeType", "errors.employee.import.employeeTypeNotFound"))
 
         row._resolved = { company, branch, department, position, line, shift, introducer, employeeType }
+        onProgress?.({
+            phase: "RESOLVING_REFERENCES",
+            percent: 20 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 35),
+            processedRows: index + 1,
+            totalRows: rows.length,
+        })
     }
 
     if (summary.errors.length > 0) {
@@ -598,7 +700,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         return summary
     }
 
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
         const birthAddress = await resolveLocation({ provinceName: row.birthProvince, districtName: row.birthDistrict, communeName: row.birthCommune, villageName: row.birthVillage })
         const permanentAddress = await resolveLocation({ provinceName: row.permanentProvince, districtName: row.permanentDistrict, communeName: row.permanentCommune, villageName: row.permanentVillage })
         const { company, branch, department, position, line, shift, introducer, employeeType } = row._resolved
@@ -707,6 +809,13 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
                 ),
             )
         }
+
+        onProgress?.({
+            phase: "SAVING_ROWS",
+            percent: 55 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 40),
+            processedRows: index + 1,
+            totalRows: rows.length,
+        })
     }
 
     clearCacheByPrefix("employee:list:")
@@ -717,7 +826,9 @@ function formatDate(value) {
     if (!value) return ""
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ""
-    return date.toISOString().slice(0, 10)
+    const day = String(date.getUTCDate()).padStart(2, "0")
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+    return `${day}/${month}/${date.getUTCFullYear()}`
 }
 
 export async function buildEmployeeExportWorkbook({ employees }) {

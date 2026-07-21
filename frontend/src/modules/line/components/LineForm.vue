@@ -22,19 +22,7 @@ const props = defineProps({
         type: String,
         default: "—",
     },
-    departments: {
-        type: Array,
-        default: () => [],
-    },
-    positions: {
-        type: Array,
-        default: () => [],
-    },
     disabled: {
-        type: Boolean,
-        default: false,
-    },
-    editing: {
         type: Boolean,
         default: false,
     },
@@ -43,7 +31,6 @@ const props = defineProps({
 const emit = defineEmits([
     "clear-error",
     "normalize-code",
-    "department-change",
 ])
 
 const { t } = useI18n()
@@ -57,14 +44,6 @@ const statusOptions = computed(() => [
         label: t("organization.line.statusInactive"),
         value: "INACTIVE",
     },
-])
-
-const leaderOptions = computed(() => [
-    {
-        id: null,
-        title: t("organization.line.noLeaderPosition"),
-    },
-    ...props.positions,
 ])
 
 function message(field) {
@@ -107,19 +86,6 @@ function message(field) {
                     <small v-if="message('branchId')">{{ message("branchId") }}</small>
                 </label>
 
-                <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>{{ t("organization.line.department") }} *</span>
-                    <Select
-                        v-model="form.departmentId"
-                        :options="departments"
-                        option-label="name"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || editing || !form.branchId"
-                        @change="emit('department-change')"
-                    />
-                    <small v-if="message('departmentId')">{{ message("departmentId") }}</small>
-                </label>
             </div>
         </section>
 
@@ -149,19 +115,6 @@ function message(field) {
                     <small v-if="message('name')">{{ message("name") }}</small>
                 </label>
 
-
-                <label class="enterprise-form-field">
-                    <span>{{ t("organization.line.leaderPosition") }}</span>
-                    <Select
-                        v-model="form.leaderPositionId"
-                        :options="leaderOptions"
-                        option-label="title"
-                        option-value="id"
-                        filter
-                        :disabled="disabled || !form.departmentId"
-                    />
-                    <small v-if="message('leaderPositionId')">{{ message("leaderPositionId") }}</small>
-                </label>
 
                 <label class="enterprise-form-field">
                     <span>{{ t("common.status") }} *</span>

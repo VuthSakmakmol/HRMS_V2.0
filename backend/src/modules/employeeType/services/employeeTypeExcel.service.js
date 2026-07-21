@@ -415,6 +415,8 @@ async function findPositionMappingConflict({
         $or: [
             { positionIds: { $in: positionIds } },
             { "children.positionIds": { $in: positionIds } },
+            { positionAssignmentMode: "ALL_POSITIONS" },
+            { "children.positionAssignmentMode": "ALL_POSITIONS" },
         ],
     }
 
@@ -558,8 +560,16 @@ export async function importEmployeeTypesFromRows({
             code: group.employeeTypeCode,
         })
 
+        const allActivePositions = await Position.find({
+            companyId: company._id,
+            branchId: workspace.branchId,
+            status: "ACTIVE",
+        })
+            .select("_id code")
+            .lean()
+
         const directPositionIds = group.positionAssignmentMode === "ALL_POSITIONS"
-            ? []
+            ? allActivePositions.map((position) => position._id)
             : group.directPositionCodes.map((positionCode) => positionByCode.get(positionCode)._id)
 
         const children = [...group.childrenByCode.values()].map((child) => ({
@@ -568,7 +578,7 @@ export async function importEmployeeTypesFromRows({
             dashboardCategory: child.dashboardCategory,
             positionAssignmentMode: child.positionAssignmentMode,
             positionIds: child.positionAssignmentMode === "ALL_POSITIONS"
-                ? []
+                ? allActivePositions.map((position) => position._id)
                 : child.positionCodes.map((positionCode) => positionByCode.get(positionCode)._id),
         }))
 

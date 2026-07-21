@@ -43,6 +43,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    savingMessage: {
+        type: String,
+        default: "",
+    },
 })
 
 const emit = defineEmits([
@@ -90,7 +94,27 @@ const title = computed(() =>
                 :saving="saving"
                 @save="emit('save')"
                 @cancel="emit('update:visible', false)"
-            />
+            >
+                <div
+                    v-if="saving && savingMessage"
+                    class="employee-type-save-status"
+                    role="status"
+                    aria-live="polite"
+                >
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+                    <span>{{ savingMessage }}</span>
+                </div>
+            </EnterpriseFormFooter>
         </template>
     </EnterpriseDialog>
 </template>
+
+<style scoped>
+.employee-type-save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-color-secondary);
+    font-size: 0.875rem;
+}
+</style>

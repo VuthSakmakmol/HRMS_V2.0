@@ -43,7 +43,7 @@ export const exitReasonIdParamSchema = z.object({
 
 export const exitReasonListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     search: z.string().trim().max(120).optional().default(""),
     companyId: optionalObjectIdQuerySchema,
     branchId: optionalObjectIdQuerySchema,
@@ -57,13 +57,11 @@ export const exitReasonLookupQuerySchema = z.object({
 })
 
 export const exitReasonCreateSchema = z.object({
-    companyId: nullableObjectIdSchema.optional(),
-    branchId: nullableObjectIdSchema.optional(),
+    companyId: objectIdSchema,
+    branchId: objectIdSchema,
     code: codeSchema,
     name: textSchema(2, 180),
-    shortName: textSchema(0, 80).optional(),
     description: textSchema(0, 800).optional(),
-    sortOrder: z.coerce.number().int().min(0).max(9999).optional().default(0),
     status: z.enum(["ACTIVE", "INACTIVE"]).optional().default("ACTIVE"),
 })
 

@@ -1,4 +1,4 @@
-import mongoose, { Types } from "mongoose"
+import { Types } from "mongoose"
 
 import {
     clearCacheByPrefix,
@@ -20,6 +20,7 @@ import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
 import RecruitmentChannel from "../../recruitmentChannel/models/RecruitmentChannel.js"
 import ExitReason from "../../exitReason/models/ExitReason.js"
+import EmployeeType from "../../employeeType/models/EmployeeType.js"
 
 import Employee from "../models/Employee.js"
 import { resolveApprovalByAssignment } from "../../approval/services/approvalResolver.service.js"
@@ -37,23 +38,6 @@ function ensureObjectId(id, code, messageKey) {
     if (!Types.ObjectId.isValid(id)) {
         throw new AppError({ statusCode: 400, code, messageKey })
     }
-}
-
-function getEmployeeTypeModel() {
-    if (!mongoose.models.EmployeeType) {
-        const employeeTypeFallbackSchema = new mongoose.Schema(
-            {},
-            {
-                collection: "employee_types",
-                strict: false,
-                versionKey: false,
-            },
-        )
-
-        return mongoose.model("EmployeeType", employeeTypeFallbackSchema)
-    }
-
-    return mongoose.models.EmployeeType
 }
 
 function serializeEmployeeType(employeeType) {
@@ -89,7 +73,6 @@ function serializeExitReason(exitReason) {
         branchId: exitReason.branchId?._id?.toString?.() || exitReason.branchId?.toString?.() || null,
         code: exitReason.code || "",
         name: exitReason.name || "",
-        shortName: exitReason.shortName || "",
         status: exitReason.status || "",
     }
 }
@@ -162,7 +145,6 @@ async function resolveEmployeeTypeReporting(payload) {
         }
     }
 
-    const EmployeeType = getEmployeeTypeModel()
 
     let employeeType = null
 
@@ -332,7 +314,6 @@ async function ensureEmployeeType(employeeTypeId) {
         "errors.employee.profile.employeeTypeInvalidId",
     )
 
-    const EmployeeType = getEmployeeTypeModel()
     const employeeType = await EmployeeType.findOne({
         _id: employeeTypeId,
         status: { $ne: "ARCHIVED" },
@@ -613,7 +594,7 @@ function employeePopulate(query) {
         .populate({ path: "lineId", select: "companyId branchId departmentId code name shortName allowedPositionIds leaderPositionId status" })
         .populate({ path: "shiftId", select: "companyId branchId code name shortName startTime endTime workingMinutes isOvernight status" })
         .populate({ path: "recruitmentChannelId", select: "companyId branchId code name shortName targetMonthly status" })
-        .populate({ path: "exitReasonId", select: "companyId branchId code name shortName status" })
+        .populate({ path: "exitReasonId", select: "companyId branchId code name status" })
         .populate({ path: "introducerEmployeeId", select: "employeeCode displayName englishFirstName englishLastName khmerFirstName khmerLastName recordStatus" })
         .populate({ path: "employeeTypeId", select: "code name typeCode typeName title displayName shortName status recordStatus" })
         .populate({ path: "approvalPolicyId", select: "code name moduleKey status" })
@@ -657,10 +638,6 @@ async function validateAssignment(payload, user) {
             companyId: payload.companyId,
             branchId: payload.branchId,
             status: { $ne: "ARCHIVED" },
-            $or: [
-                { departmentId: payload.departmentId },
-                { departmentIds: payload.departmentId },
-            ],
         }).lean(),
         Shift.findOne({ _id: payload.shiftId, companyId: payload.companyId, branchId: payload.branchId, status: { $ne: "ARCHIVED" } }).lean(),
     ])
@@ -670,15 +647,6 @@ async function validateAssignment(payload, user) {
     if (!line) throw new AppError({ statusCode: 404, code: "EMPLOYEE_LINE_NOT_FOUND", messageKey: "errors.organization.line.notFound", fields: { lineId: ["errors.organization.line.notFound"] } })
     if (!shift) throw new AppError({ statusCode: 404, code: "EMPLOYEE_SHIFT_NOT_FOUND", messageKey: "errors.organization.shift.notFound", fields: { shiftId: ["errors.organization.shift.notFound"] } })
 
-    const allowed = (line.allowedPositionIds || []).map((id) => id.toString())
-    if (allowed.length > 0 && !allowed.includes(payload.positionId.toString())) {
-        throw new AppError({
-            statusCode: 409,
-            code: "EMPLOYEE_POSITION_NOT_ALLOWED_IN_LINE",
-            messageKey: "errors.employee.profile.positionNotAllowedInLine",
-            fields: { positionId: ["errors.employee.profile.positionNotAllowedInLine"], lineId: ["errors.employee.profile.positionNotAllowedInLine"] },
-        })
-    }
 }
 
 async function validateAddress(address, prefix) {

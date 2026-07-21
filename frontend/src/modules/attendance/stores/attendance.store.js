@@ -5,6 +5,7 @@ import {
     downloadAttendanceTemplate,
     fetchAttendanceRecords,
     importAttendance,
+    exportAttendanceRecords,
     updateAttendanceRecord,
 } from "../services/attendance.api.js"
 
@@ -24,10 +25,11 @@ function buildQueryKey(params = {}) {
 export const useAttendanceStore = defineStore("attendance", {
     state: () => ({
         items: [],
-        pagination: { page: 1, limit: 20, total: 0, totalPages: 1 },
+        pagination: { page: 1, limit: 10, total: 0, totalPages: 1 },
         loading: false,
         saving: false,
         importing: false,
+        exporting: false,
         importProgress: 0,
         importSummary: null,
         error: null,
@@ -101,6 +103,12 @@ export const useAttendanceStore = defineStore("attendance", {
             await downloadAttendanceTemplate()
         },
 
+        async exportFile(params) {
+            this.exporting = true
+            try { await exportAttendanceRecords(params) }
+            finally { this.exporting = false }
+        },
+
         async importFile(file) {
             this.importing = true
             this.importProgress = 1
@@ -116,6 +124,9 @@ export const useAttendanceStore = defineStore("attendance", {
                 this.importSummary = summary
                 this.clearListCache()
                 return summary
+            } catch (error) {
+                this.importSummary = error.importSummary || error?.response?.data?.error?.details?.importSummary || null
+                throw error
             } finally {
                 this.importing = false
             }

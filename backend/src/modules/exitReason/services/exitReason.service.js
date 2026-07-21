@@ -43,17 +43,29 @@ function getUserCompanyIds(user) {
 function getExitReasonScopeFilter(user) {
     if (user?.isRootAdmin) return {}
 
-    const companyIds = getUserCompanyIds(user)
-
-    if (!companyIds.length) {
-        return { _id: { $in: [] } }
+    const scopes = []
+    for (const assignment of user?.roleAssignments || []) {
+        if (!assignment.companyId) continue
+        if (assignment.allBranches) scopes.push({ companyId: assignment.companyId })
+        else if (assignment.branchIds?.length) {
+            scopes.push({ companyId: assignment.companyId, branchId: { $in: assignment.branchIds } })
+        }
     }
+    return scopes.length ? { $or: scopes } : { _id: { $in: [] } }
+}
 
-    return {
-        $or: [
-            { companyId: null },
-            { companyId: { $in: companyIds } },
-        ],
+function assertScopeAllowed(user, companyId, branchId) {
+    if (user?.isRootAdmin) return
+    const allowed = (user?.roleAssignments || []).some((assignment) =>
+        String(assignment.companyId || "") === String(companyId || "") &&
+        (assignment.allBranches || (assignment.branchIds || []).some((id) => String(id) === String(branchId || ""))),
+    )
+    if (!allowed) {
+        throw new AppError({
+            statusCode: 403,
+            code: "EXIT_REASON_SCOPE_FORBIDDEN",
+            messageKey: "errors.authorization.insufficientScope",
+        })
     }
 }
 
@@ -68,7 +80,6 @@ function buildSearchFilter(search) {
         $or: [
             { code: regex },
             { name: regex },
-            { shortName: regex },
             { description: regex },
         ],
     }
@@ -96,21 +107,11 @@ function buildListFilter(query = {}, user) {
 }
 
 function buildLookupFilter(query = {}, user) {
-    const scopeFilter = getExitReasonScopeFilter(user)
-    const scopeOptions = [{ companyId: null, branchId: null }]
-
-    if (query.companyId) {
-        scopeOptions.push({ companyId: query.companyId, branchId: null })
-    }
-
-    if (query.companyId && query.branchId) {
-        scopeOptions.push({ companyId: query.companyId, branchId: query.branchId })
-    }
-
     return {
-        ...scopeFilter,
+        ...getExitReasonScopeFilter(user),
+        ...(query.companyId ? { companyId: query.companyId } : {}),
+        ...(query.branchId ? { branchId: query.branchId } : {}),
         ...(query.status && query.status !== "ALL" ? { status: query.status } : {}),
-        $or: scopeOptions,
     }
 }
 
@@ -134,18 +135,21 @@ function serializeExitReason(document) {
         branch: serializeScope(document.branchId),
         code: document.code || "",
         name: document.name || "",
-        shortName: document.shortName || "",
         description: document.description || "",
-        sortOrder: Number(document.sortOrder || 0),
         status: document.status || "ACTIVE",
         createdAt: document.createdAt || null,
         updatedAt: document.updatedAt || null,
     }
 }
 
-async function validateScope(payload) {
+async function validateScope(payload, user) {
     const companyId = payload.companyId || null
     const branchId = payload.branchId || null
+
+    if (!companyId || !branchId) {
+        throw new AppError({ statusCode: 422, code: "EXIT_REASON_SCOPE_REQUIRED", messageKey: "errors.organization.exitReason.scopeRequired" })
+    }
+    assertScopeAllowed(user, companyId, branchId)
 
     if (companyId) {
         ensureObjectId(companyId, "EXIT_REASON_COMPANY_INVALID_ID", "errors.organization.company.invalidId")
@@ -228,7 +232,7 @@ export async function listExitReasons({ query, user }) {
         ExitReason.find(filter)
             .populate({ path: "companyId", select: "code displayName legalName" })
             .populate({ path: "branchId", select: "code name" })
-            .sort({ sortOrder: 1, name: 1 })
+            .sort({ name: 1, code: 1 })
             .skip(skip)
             .limit(limit)
             .lean(),
@@ -257,7 +261,7 @@ export async function lookupExitReasons({ query, user }) {
     const items = await ExitReason.find(buildLookupFilter(query, user))
         .populate({ path: "companyId", select: "code displayName legalName" })
         .populate({ path: "branchId", select: "code name" })
-        .sort({ sortOrder: 1, name: 1 })
+        .sort({ name: 1, code: 1 })
         .lean()
 
     return setCache(cacheKey, { items: items.map(serializeExitReason) }, 60_000)
@@ -286,7 +290,7 @@ export async function getExitReasonById({ exitReasonId, user }) {
 }
 
 export async function createExitReason({ payload, user }) {
-    await validateScope(payload)
+    await validateScope(payload, user)
     await ensureUniqueCode(payload)
 
     const exitReason = await ExitReason.create({
@@ -337,7 +341,7 @@ export async function updateExitReason({ exitReasonId, payload, user }) {
         code: payload.code ? normalizeCode(payload.code) : existing.code,
     }
 
-    await validateScope(nextPayload)
+    await validateScope(nextPayload, user)
     await ensureUniqueCode(nextPayload, existing._id)
 
     const updated = await ExitReason.findByIdAndUpdate(

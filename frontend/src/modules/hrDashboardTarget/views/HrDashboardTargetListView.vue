@@ -1,1186 +1,770 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue"
-import { useI18n } from "vue-i18n"
-import { useToast } from "primevue/usetoast"
-
 import Button from "primevue/button"
-import Column from "primevue/column"
-import DataTable from "primevue/datatable"
-import Dialog from "primevue/dialog"
 import InputNumber from "primevue/inputnumber"
 import InputText from "primevue/inputtext"
 import Select from "primevue/select"
 import Tag from "primevue/tag"
 import Textarea from "primevue/textarea"
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import { useI18n } from "vue-i18n"
+import { useToast } from "primevue/usetoast"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
-import { fetchBranchesLookup } from "@/modules/organization/services/branch.api.js"
-import { fetchCompaniesLookup } from "@/modules/organization/services/company.api.js"
-import { fetchDepartmentsLookup } from "@/modules/organization/services/department.api.js"
-import { fetchPositionsLookup } from "@/modules/organization/services/position.api.js"
-import { fetchLines } from "@/modules/line/services/line.api.js"
-import { fetchEmployeeTypes } from "@/modules/employeeType/services/employeeType.api.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
+import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
+import EnterpriseConfirmDialog from "@/shared/components/enterprise/EnterpriseConfirmDialog.vue"
+import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue"
+import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
+import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
+import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue"
+import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseListControls.vue"
+import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue"
+import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
 
+import HrDashboardTargetImportDialog from "../components/HrDashboardTargetImportDialog.vue"
+import {
+    fetchHrDashboardTargetLookups,
+} from "../services/hrDashboardTarget.api.js"
 import { useHrDashboardTargetStore } from "../stores/hrDashboardTarget.store.js"
 
-const { t, te } = useI18n()
-const toast = useToast()
-const authStore = useAuthStore()
-const targetStore = useHrDashboardTargetStore()
-
 const PERMISSIONS = Object.freeze({
+    VIEW: "REPORT.HR_DASHBOARD_TARGET.VIEW",
     CREATE: "REPORT.HR_DASHBOARD_TARGET.CREATE",
     UPDATE: "REPORT.HR_DASHBOARD_TARGET.UPDATE",
     ARCHIVE: "REPORT.HR_DASHBOARD_TARGET.ARCHIVE",
+    IMPORT: "REPORT.HR_DASHBOARD_TARGET.IMPORT",
+    EXPORT: "REPORT.HR_DASHBOARD_TARGET.EXPORT",
 })
 
-const companies = ref([])
-const branches = ref([])
+const { t, te } = useI18n()
+const toast = useToast()
+const auth = useAuthStore()
+const workspace = useWorkspaceStore()
+const store = useHrDashboardTargetStore()
+
+const currentYear = new Date().getFullYear()
+const dialogVisible = ref(false)
+const confirmVisible = ref(false)
+const selectedId = ref("")
+const archiveCandidate = ref(null)
+const importVisible = ref(false)
+const importFile = ref(null)
+const loadingLookups = ref(false)
+const hydratingForm = ref(false)
 const departments = ref([])
 const positions = ref([])
 const lines = ref([])
 const employeeTypes = ref([])
-const loadingOptions = ref(false)
-const dialogVisible = ref(false)
-const archiveDialogVisible = ref(false)
-const dialogMode = ref("create")
-const selectedId = ref(null)
-const archiveCandidate = ref(null)
+let lookupController = null
 
 const filters = reactive({
+    page: 1,
+    limit: 10,
     search: "",
-    status: "ACTIVE",
-    metric: "",
-    companyId: "",
-    branchId: "",
-    year: new Date().getFullYear(),
-    month: "",
     employeeTypeId: "",
+    metric: "",
+    year: currentYear,
+    month: "",
+    status: "ACTIVE",
 })
 
-const form = reactive(createEmptyForm())
-
-const canCreate = computed(() => authStore.hasPermission(PERMISSIONS.CREATE))
-const canUpdate = computed(() => authStore.hasPermission(PERMISSIONS.UPDATE))
-const canArchive = computed(() => authStore.hasPermission(PERMISSIONS.ARCHIVE))
+const form = reactive(emptyForm())
 
 const metricOptions = computed(() => [
-    {
-        label: t("hrDashboardTarget.metrics.absenceRate"),
-        value: "ABSENCE_RATE",
-    },
-    {
-        label: t("hrDashboardTarget.metrics.turnoverRate"),
-        value: "TURNOVER_RATE",
-    },
+    { label: t("hrDashboardTarget.metrics.absenceRate"), value: "ABSENCE_RATE" },
+    { label: t("hrDashboardTarget.metrics.turnoverRate"), value: "TURNOVER_RATE" },
 ])
 
 const metricFilterOptions = computed(() => [
-    {
-        label: t("hrDashboardTarget.allMetrics"),
-        value: "",
-    },
+    { label: t("hrDashboardTarget.allMetrics"), value: "" },
     ...metricOptions.value,
 ])
 
 const statusOptions = computed(() => [
-    {
-        label: t("common.all"),
-        value: "ALL",
-    },
-    {
-        label: t("common.active"),
-        value: "ACTIVE",
-    },
-    {
-        label: t("common.inactive"),
-        value: "INACTIVE",
-    },
-    {
-        label: t("common.archived"),
-        value: "ARCHIVED",
-    },
+    { label: t("common.all"), value: "ALL" },
+    { label: t("common.active"), value: "ACTIVE" },
+    { label: t("common.inactive"), value: "INACTIVE" },
+    { label: t("common.archived"), value: "ARCHIVED" },
 ])
 
 const editableStatusOptions = computed(() => [
-    {
-        label: t("common.active"),
-        value: "ACTIVE",
-    },
-    {
-        label: t("common.inactive"),
-        value: "INACTIVE",
-    },
+    { label: t("common.active"), value: "ACTIVE" },
+    { label: t("common.inactive"), value: "INACTIVE" },
 ])
 
-const monthValueOptions = computed(() =>
+const monthItems = computed(() =>
     Array.from({ length: 12 }, (_, index) => ({
         label: t(`hrDashboard.monthsShort.${index + 1}`),
         value: index + 1,
     })),
 )
 
-const monthOptions = computed(() => [
-    {
-        label: t("hrDashboardTarget.allMonths"),
-        value: "",
-    },
-    ...monthValueOptions.value,
+const monthFilterOptions = computed(() => [
+    { label: t("hrDashboardTarget.allMonths"), value: "" },
+    ...monthItems.value,
 ])
 
 const formMonthOptions = computed(() => [
-    {
-        label: t("hrDashboardTarget.wholeYear"),
-        value: 0,
-    },
-    ...monthValueOptions.value,
+    { label: t("hrDashboardTarget.wholeYear"), value: 0 },
+    ...monthItems.value,
 ])
 
-const companyOptions = computed(() =>
-    companies.value.map((item) => ({
-        label: `${item.code} - ${item.displayName || item.name || item.legalName}`,
-        value: getId(item),
+const employeeTypeOptions = computed(() =>
+    employeeTypes.value.map((item) => ({
+        label: `${item.code} - ${item.name}`,
+        value: item.id,
     })),
 )
 
-const companyFilterOptions = computed(() => [
-    {
-        label: t("hrDashboard.filters.allCompanies"),
-        value: "",
-    },
-    ...companyOptions.value,
+const employeeTypeFilterOptions = computed(() => [
+    { label: t("hrDashboard.filters.allEmployeeTypes"), value: "" },
+    ...employeeTypeOptions.value,
 ])
 
-const branchOptions = computed(() =>
-    branches.value
-        .filter((item) => !form.companyId || sameId(item.companyId, form.companyId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
+const selectedEmployeeType = computed(() =>
+    employeeTypes.value.find((item) => item.id === form.employeeTypeId) || null,
 )
 
-const branchFilterOptions = computed(() => [
-    {
-        label: t("hrDashboard.filters.allBranches"),
-        value: "",
-    },
-    ...branches.value
-        .filter((item) => !filters.companyId || sameId(item.companyId, filters.companyId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
-])
+const childOptions = computed(() =>
+    (selectedEmployeeType.value?.children || []).map((item) => ({
+        label: `${item.code} - ${item.name}`,
+        value: item.id,
+    })),
+)
 
 const departmentOptions = computed(() =>
-    departments.value
-        .filter((item) => !form.branchId || sameId(item.branchId, form.branchId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
+    departments.value.map((item) => ({
+        label: `${item.code} - ${item.name}`,
+        value: item.id,
+    })),
 )
 
 const positionOptions = computed(() =>
-    positions.value
-        .filter((item) => !form.departmentId || sameId(item.departmentId, form.departmentId))
-        .map((item) => ({
-            label: `${item.code} - ${item.title || item.name}`,
-            value: getId(item),
-        })),
+    positions.value.map((item) => ({
+        label: `${item.code} - ${item.title}`,
+        value: item.id,
+    })),
 )
 
 const lineOptions = computed(() =>
-    lines.value
-        .filter((item) => !form.departmentId || sameId(item.departmentId, form.departmentId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
+    lines.value.map((item) => ({
+        label: `${item.code} - ${item.name}`,
+        value: item.id,
+    })),
 )
 
-const employeeTypeOptions = computed(() =>
-    employeeTypes.value
-        .filter((item) => !form.companyId || !item.companyId || sameId(item.companyId, form.companyId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
-)
-
-const employeeTypeFilterOptions = computed(() => [
-    {
-        label: t("hrDashboard.filters.allEmployeeTypes"),
-        value: "",
-    },
-    ...employeeTypes.value
-        .filter((item) => !filters.companyId || !item.companyId || sameId(item.companyId, filters.companyId))
-        .map((item) => ({
-            label: `${item.code} - ${item.name}`,
-            value: getId(item),
-        })),
+const columns = computed(() => [
+    { field: "metric", header: t("hrDashboardTarget.metric"), frozen: true, width: "11rem", minWidth: "11rem" },
+    { field: "year", header: t("hrDashboardTarget.year"), width: "6rem", minWidth: "6rem" },
+    { field: "month", header: t("hrDashboardTarget.month"), width: "8rem", minWidth: "8rem" },
+    { field: "employeeType", header: t("hrDashboardTarget.employeeType"), width: "12rem", minWidth: "12rem" },
+    { field: "employeeTypeChildName", header: t("hrDashboardTarget.employeeTypeChild"), width: "11rem", minWidth: "11rem" },
+    { field: "department", header: t("hrDashboardTarget.department"), width: "12rem", minWidth: "12rem" },
+    { field: "position", header: t("hrDashboardTarget.position"), width: "13rem", minWidth: "13rem" },
+    { field: "line", header: t("hrDashboardTarget.line"), width: "11rem", minWidth: "11rem" },
+    { field: "targetRate", header: t("hrDashboardTarget.targetRate"), width: "8rem", minWidth: "8rem" },
+    { field: "remark", header: t("common.remark"), width: "16rem", minWidth: "16rem" },
+    { field: "status", header: t("common.status"), width: "8rem", minWidth: "8rem" },
 ])
 
-const childOptions = computed(() => {
-    const employeeType = employeeTypes.value.find((item) =>
-        sameId(getId(item), form.employeeTypeId),
-    )
+const rows = computed(() => store.items)
 
-    const children = (employeeType?.children || []).filter(
-        (child) => child.status !== "ARCHIVED",
-    )
-
-    return [
-        {
-            label: t("hrDashboardTarget.noChild"),
-            value: "",
-        },
-        ...children.map((child) => ({
-            label: `${child.code} - ${child.name}`,
-            value: getId(child),
-        })),
-    ]
-})
+const activeFilterCount = computed(() => [
+    filters.search,
+    filters.employeeTypeId,
+    filters.metric,
+    filters.year !== currentYear,
+    filters.month !== "",
+    filters.status !== "ACTIVE",
+].filter(Boolean).length)
 
 const dialogTitle = computed(() =>
-    dialogMode.value === "create"
-        ? t("hrDashboardTarget.createTitle")
-        : t("hrDashboardTarget.editTitle"),
+    selectedId.value
+        ? t("hrDashboardTarget.editTitle")
+        : t("hrDashboardTarget.createTitle"),
 )
 
-function getId(item) {
-    return item?.id || item?._id || item?.value || item || ""
-}
+const formValid = computed(() =>
+    workspace.ready &&
+    Boolean(form.metric) &&
+    Number.isInteger(Number(form.year)) &&
+    Number(form.year) >= 2000 &&
+    Number(form.year) <= 2100 &&
+    Number(form.targetRate) >= 0 &&
+    Number(form.targetRate) <= 100,
+)
 
-function sameId(left, right) {
-    const leftId = getId(left)
-    const rightId = getId(right)
-
-    return Boolean(leftId && rightId && String(leftId) === String(rightId))
-}
-
-function translateMaybe(keyOrMessage) {
-    if (!keyOrMessage) return t("common.somethingWentWrong")
-    if (typeof keyOrMessage === "string" && te(keyOrMessage)) return t(keyOrMessage)
-    return keyOrMessage
-}
-
-function getErrorMessage(error) {
-    const messageKey = error?.response?.data?.error?.messageKey
-    const message = error?.response?.data?.message || error?.message
-
-    return translateMaybe(messageKey || message)
-}
-
-function normalizeListResult(result) {
-    if (Array.isArray(result)) return result
-    return result?.items || result?.data?.items || result?.data || []
-}
-
-function createEmptyForm() {
+function emptyForm() {
     return {
-        companyId: "",
-        branchId: "",
         metric: "ABSENCE_RATE",
-        year: new Date().getFullYear(),
+        year: currentYear,
         month: 0,
+        employeeTypeId: "",
+        employeeTypeChildId: "",
         departmentId: "",
         positionId: "",
         lineId: "",
-        employeeTypeId: "",
-        employeeTypeChildId: "",
         targetRate: 0,
         remark: "",
         status: "ACTIVE",
     }
 }
 
-function assignForm(source = createEmptyForm()) {
-    Object.assign(form, createEmptyForm(), {
-        ...source,
-        companyId: source.companyId || "",
-        branchId: source.branchId || "",
-        departmentId: source.departmentId || "",
-        positionId: source.positionId || "",
-        lineId: source.lineId || "",
-        employeeTypeId: source.employeeTypeId || "",
-        employeeTypeChildId: source.employeeTypeChildId || "",
-        targetRate: Number(source.targetRate || 0),
-        month: Number(source.month || 0),
-        status: source.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
-    })
+function errorMessage(error) {
+    const key = error?.response?.data?.error?.messageKey
+    if (key && te(key)) return t(key)
+    return error?.response?.data?.error?.message ||
+        error?.message ||
+        t("common.somethingWentWrong")
 }
 
-function cleanNullable(value) {
-    return value || null
+function metricLabel(value) {
+    return metricOptions.value.find((item) => item.value === value)?.label || value
 }
 
-function buildPayload() {
-    return {
-        companyId: form.companyId,
-        branchId: form.branchId,
-        metric: form.metric,
-        year: Number(form.year),
-        month: Number(form.month || 0),
-        departmentId: cleanNullable(form.departmentId),
-        positionId: cleanNullable(form.positionId),
-        lineId: cleanNullable(form.lineId),
-        employeeTypeId: cleanNullable(form.employeeTypeId),
-        employeeTypeChildId: cleanNullable(form.employeeTypeChildId),
-        targetRate: Number(form.targetRate || 0),
-        remark: form.remark || "",
-        status: form.status,
-    }
+function monthLabel(value) {
+    return Number(value) === 0
+        ? t("hrDashboardTarget.wholeYear")
+        : t(`hrDashboard.monthsShort.${value}`)
 }
 
-function monthLabel(month) {
-    if (Number(month) === 0) return t("hrDashboardTarget.wholeYear")
-    return t(`hrDashboard.monthsShort.${month}`)
-}
-
-function metricLabel(metric) {
-    return metricOptions.value.find((item) => item.value === metric)?.label || metric
-}
-
-function statusSeverity(status) {
-    if (status === "ACTIVE") return "success"
-    if (status === "INACTIVE") return "warning"
+function statusSeverity(value) {
+    if (value === "ACTIVE") return "success"
+    if (value === "INACTIVE") return "warn"
     return "danger"
 }
 
-function statusLabel(status) {
-    return t(`common.${String(status || "").toLowerCase()}`)
+function statusLabel(value) {
+    const key = `common.${String(value || "").toLowerCase()}`
+    return te(key) ? t(key) : value
 }
 
-async function loadOptions() {
-    loadingOptions.value = true
+async function loadLookups(departmentId = "") {
+    if (!workspace.ready) {
+        departments.value = []
+        positions.value = []
+        lines.value = []
+        employeeTypes.value = []
+        return
+    }
+
+    lookupController?.abort()
+    lookupController = new AbortController()
+    loadingLookups.value = true
 
     try {
-        const [
-            companyResult,
-            branchResult,
-            departmentResult,
-            positionResult,
-            lineResult,
-            employeeTypeResult,
-        ] = await Promise.all([
-            fetchCompaniesLookup({ page: 1, limit: 100, status: "ACTIVE" }),
-            fetchBranchesLookup({ page: 1, limit: 100, status: "ACTIVE" }),
-            fetchDepartmentsLookup({ page: 1, limit: 100, status: "ACTIVE" }),
-            fetchPositionsLookup({ page: 1, limit: 100, status: "ACTIVE" }),
-            fetchLines({ page: 1, limit: 100, status: "ACTIVE" }),
-            fetchEmployeeTypes({ page: 1, limit: 100, status: "ACTIVE" }),
-        ])
-
-        companies.value = normalizeListResult(companyResult)
-        branches.value = normalizeListResult(branchResult)
-        departments.value = normalizeListResult(departmentResult)
-        positions.value = normalizeListResult(positionResult)
-        lines.value = normalizeListResult(lineResult)
-        employeeTypes.value = normalizeListResult(employeeTypeResult)
-    } catch (error) {
-        toast.add({
-            severity: "error",
-            summary: t("hrDashboardTarget.messages.loadOptionsFailed"),
-            detail: getErrorMessage(error),
-            life: 4500,
+        const result = await fetchHrDashboardTargetLookups({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+            departmentId,
         })
+
+        departments.value = result.departments || []
+        employeeTypes.value = result.employeeTypes || []
+        positions.value = result.positions || []
+        lines.value = result.lines || []
+    } catch (error) {
+        if (error?.name !== "CanceledError") {
+            toast.add({
+                severity: "error",
+                summary: t("hrDashboardTarget.messages.loadOptionsFailed"),
+                detail: errorMessage(error),
+                life: 4500,
+            })
+        }
     } finally {
-        loadingOptions.value = false
+        loadingLookups.value = false
     }
 }
 
-async function loadTargets(page = 1) {
+async function load(overrides = {}) {
+    if (!workspace.ready) return
+    Object.assign(filters, overrides)
+
     try {
-        await targetStore.loadTargets({
+        await store.loadTargets({
             ...filters,
-            page,
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
         })
     } catch (error) {
         toast.add({
             severity: "error",
             summary: t("hrDashboardTarget.messages.loadFailed"),
-            detail: getErrorMessage(error),
+            detail: errorMessage(error),
             life: 4500,
         })
     }
 }
 
-function openCreateDialog() {
-    dialogMode.value = "create"
-    selectedId.value = null
-    assignForm()
+function clearFilters() {
+    Object.assign(filters, {
+        page: 1,
+        limit: 10,
+        search: "",
+        employeeTypeId: "",
+        metric: "",
+        year: currentYear,
+        month: "",
+        status: "ACTIVE",
+    })
+    load()
+}
+
+async function openCreate() {
+    selectedId.value = ""
+    hydratingForm.value = true
+    Object.assign(form, emptyForm())
+    await loadLookups()
+    hydratingForm.value = false
     dialogVisible.value = true
 }
 
-function openEditDialog(item) {
-    dialogMode.value = "edit"
-    selectedId.value = item.id
-    assignForm(item)
+async function openEdit(row) {
+    selectedId.value = row.id
+    hydratingForm.value = true
+    Object.assign(form, emptyForm(), {
+        metric: row.metric,
+        year: Number(row.year),
+        month: Number(row.month || 0),
+        employeeTypeId: row.employeeTypeId || "",
+        employeeTypeChildId: row.employeeTypeChildId || "",
+        departmentId: row.departmentId || "",
+        positionId: row.positionId || "",
+        lineId: row.lineId || "",
+        targetRate: Number(row.targetRate || 0),
+        remark: row.remark || "",
+        status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+    })
+    await loadLookups(form.departmentId)
+    hydratingForm.value = false
     dialogVisible.value = true
 }
 
-async function submitForm() {
+function payload() {
+    return {
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+        metric: form.metric,
+        year: Number(form.year),
+        month: Number(form.month || 0),
+        employeeTypeId: form.employeeTypeId || null,
+        employeeTypeChildId: form.employeeTypeChildId || null,
+        departmentId: form.departmentId || null,
+        positionId: form.positionId || null,
+        lineId: form.lineId || null,
+        targetRate: Number(form.targetRate || 0),
+        remark: form.remark.trim(),
+        status: form.status,
+    }
+}
+
+async function save() {
+    if (!formValid.value) return
+
     try {
-        if (dialogMode.value === "create") {
-            await targetStore.createTarget(buildPayload())
-            toast.add({
-                severity: "success",
-                summary: t("common.created"),
-                detail: t("hrDashboardTarget.messages.created"),
-                life: 2500,
-            })
+        if (selectedId.value) {
+            await store.updateTarget(selectedId.value, payload())
         } else {
-            await targetStore.updateTarget(selectedId.value, buildPayload())
-            toast.add({
-                severity: "success",
-                summary: t("common.updated"),
-                detail: t("hrDashboardTarget.messages.updated"),
-                life: 2500,
-            })
+            await store.createTarget(payload())
         }
 
         dialogVisible.value = false
-        await loadTargets(targetStore.pagination.page)
+        toast.add({
+            severity: "success",
+            summary: selectedId.value ? t("common.updated") : t("common.created"),
+            detail: selectedId.value
+                ? t("hrDashboardTarget.messages.updated")
+                : t("hrDashboardTarget.messages.created"),
+            life: 2500,
+        })
+        await load({ page: store.pagination.page })
     } catch (error) {
         toast.add({
             severity: "error",
             summary: t("hrDashboardTarget.messages.saveFailed"),
-            detail: getErrorMessage(error),
+            detail: errorMessage(error),
             life: 4500,
         })
     }
 }
 
-function confirmArchive(item) {
-    archiveCandidate.value = item
-    archiveDialogVisible.value = true
+function requestArchive(row) {
+    archiveCandidate.value = row
+    confirmVisible.value = true
 }
 
-async function archiveSelectedTarget() {
+async function archiveTarget() {
     try {
-        await targetStore.archiveTarget(archiveCandidate.value.id)
+        await store.archiveTarget(archiveCandidate.value.id)
+        confirmVisible.value = false
+        archiveCandidate.value = null
         toast.add({
             severity: "success",
             summary: t("common.archived"),
             detail: t("hrDashboardTarget.messages.archived"),
             life: 2500,
         })
-        archiveDialogVisible.value = false
-        archiveCandidate.value = null
-        await loadTargets(targetStore.pagination.page)
+        await load({ page: store.pagination.page })
     } catch (error) {
         toast.add({
             severity: "error",
             summary: t("hrDashboardTarget.messages.archiveFailed"),
-            detail: getErrorMessage(error),
+            detail: errorMessage(error),
             life: 4500,
         })
     }
 }
 
-function applyFilters() {
-    loadTargets(1)
+async function runImport() {
+    if (!importFile.value) return
+
+    try {
+        await store.importFile(importFile.value)
+        importVisible.value = false
+        toast.add({
+            severity: "success",
+            summary: t("hrDashboardTarget.importCompleted"),
+            detail: `Created ${store.importSummary?.created || 0}, updated ${store.importSummary?.updated || 0}.`,
+            life: 3500,
+        })
+        await Promise.all([loadLookups(), load({ page: 1 })])
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("hrDashboardTarget.importRejected"),
+            detail: errorMessage(error),
+            life: 5000,
+        })
+    }
 }
 
-function clearFilters() {
-    Object.assign(filters, {
-        search: "",
-        status: "ACTIVE",
-        metric: "",
-        companyId: "",
-        branchId: "",
-        year: new Date().getFullYear(),
-        month: "",
-        employeeTypeId: "",
-    })
-    loadTargets(1)
+function actions(row) {
+    return [
+        {
+            label: t("common.edit"),
+            icon: "pi pi-pencil",
+            visible: row.status !== "ARCHIVED" && auth.hasPermission(PERMISSIONS.UPDATE),
+            command: () => openEdit(row),
+        },
+        {
+            label: t("common.archive"),
+            icon: "pi pi-box",
+            visible: row.status !== "ARCHIVED" && auth.hasPermission(PERMISSIONS.ARCHIVE),
+            command: () => requestArchive(row),
+        },
+    ]
 }
-
-watch(
-    () => filters.companyId,
-    () => {
-        filters.branchId = ""
-        filters.employeeTypeId = ""
-    },
-)
-
-watch(
-    () => form.companyId,
-    () => {
-        form.branchId = ""
-        form.departmentId = ""
-        form.positionId = ""
-        form.lineId = ""
-        form.employeeTypeId = ""
-        form.employeeTypeChildId = ""
-    },
-)
-
-watch(
-    () => form.branchId,
-    () => {
-        form.departmentId = ""
-        form.positionId = ""
-        form.lineId = ""
-    },
-)
 
 watch(
     () => form.departmentId,
-    () => {
+    async (departmentId) => {
+        if (hydratingForm.value) return
         form.positionId = ""
         form.lineId = ""
+        await loadLookups(departmentId)
     },
 )
 
 watch(
     () => form.employeeTypeId,
     () => {
-        form.employeeTypeChildId = ""
+        if (!hydratingForm.value) form.employeeTypeChildId = ""
     },
 )
 
-onMounted(async () => {
-    await loadOptions()
-    await loadTargets(1)
-})
+watch(
+    () => workspace.revision,
+    async () => {
+        filters.page = 1
+        dialogVisible.value = false
+        await Promise.all([loadLookups(), load()])
+    },
+)
+
+onMounted(() => Promise.all([loadLookups(), load()]))
+onBeforeUnmount(() => lookupController?.abort())
 </script>
 
 <template>
-    <section class="hr-target-page enterprise-list-page">
-        <div class="hr-target-filter-card">
-            <div class="hr-target-filter-grid">
-                <InputText
-                    v-model="filters.search"
-                    class="hr-target-control hr-target-search"
-                    :placeholder="t('common.search')"
-                    @keyup.enter="applyFilters"
-                />
-
-                <Select
-                    v-model="filters.status"
-                    class="hr-target-control"
-                    :options="statusOptions"
-                    option-label="label"
-                    option-value="value"
-                />
-
-                <Select
-                    v-model="filters.metric"
-                    class="hr-target-control"
-                    :options="metricFilterOptions"
-                    option-label="label"
-                    option-value="value"
-                />
-
-                <Select
-                    v-model="filters.companyId"
-                    class="hr-target-control"
-                    :options="companyFilterOptions"
-                    option-label="label"
-                    option-value="value"
-                    filter
-                />
-
-                <Select
-                    v-model="filters.branchId"
-                    class="hr-target-control"
-                    :options="branchFilterOptions"
-                    option-label="label"
-                    option-value="value"
-                    filter
-                />
-
-                <InputNumber
-                    v-model="filters.year"
-                    class="hr-target-control hr-target-year"
-                    :use-grouping="false"
-                    :min="2000"
-                    :max="2100"
-                    input-class="hr-target-year-input"
-                />
-
-                <Select
-                    v-model="filters.month"
-                    class="hr-target-control"
-                    :options="monthOptions"
-                    option-label="label"
-                    option-value="value"
-                />
-
-                <Select
-                    v-model="filters.employeeTypeId"
-                    class="hr-target-control"
-                    :options="employeeTypeFilterOptions"
-                    option-label="label"
-                    option-value="value"
-                    filter
-                />
-            </div>
-
-            <div class="hr-target-actions">
-                <Button
-                    icon="pi pi-filter"
-                    :label="t('common.apply')"
-                    :loading="targetStore.loading"
-                    @click="applyFilters"
-                />
-
-                <Button
-                    icon="pi pi-times"
-                    :label="t('common.clear')"
-                    severity="secondary"
-                    outlined
-                    @click="clearFilters"
-                />
-
-                <Button
-                    v-if="canCreate"
-                    icon="pi pi-plus"
-                    :label="t('common.create')"
-                    @click="openCreateDialog"
-                />
-            </div>
-        </div>
-
-        <div class="hr-target-table-card">
-            <DataTable
-                :value="targetStore.items"
-                :loading="targetStore.loading || loadingOptions"
-                data-key="id"
-                lazy
-                paginator
-                :rows="targetStore.pagination.limit"
-                :first="(targetStore.pagination.page - 1) * targetStore.pagination.limit"
-                :total-records="targetStore.pagination.total"
-                responsive-layout="scroll"
-                class="enterprise-table hr-target-table"
-                @page="loadTargets($event.page + 1)"
+    <EnterpriseListPage
+        :rows="rows"
+        :columns="columns"
+        :loading="store.loading"
+        :error="store.error"
+        :pagination="store.pagination"
+        row-key="id"
+        empty-title="No dashboard targets"
+        empty-description="Create a target for the selected company and branch."
+        @retry="store.clearListCache(); load()"
+        @page-change="load({ page: $event.page, limit: $event.limit })"
+    >
+        <template #controls>
+            <EnterpriseListControls
+                :filter-label="t('common.filters')"
+                :hide-filter-label="t('common.hideFilters')"
+                :active-filter-count="activeFilterCount"
             >
-                <template #empty>
-                    <div class="hr-target-empty">
-                        {{ t('common.noRecords') }}
-                    </div>
+                <template #start>
+                    <Button
+                        :label="t('common.refresh')"
+                        icon="pi pi-refresh"
+                        severity="secondary"
+                        text
+                        :loading="store.loading"
+                        @click="store.clearListCache(); load()"
+                    />
+                    <PermissionButton
+                        :permission="PERMISSIONS.IMPORT"
+                        :label="t('hrDashboardTarget.sample')"
+                        icon="pi pi-download"
+                        severity="secondary"
+                        text
+                        @click="store.downloadTemplate()"
+                    />
+                    <PermissionButton
+                        :permission="PERMISSIONS.IMPORT"
+                        :label="t('hrDashboardTarget.import')"
+                        icon="pi pi-upload"
+                        severity="secondary"
+                        text
+                        @click="importVisible = true"
+                    />
+                    <PermissionButton
+                        :permission="PERMISSIONS.EXPORT"
+                        :label="t('hrDashboardTarget.export')"
+                        icon="pi pi-file-export"
+                        severity="secondary"
+                        text
+                        :loading="store.exporting"
+                        @click="store.exportFile({ ...filters, companyId: workspace.companyId, branchId: workspace.branchId })"
+                    />
                 </template>
 
-                <Column
-                    field="metric"
-                    :header="t('hrDashboardTarget.metric')"
-                    style="min-width: 11rem"
-                >
-                    <template #body="{ data }">
-                        <strong>{{ metricLabel(data.metric) }}</strong>
-                    </template>
-                </Column>
+                <template #actions>
+                    <PermissionButton
+                        :permission="PERMISSIONS.CREATE"
+                        :label="t('common.create')"
+                        icon="pi pi-plus"
+                        :disabled="!workspace.ready"
+                        @click="openCreate"
+                    />
+                </template>
 
-                <Column
-                    field="year"
-                    :header="t('hrDashboardTarget.year')"
-                    style="width: 6rem"
-                    body-class="hr-target-center"
-                    header-class="hr-target-center"
-                />
-
-                <Column
-                    field="month"
-                    :header="t('hrDashboardTarget.month')"
-                    style="width: 8rem"
-                    body-class="hr-target-center"
-                    header-class="hr-target-center"
-                >
-                    <template #body="{ data }">
-                        {{ monthLabel(data.month) }}
-                    </template>
-                </Column>
-
-                <Column
-                    field="targetRate"
-                    :header="t('hrDashboardTarget.targetRate')"
-                    style="width: 8rem"
-                    body-class="hr-target-center"
-                    header-class="hr-target-center"
-                >
-                    <template #body="{ data }">
-                        <span class="hr-target-rate">
-                            {{ Number(data.targetRate || 0).toFixed(2) }}%
-                        </span>
-                    </template>
-                </Column>
-
-                <Column
-                    :header="t('hrDashboardTarget.scope')"
-                    style="min-width: 23rem"
-                >
-                    <template #body="{ data }">
-                        <div class="hr-target-scope">
-                            <span>
-                                {{ data.company?.code || '-' }} / {{ data.branch?.code || '-' }}
+                <template #filters>
+                    <EnterpriseFilterBar :loading="store.loading">
+                        <EnterpriseFilterField
+                            :label="t('common.search')"
+                            search
+                            wide
+                        >
+                            <span class="target-search">
+                                <i class="pi pi-search" />
+                                <InputText
+                                    v-model="filters.search"
+                                    :placeholder="t('common.search')"
+                                    @keyup.enter="load({ page: 1 })"
+                                />
                             </span>
-                            <small>
-                                {{ data.employeeType?.name || t('hrDashboard.filters.allEmployeeTypes') }}
-                                <template v-if="data.employeeTypeChildName">
-                                    / {{ data.employeeTypeChildName }}
-                                </template>
-                                <template v-if="data.department?.name">
-                                    · {{ data.department.name }}
-                                </template>
-                                <template v-if="data.position?.title">
-                                    · {{ data.position.title }}
-                                </template>
-                                <template v-if="data.line?.name">
-                                    · {{ data.line.name }}
-                                </template>
-                            </small>
-                        </div>
-                    </template>
-                </Column>
+                        </EnterpriseFilterField>
 
-                <Column
-                    field="status"
-                    :header="t('common.status')"
-                    style="width: 7rem"
-                    body-class="hr-target-center"
-                    header-class="hr-target-center"
-                >
-                    <template #body="{ data }">
-                        <Tag
-                            :value="statusLabel(data.status)"
-                            :severity="statusSeverity(data.status)"
-                            rounded
-                        />
-                    </template>
-                </Column>
+                        <EnterpriseFilterField :label="t('hrDashboardTarget.employeeType')">
+                            <Select
+                                v-model="filters.employeeTypeId"
+                                :options="employeeTypeFilterOptions"
+                                option-label="label"
+                                option-value="value"
+                                filter
+                            />
+                        </EnterpriseFilterField>
 
-                <Column
-                    :header="t('common.actions')"
-                    frozen
-                    align-frozen="right"
-                    style="width: 8rem"
-                    body-class="hr-target-center"
-                    header-class="hr-target-center"
-                >
-                    <template #body="{ data }">
-                        <div class="enterprise-row-actions hr-target-row-actions">
+                        <EnterpriseFilterField :label="t('hrDashboardTarget.metric')">
+                            <Select
+                                v-model="filters.metric"
+                                :options="metricFilterOptions"
+                                option-label="label"
+                                option-value="value"
+                            />
+                        </EnterpriseFilterField>
+
+                        <EnterpriseFilterField :label="t('hrDashboardTarget.year')">
+                            <InputNumber
+                                v-model="filters.year"
+                                :use-grouping="false"
+                                :min="2000"
+                                :max="2100"
+                            />
+                        </EnterpriseFilterField>
+
+                        <EnterpriseFilterField :label="t('hrDashboardTarget.month')">
+                            <Select
+                                v-model="filters.month"
+                                :options="monthFilterOptions"
+                                option-label="label"
+                                option-value="value"
+                            />
+                        </EnterpriseFilterField>
+
+                        <EnterpriseFilterField :label="t('common.status')">
+                            <Select
+                                v-model="filters.status"
+                                :options="statusOptions"
+                                option-label="label"
+                                option-value="value"
+                            />
+                        </EnterpriseFilterField>
+
+                        <template #actions>
                             <Button
-                                v-if="canUpdate && data.status !== 'ARCHIVED'"
-                                icon="pi pi-pencil"
+                                :label="t('common.clear')"
+                                icon="pi pi-times"
                                 severity="secondary"
-                                text
-                                rounded
-                                @click="openEditDialog(data)"
+                                outlined
+                                :disabled="!activeFilterCount"
+                                @click="clearFilters"
                             />
-
                             <Button
-                                v-if="canArchive && data.status !== 'ARCHIVED'"
-                                icon="pi pi-trash"
-                                severity="danger"
-                                text
-                                rounded
-                                @click="confirmArchive(data)"
+                                :label="t('common.apply')"
+                                icon="pi pi-check"
+                                :loading="store.loading"
+                                @click="load({ page: 1 })"
                             />
-                        </div>
-                    </template>
-                </Column>
-            </DataTable>
+                        </template>
+                    </EnterpriseFilterBar>
+                </template>
+            </EnterpriseListControls>
+        </template>
+
+        <template #cell-metric="{ row }">
+            <strong>{{ metricLabel(row.metric) }}</strong>
+        </template>
+        <template #cell-month="{ row }">{{ monthLabel(row.month) }}</template>
+        <template #cell-employeeType="{ row }">{{ row.employeeType?.name || 'All' }}</template>
+        <template #cell-employeeTypeChildName="{ row }">{{ row.employeeTypeChildName || 'All' }}</template>
+        <template #cell-department="{ row }">{{ row.department?.name || 'All' }}</template>
+        <template #cell-position="{ row }">{{ row.position?.title || row.position?.name || 'All' }}</template>
+        <template #cell-line="{ row }">{{ row.line?.name || 'All' }}</template>
+        <template #cell-targetRate="{ row }">
+            <strong class="target-rate">{{ Number(row.targetRate || 0).toFixed(2) }}%</strong>
+        </template>
+        <template #cell-status="{ row }">
+            <Tag :value="statusLabel(row.status)" :severity="statusSeverity(row.status)" />
+        </template>
+        <template #actions="{ row }">
+            <EnterpriseActionMenu :items="actions(row)" />
+        </template>
+    </EnterpriseListPage>
+
+    <EnterpriseDialog
+        :visible="dialogVisible"
+        :title="dialogTitle"
+        width="58rem"
+        :busy="store.saving"
+        @update:visible="dialogVisible = $event"
+    >
+        <div class="target-form">
+            <div class="workspace-scope">
+                <div>
+                    <small>{{ t('hrDashboardTarget.company') }}</small>
+                    <strong>{{ workspace.selectedCompany?.displayName || workspace.selectedCompany?.name || '—' }}</strong>
+                </div>
+                <div>
+                    <small>{{ t('hrDashboardTarget.branch') }}</small>
+                    <strong>{{ workspace.selectedBranch?.name || '—' }}</strong>
+                </div>
+            </div>
+
+            <label>
+                <span>{{ t('hrDashboardTarget.metric') }} *</span>
+                <Select v-model="form.metric" :options="metricOptions" option-label="label" option-value="value" />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.year') }} *</span>
+                <InputNumber v-model="form.year" :use-grouping="false" :min="2000" :max="2100" />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.month') }} *</span>
+                <Select v-model="form.month" :options="formMonthOptions" option-label="label" option-value="value" />
+            </label>
+
+            <label>
+                <span>{{ t('hrDashboardTarget.employeeType') }}</span>
+                <Select v-model="form.employeeTypeId" :options="employeeTypeOptions" option-label="label" option-value="value" filter show-clear />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.employeeTypeChild') }}</span>
+                <Select v-model="form.employeeTypeChildId" :options="childOptions" option-label="label" option-value="value" :disabled="!childOptions.length" show-clear />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.department') }}</span>
+                <Select v-model="form.departmentId" :options="departmentOptions" option-label="label" option-value="value" filter show-clear />
+            </label>
+
+            <label>
+                <span>{{ t('hrDashboardTarget.position') }}</span>
+                <Select v-model="form.positionId" :options="positionOptions" option-label="label" option-value="value" filter show-clear :disabled="!form.departmentId || loadingLookups" />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.line') }}</span>
+                <Select v-model="form.lineId" :options="lineOptions" option-label="label" option-value="value" filter show-clear :disabled="!form.departmentId || loadingLookups" />
+            </label>
+            <label>
+                <span>{{ t('hrDashboardTarget.targetRate') }} *</span>
+                <InputNumber v-model="form.targetRate" suffix="%" :min="0" :max="100" :max-fraction-digits="2" />
+            </label>
+
+            <label>
+                <span>{{ t('common.status') }}</span>
+                <Select v-model="form.status" :options="editableStatusOptions" option-label="label" option-value="value" />
+            </label>
+            <label class="remark-field">
+                <span>{{ t('common.remark') }}</span>
+                <Textarea v-model="form.remark" rows="2" maxlength="500" />
+            </label>
         </div>
 
-        <Dialog
-            v-model:visible="dialogVisible"
-            modal
-            :header="dialogTitle"
-            class="hr-target-dialog"
-        >
-            <form
-                class="hr-target-form"
-                @submit.prevent="submitForm"
-            >
-                <div class="hr-target-form__section">
-                    <span>{{ t('hrDashboardTarget.scope') }}</span>
-                </div>
+        <template #footer>
+            <EnterpriseFormFooter
+                :saving="store.saving"
+                :disabled="!formValid"
+                @cancel="dialogVisible = false"
+                @save="save"
+            />
+        </template>
+    </EnterpriseDialog>
 
-                <div class="hr-target-form__grid">
-                    <label>
-                        {{ t('hrDashboardTarget.company') }}
-                        <Select
-                            v-model="form.companyId"
-                            :options="companyOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            required
-                        />
-                    </label>
+    <EnterpriseConfirmDialog
+        v-model:visible="confirmVisible"
+        :title="t('hrDashboardTarget.archiveTitle')"
+        :message="t('hrDashboardTarget.archiveConfirm')"
+        :confirm-label="t('common.archive')"
+        :busy="store.archiving"
+        @confirm="archiveTarget"
+    />
 
-                    <label>
-                        {{ t('hrDashboardTarget.branch') }}
-                        <Select
-                            v-model="form.branchId"
-                            :options="branchOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            required
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.employeeType') }}
-                        <Select
-                            v-model="form.employeeTypeId"
-                            :options="employeeTypeOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            show-clear
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.employeeTypeChild') }}
-                        <Select
-                            v-model="form.employeeTypeChildId"
-                            :options="childOptions"
-                            option-label="label"
-                            option-value="value"
-                            :disabled="!form.employeeTypeId"
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.department') }}
-                        <Select
-                            v-model="form.departmentId"
-                            :options="departmentOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            show-clear
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.position') }}
-                        <Select
-                            v-model="form.positionId"
-                            :options="positionOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            show-clear
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.line') }}
-                        <Select
-                            v-model="form.lineId"
-                            :options="lineOptions"
-                            option-label="label"
-                            option-value="value"
-                            filter
-                            show-clear
-                        />
-                    </label>
-                </div>
-
-                <div class="hr-target-form__section">
-                    <span>{{ t('hrDashboardTarget.metric') }}</span>
-                </div>
-
-                <div class="hr-target-form__grid hr-target-form__grid--small">
-                    <label>
-                        {{ t('hrDashboardTarget.metric') }}
-                        <Select
-                            v-model="form.metric"
-                            :options="metricOptions"
-                            option-label="label"
-                            option-value="value"
-                            required
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.year') }}
-                        <InputNumber
-                            v-model="form.year"
-                            :use-grouping="false"
-                            :min="2000"
-                            :max="2100"
-                            required
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.month') }}
-                        <Select
-                            v-model="form.month"
-                            :options="formMonthOptions"
-                            option-label="label"
-                            option-value="value"
-                            required
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('hrDashboardTarget.targetRate') }}
-                        <InputNumber
-                            v-model="form.targetRate"
-                            suffix="%"
-                            :min="0"
-                            :max="100"
-                            :min-fraction-digits="0"
-                            :max-fraction-digits="2"
-                            required
-                        />
-                    </label>
-
-                    <label>
-                        {{ t('common.status') }}
-                        <Select
-                            v-model="form.status"
-                            :options="editableStatusOptions"
-                            option-label="label"
-                            option-value="value"
-                        />
-                    </label>
-                </div>
-
-                <label class="hr-target-form__remark">
-                    {{ t('common.remark') }}
-                    <Textarea
-                        v-model="form.remark"
-                        rows="3"
-                    />
-                </label>
-
-                <div class="hr-target-form__actions">
-                    <Button
-                        type="button"
-                        :label="t('common.cancel')"
-                        severity="secondary"
-                        outlined
-                        @click="dialogVisible = false"
-                    />
-
-                    <Button
-                        type="submit"
-                        :label="t('common.save')"
-                        :loading="targetStore.saving"
-                    />
-                </div>
-            </form>
-        </Dialog>
-
-        <Dialog
-            v-model:visible="archiveDialogVisible"
-            modal
-            :header="t('hrDashboardTarget.archiveTitle')"
-            class="hr-target-archive-dialog"
-        >
-            <p>{{ t('hrDashboardTarget.archiveConfirm') }}</p>
-
-            <div class="hr-target-form__actions">
-                <Button
-                    :label="t('common.cancel')"
-                    severity="secondary"
-                    outlined
-                    @click="archiveDialogVisible = false"
-                />
-
-                <Button
-                    :label="t('common.archive')"
-                    severity="danger"
-                    :loading="targetStore.archiving"
-                    @click="archiveSelectedTarget"
-                />
-            </div>
-        </Dialog>
-    </section>
+    <HrDashboardTargetImportDialog
+        v-model:visible="importVisible"
+        :importing="store.importing"
+        :progress="store.importProgress"
+        :result="store.importSummary"
+        @file-change="importFile = $event"
+        @template="store.downloadTemplate()"
+        @import="runImport"
+    />
 </template>
 
 <style scoped>
-.hr-target-page {
-    display: grid;
-    gap: 0.75rem;
-    width: 100%;
-}
-
-.hr-target-filter-card {
-    align-items: flex-start;
-    background: var(--surface-card, #ffffff);
-    border: 1px solid var(--surface-border, #dbe4f0);
-    border-radius: 14px;
-    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
-    display: flex;
-    gap: 0.75rem;
-    justify-content: space-between;
-    padding: 0.72rem;
-}
-
-.hr-target-filter-grid {
-    display: grid;
-    flex: 1;
-    gap: 0.55rem;
-    grid-template-columns: repeat(4, minmax(11rem, 1fr));
-}
-
-.hr-target-control {
-    width: 100%;
-}
-
-.hr-target-actions {
-    display: flex;
-    flex-shrink: 0;
-    gap: 0.5rem;
-}
-
-.hr-target-table-card {
-    background: var(--surface-card, #ffffff);
-    border: 1px solid var(--surface-border, #dbe4f0);
-    border-radius: 14px;
-    overflow: hidden;
-}
-
-.hr-target-empty {
-    color: var(--text-color-secondary, #64748b);
-    font-weight: 700;
-    padding: 1rem;
-    text-align: center;
-}
-
-.hr-target-center {
-    text-align: center !important;
-}
-
-.hr-target-rate {
-    color: #002060;
-    font-size: 0.86rem;
-    font-weight: 800;
-}
-
-.hr-target-scope {
-    display: grid;
-    gap: 0.12rem;
-    line-height: 1.25;
-}
-
-.hr-target-scope span {
-    color: #0f172a;
-    font-weight: 800;
-}
-
-.hr-target-scope small {
-    color: var(--text-color-secondary, #64748b);
-    font-size: 0.72rem;
-    line-height: 1.3;
-}
-
-.hr-target-row-actions {
-    justify-content: center;
-}
-
-.hr-target-dialog {
-    width: min(920px, 96vw);
-}
-
-.hr-target-archive-dialog {
-    width: min(420px, 92vw);
-}
-
-.hr-target-form {
-    display: grid;
-    gap: 0.85rem;
-}
-
-.hr-target-form__section {
-    align-items: center;
-    border-bottom: 1px solid var(--surface-border, #dbe4f0);
-    color: #002060;
-    display: flex;
-    font-size: 0.82rem;
-    font-weight: 900;
-    letter-spacing: 0.02em;
-    padding-bottom: 0.35rem;
-    text-transform: uppercase;
-}
-
-.hr-target-form__grid {
-    display: grid;
-    gap: 0.75rem;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.hr-target-form__grid--small {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.hr-target-form label {
-    display: grid;
-    font-size: 0.76rem;
-    font-weight: 800;
-    gap: 0.32rem;
-}
-
-.hr-target-form__remark {
-    display: grid;
-    gap: 0.35rem;
-}
-
-.hr-target-form__actions {
-    display: flex;
-    gap: 0.6rem;
-    justify-content: flex-end;
-}
-
-:deep(.p-inputtext),
-:deep(.p-select-label) {
-    font-size: 0.82rem;
-}
-
-:deep(.p-datatable-thead > tr > th) {
-    color: #0f172a;
-    font-size: 0.78rem;
-    font-weight: 900;
-    padding: 0.62rem 0.55rem;
-}
-
-:deep(.p-datatable-tbody > tr > td) {
-    font-size: 0.76rem;
-    padding: 0.46rem 0.55rem;
-    vertical-align: middle;
-}
-
-@media (max-width: 1180px) {
-    .hr-target-filter-card {
-        display: grid;
-    }
-
-    .hr-target-filter-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .hr-target-actions {
-        justify-content: flex-end;
-    }
-
-    .hr-target-form__grid,
-    .hr-target-form__grid--small {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 720px) {
-    .hr-target-filter-grid,
-    .hr-target-form__grid,
-    .hr-target-form__grid--small {
-        grid-template-columns: 1fr;
-    }
-
-    .hr-target-actions {
-        display: grid;
-        grid-template-columns: 1fr;
-    }
-}
+.target-search { position: relative; display: block; width: 100%; }
+.target-search > i { position: absolute; z-index: 1; left: .7rem; top: 50%; transform: translateY(-50%); color: var(--p-text-muted-color); font-size: .75rem; }
+.target-search :deep(.p-inputtext) { width: 100%; padding-left: 2rem; }
+.target-rate { color: var(--p-primary-color); }
+.target-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem 1rem; }
+.target-form > label { display: grid; gap: .3rem; min-width: 0; font-size: .75rem; font-weight: 600; }
+.target-form :deep(.p-inputtext), .target-form :deep(.p-select), .target-form :deep(.p-inputnumber), .target-form :deep(.p-textarea) { width: 100%; }
+.workspace-scope { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding: .65rem .75rem; border: 1px solid var(--p-content-border-color); border-radius: .5rem; background: var(--p-surface-50); }
+.workspace-scope div { display: grid; gap: .1rem; }
+.workspace-scope small { color: var(--p-text-muted-color); }
+.remark-field { grid-column: span 2; }
+@media (max-width: 780px) { .target-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } .remark-field { grid-column: 1 / -1; } }
+@media (max-width: 540px) { .target-form, .workspace-scope { grid-template-columns: 1fr; } .remark-field { grid-column: auto; } }
 </style>

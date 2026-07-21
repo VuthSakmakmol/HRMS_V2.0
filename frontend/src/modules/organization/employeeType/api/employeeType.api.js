@@ -66,7 +66,9 @@ export async function listEmployeeTypes(params = {}, signal) {
     }
 }
 export async function createEmployeeType(payload) { return unwrapData(await apiClient.post(ENDPOINT, payload)).employeeType }
-export async function updateEmployeeType(id, payload) { return unwrapData(await apiClient.patch(`${ENDPOINT}/${id}`, payload)).employeeType }
+export async function updateEmployeeType(id, payload) {
+    return unwrapData(await apiClient.patch(`${ENDPOINT}/${id}`, payload))
+}
 export async function archiveEmployeeType(id) { return unwrapData(await apiClient.patch(`${ENDPOINT}/${id}/archive`)).employeeType }
 export async function lookupPositionPage(params = {}, signal) {
     const data = unwrapData(
@@ -145,6 +147,16 @@ export async function lookupPositions(params = {}, signal) {
 }
 
 export async function lookupEmployeeTypeDashboardCategories(signal) { return unwrapData(await apiClient.get(`${ENDPOINT}/dashboard-categories`, { signal })).items ?? [] }
+export async function lookupEmployeeTypePositionAssignments(params = {}, signal) {
+    const data = unwrapData(
+        await apiClient.get(`${ENDPOINT}/position-assignments`, {
+            params,
+            signal,
+        }),
+    )
+
+    return Array.isArray(data.items) ? data.items : []
+}
 export async function downloadEmployeeTypeTemplate() { const r = await apiClient.get(`${ENDPOINT}/import-template`, { responseType: "blob", timeout: 0 }); downloadBlob(r.data, "employee-type-import-template.xlsx") }
 export async function exportEmployeeTypes(params = {}) { const r = await apiClient.get(`${ENDPOINT}/export`, { params, responseType: "blob", timeout: 0 }); downloadBlob(r.data, "employee-types-export.xlsx") }
 export async function startEmployeeTypeImportJob(file, onUploadProgress) { const fd = new FormData(); fd.append("file", file); return unwrapData(await apiClient.post(`${ENDPOINT}/import-jobs`, fd, { timeout: 0, onUploadProgress })).job }

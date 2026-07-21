@@ -26,16 +26,6 @@ export function createLineColumns(t) {
             minWidth: "11rem",
         },
         {
-            field: "department",
-            header: t("organization.line.department"),
-            minWidth: "12rem",
-        },
-        {
-            field: "leaderPosition",
-            header: t("organization.line.leaderPosition"),
-            minWidth: "12rem",
-        },
-        {
             field: "status",
             header: t("common.status"),
             sortable: true,

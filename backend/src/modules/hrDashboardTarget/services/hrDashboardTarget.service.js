@@ -448,6 +448,16 @@ export async function listHrDashboardTargets({ query, user }) {
     return setCache(cacheKey, result, 30_000)
 }
 
+export async function listHrDashboardTargetsForExport({ query, user }) {
+    const filter = buildListFilter(query, user)
+    const items = await targetPopulate(HrDashboardTarget.find(filter))
+        .sort({ year: -1, month: 1, metric: 1, createdAt: -1 })
+        .limit(50_000)
+        .lean()
+
+    return items.map(serializeHrDashboardTarget)
+}
+
 export async function getHrDashboardTargetById({ targetId, user }) {
     ensureObjectId(
         targetId,
@@ -597,4 +607,75 @@ export async function archiveHrDashboardTarget({ targetId, user }) {
     clearCacheByPrefix("hr-dashboard:data:")
 
     return getHrDashboardTargetById({ targetId: archived._id, user })
+}
+
+function lookupItem(item) {
+    return {
+        id: toId(item._id),
+        code: item.code || "",
+        name: item.name || item.title || "",
+        title: item.title || item.name || "",
+        companyId: toId(item.companyId),
+        branchId: toId(item.branchId),
+        departmentId: toId(item.departmentId),
+        children: (item.children || [])
+            .filter((child) => child.status !== "ARCHIVED")
+            .map((child) => ({
+                id: toId(child._id),
+                code: child.code || "",
+                name: child.name || "",
+            })),
+    }
+}
+
+export async function getHrDashboardTargetLookups({ query, user }) {
+    await validateReferences(
+        {
+            companyId: query.companyId,
+            branchId: query.branchId,
+            departmentId: null,
+            positionId: null,
+            lineId: null,
+            employeeTypeId: null,
+        },
+        user,
+    )
+
+    const baseFilter = {
+        companyId: query.companyId,
+        branchId: query.branchId,
+        status: "ACTIVE",
+    }
+    const [departments, employeeTypes, positions, lines] = await Promise.all([
+        Department.find(baseFilter)
+            .select("code name companyId branchId")
+            .sort({ code: 1, name: 1 })
+            .lean(),
+        EmployeeType.find({
+            companyId: query.companyId,
+            status: "ACTIVE",
+        })
+            .select("code name companyId children")
+            .sort({ code: 1, name: 1 })
+            .lean(),
+        query.departmentId
+            ? Position.find({ ...baseFilter, departmentId: query.departmentId })
+                .select("code title companyId branchId departmentId")
+                .sort({ code: 1, title: 1 })
+                .lean()
+            : [],
+        query.departmentId
+            ? Line.find({ ...baseFilter, departmentId: query.departmentId })
+                .select("code name companyId branchId departmentId")
+                .sort({ code: 1, name: 1 })
+                .lean()
+            : [],
+    ])
+
+    return {
+        departments: departments.map(lookupItem),
+        employeeTypes: employeeTypes.map(lookupItem),
+        positions: positions.map(lookupItem),
+        lines: lines.map(lookupItem),
+    }
 }

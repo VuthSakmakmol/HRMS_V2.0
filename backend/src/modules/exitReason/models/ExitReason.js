@@ -45,27 +45,12 @@ const exitReasonSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 80,
-            set: normalizeText,
-            default: "",
-        },
-
         description: {
             type: String,
             trim: true,
             maxlength: 800,
             set: normalizeText,
             default: "",
-        },
-
-        sortOrder: {
-            type: Number,
-            min: 0,
-            max: 9999,
-            default: 0,
         },
 
         status: {
@@ -99,11 +84,11 @@ exitReasonSchema.index(
     { unique: true, name: "uq_exit_reason_scope_code" },
 )
 exitReasonSchema.index(
-    { companyId: 1, branchId: 1, status: 1, sortOrder: 1, name: 1 },
+    { companyId: 1, branchId: 1, status: 1, name: 1 },
     { name: "idx_exit_reason_lookup" },
 )
 exitReasonSchema.index(
-    { code: "text", name: "text", shortName: "text", description: "text" },
+    { code: "text", name: "text", description: "text" },
     { name: "idx_exit_reason_search_text" },
 )
 

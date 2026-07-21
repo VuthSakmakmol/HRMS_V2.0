@@ -12,22 +12,6 @@ function normalizeText(value) {
     return value.trim().replace(/\s+/g, " ")
 }
 
-// Employee Type is a separate setup module.
-// This fallback keeps Employee populate working even when the EmployeeType module
-// route/model has not been imported before Employee in app startup order.
-if (!mongoose.models.EmployeeType) {
-    const employeeTypeFallbackSchema = new Schema(
-        {},
-        {
-            collection: "employee_types",
-            strict: false,
-            versionKey: false,
-        },
-    )
-
-    mongoose.model("EmployeeType", employeeTypeFallbackSchema)
-}
-
 // Recruitment Channel is a separate setup module.
 // This fallback keeps Employee populate working even when app startup order changes.
 if (!mongoose.models.RecruitmentChannel) {
@@ -196,6 +180,16 @@ const employeeSchema = new Schema(
             trim: true,
             maxlength: 120,
             set: normalizeText,
+            default: "",
+        },
+        employeeTypeReviewRequired: {
+            type: Boolean,
+            default: false,
+            index: true,
+        },
+        employeeTypeReviewReason: {
+            type: String,
+            enum: ["", "POSITION_UNASSIGNED", "ASSIGNMENT_AMBIGUOUS"],
             default: "",
         },
 

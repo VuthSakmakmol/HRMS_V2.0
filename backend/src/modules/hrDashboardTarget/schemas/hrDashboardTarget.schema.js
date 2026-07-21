@@ -136,7 +136,7 @@ const metricSchema = z.enum(["ABSENCE_RATE", "TURNOVER_RATE"])
 
 export const hrDashboardTargetListQuerySchema = z.object({
     page: integerFromQuery(1, 1, 100000),
-    limit: integerFromQuery(20, 1, 100),
+    limit: integerFromQuery(10, 1, 100),
     search: optionalText(120),
     status: optionalEnumFromQuery(["ALL", "ACTIVE", "INACTIVE", "ARCHIVED"])
         .default("ACTIVE"),
@@ -172,4 +172,10 @@ export const hrDashboardTargetUpdateSchema = hrDashboardTargetCreateSchema.parti
 
 export const hrDashboardTargetIdParamSchema = z.object({
     targetId: objectIdSchema,
+})
+
+export const hrDashboardTargetLookupQuerySchema = z.object({
+    companyId: objectIdSchema,
+    branchId: objectIdSchema,
+    departmentId: optionalObjectIdSchema(),
 })

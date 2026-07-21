@@ -12,9 +12,11 @@ import {
     enumerateBusinessDates,
     startOfBusinessDay,
 } from "../utils/attendanceDate.util.js"
+import { attendanceScopeFilter, assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
-function buildEmployeeFilter(payload) {
+function buildEmployeeFilter(payload, user) {
     const filter = {
+        ...attendanceScopeFilter(user),
         recordStatus: "ACTIVE",
         employmentStatus: "WORKING",
         joinDate: { $lte: endOfBusinessDay(payload.dateTo) },
@@ -100,7 +102,8 @@ function updateSummary(summary, calculated) {
 }
 
 export async function verifyAttendanceRange({ payload, user }) {
-    const employees = await Employee.find(buildEmployeeFilter(payload)).lean()
+    assertAttendanceScope(user, payload.companyId, payload.branchId)
+    const employees = await Employee.find(buildEmployeeFilter(payload, user)).lean()
     const shiftIds = [...new Set(employees.map((employee) => String(employee.shiftId)).filter(Boolean))]
     const shifts = await Shift.find({ _id: { $in: shiftIds }, status: "ACTIVE" }).lean()
     const shiftMap = new Map(shifts.map((shift) => [String(shift._id), shift]))
@@ -117,6 +120,8 @@ export async function verifyAttendanceRange({ payload, user }) {
     }
 
     const scans = await AttendanceRawScan.find({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
         employeeCode: { $in: employeeCodes },
         scannedAt: { $gte: earliestScanAt, $lte: latestScanAt },
     })

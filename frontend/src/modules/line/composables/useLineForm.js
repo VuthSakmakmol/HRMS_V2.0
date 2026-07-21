@@ -13,10 +13,8 @@ export function createEmptyLineForm() {
     return {
         companyId: "",
         branchId: "",
-        departmentId: "",
         code: "",
         name: "",
-        leaderPositionId: null,
         description: "",
         status: "ACTIVE",
     }
@@ -54,10 +52,6 @@ export function useLineForm() {
             ...clone(line),
             companyId: line.companyId ?? line.company?.id ?? "",
             branchId: line.branchId ?? line.branch?.id ?? "",
-            departmentId:
-                line.departmentId ?? line.department?.id ?? "",
-            leaderPositionId:
-                line.leaderPositionId ?? line.leaderPosition?.id ?? null,
             status:
                 line.status === "INACTIVE"
                     ? "INACTIVE"
@@ -112,11 +106,7 @@ export function useLineForm() {
             if (isEdit.value) {
                 delete payload.companyId
                 delete payload.branchId
-                delete payload.departmentId
             }
-
-            payload.leaderPositionId = payload.leaderPositionId || null
-            delete payload.allowedPositionIds
 
             return isEdit.value
                 ? await updateLine(lineId.value, payload)

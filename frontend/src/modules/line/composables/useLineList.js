@@ -21,8 +21,6 @@ export function useLineList() {
         page: 1,
         limit: 10,
         search: "",
-        departmentId: "",
-        positionId: "",
         status: "ALL",
         sortBy: "name",
         sortOrder: "asc",
@@ -40,9 +38,7 @@ export function useLineList() {
     const hasActiveFilters = computed(
         () =>
             Boolean(
-                query.search ||
-                    query.departmentId ||
-                    query.positionId,
+                query.search,
             ) || query.status !== "ALL",
     )
 
@@ -58,8 +54,6 @@ export function useLineList() {
                 {
                     ...query,
                     search: query.search || undefined,
-                    departmentId: query.departmentId || undefined,
-                    positionId: query.positionId || undefined,
                 },
                 controller.signal,
             )
@@ -86,8 +80,6 @@ export function useLineList() {
         Object.assign(query, {
             page: 1,
             search: "",
-            departmentId: "",
-            positionId: "",
             status: "ALL",
         })
 

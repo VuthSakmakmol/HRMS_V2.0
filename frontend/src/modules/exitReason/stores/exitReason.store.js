@@ -14,7 +14,7 @@ export const useExitReasonStore = defineStore("exitReason", {
         lookupItems: [],
         pagination: {
             page: 1,
-            limit: 20,
+            limit: 10,
             total: 0,
             totalPages: 1,
         },

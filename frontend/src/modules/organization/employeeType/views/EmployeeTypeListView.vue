@@ -21,6 +21,7 @@ import {
     downloadEmployeeTypeTemplate,
     exportEmployeeTypes,
     lookupPositions,
+    lookupEmployeeTypePositionAssignments,
     lookupEmployeeTypeDashboardCategories,
 } from "../api/employeeType.api.js"
 import EmployeeTypeArchiveDialog from "../components/EmployeeTypeArchiveDialog.vue"
@@ -75,6 +76,7 @@ const {
 
 const positions = ref([])
 const positionsLoading = ref(false)
+const positionAssignments = ref([])
 const dashboardCategories = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
@@ -168,16 +170,49 @@ async function loadPositions({
     positionsLoading.value = true
 
     try {
-        const positionRows = await lookupPositions({
-            companyId,
-            branchId,
-            search: String(search || "").trim(),
-            sortBy: "title",
-            sortOrder: "asc",
-        })
+        const [positionRows, assignmentRows] = await Promise.all([
+            lookupPositions({
+                companyId,
+                branchId,
+                search: String(search || "").trim(),
+                sortBy: "title",
+                sortOrder: "asc",
+            }),
+            lookupEmployeeTypePositionAssignments({
+                companyId,
+                branchId,
+                page: 1,
+                limit: 10,
+                status: "ALL",
+            }),
+        ])
+
+        positionAssignments.value = assignmentRows
+        const assignmentByPositionId = new Map(
+            assignmentRows.map((assignment) => [
+                String(assignment.positionId),
+                assignment,
+            ]),
+        )
+        const currentEmployeeTypeId = String(formState.employeeTypeId?.value || "")
 
         positions.value = Array.isArray(positionRows)
-            ? positionRows
+            ? positionRows.map((position) => {
+                const assignment = assignmentByPositionId.get(String(position.id))
+                const assignedElsewhere = Boolean(
+                    assignment &&
+                    String(assignment.employeeTypeId) !== currentEmployeeTypeId,
+                )
+
+                return {
+                    ...position,
+                    assignment,
+                    assignedElsewhere,
+                    displayTitle: assignedElsewhere
+                        ? `${position.title} — ${assignment.employeeTypeName}`
+                        : position.title,
+                }
+            })
             : []
     } catch (caught) {
         positions.value = []
@@ -240,7 +275,11 @@ async function saveEmployeeType() {
     try {
         const editing = formState.isEdit.value
 
-        await formState.save()
+        const result = await formState.save()
+
+        if (result === null) {
+            return
+        }
 
         formVisible.value = false
 
@@ -254,6 +293,15 @@ async function saveEmployeeType() {
                 : t("organization.employeeType.createdDetail"),
             life: 3000,
         })
+
+        if (editing && result?.reconciliation?.totalAffected > 0) {
+            toast.add({
+                severity: result.reconciliation.reviewRequired > 0 ? "warn" : "info",
+                summary: "Employee assignments updated",
+                detail: `${result.reconciliation.reassigned} employee(s) reassigned; ${result.reconciliation.reviewRequired} marked for HR review.`,
+                life: 6000,
+            })
+        }
 
         await list.load()
     } catch (caught) {
@@ -622,6 +670,7 @@ onMounted(load)
         :positions="positions"
         :positions-loading="positionsLoading"
         :saving="formSaving"
+        :saving-message="formState.savingMessage.value"
         @update:visible="formVisible = $event"
         @save="saveEmployeeType"
         @clear-error="formState.clearError"

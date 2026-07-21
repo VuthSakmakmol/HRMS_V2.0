@@ -1,10 +1,11 @@
 export class ApiError extends Error {
-    constructor({ message, code, messageKey, fields, requestId, status, cause }) {
+    constructor({ message, code, messageKey, fields, details, requestId, status, cause }) {
         super(message || messageKey || "Request failed", { cause })
         this.name = "ApiError"
         this.code = code || "REQUEST_FAILED"
         this.messageKey = messageKey || "errors.requestFailed"
         this.fields = fields || {}
+        this.details = details
         this.requestId = requestId || null
         this.status = status || 0
     }
@@ -33,6 +34,7 @@ export function toApiError(error) {
         code: payload.code,
         messageKey: payload.messageKey,
         fields: payload.fields,
+        details: payload.details,
         requestId: payload.requestId || error?.response?.headers?.["x-request-id"],
         status: error?.response?.status,
         cause: error,
