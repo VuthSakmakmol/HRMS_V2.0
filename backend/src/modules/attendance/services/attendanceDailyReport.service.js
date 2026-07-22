@@ -4,6 +4,7 @@ import Employee from "../../employee/models/Employee.js"
 import Department from "../../organization/models/Department.js"
 import Position from "../../organization/models/Position.js"
 import CalendarDay from "../../calendar/models/CalendarDay.js"
+import HrDashboardTarget from "../../hrDashboardTarget/models/HrDashboardTarget.js"
 import AttendanceRecord from "../models/AttendanceRecord.js"
 import { AppError } from "../../../shared/errors/AppError.js"
 import { attendanceScopeFilter, assertAttendanceScope } from "../utils/attendanceScope.util.js"
@@ -78,19 +79,68 @@ export async function buildAttendanceDailyReport({ query, user, onProgress = () 
         return value
     }
 
-    const [employees, records, calendarDays, departments, positions] = await Promise.all([
+    const [year, monthNumber] = query.month.split("-").map(Number)
+    const [employees, records, calendarDays, departments, positions, attendanceTargetRecords] = await Promise.all([
         trackSource(Employee.find({ ...dimension, ...attendanceScopeFilter(user), recordStatus: { $ne: "ARCHIVED" }, joinDate: { $lte: end }, $or: [{ resignDate: null }, { resignDate: { $gte: start } }] })
-            .select("_id joinDate resignDate departmentId positionId").lean()),
+            .select("_id joinDate resignDate departmentId positionId employeeTypeId").lean()),
         trackSource(AttendanceRecord.find({ ...dimension, ...attendanceScopeFilter(user), attendanceDate: { $gte: start, $lte: end } })
             .select("employeeId attendanceDate departmentId positionId status firstInAt lastOutAt attendanceCode absenceCode leaveCode leaveTypeCode correctionCode").lean()),
         trackSource(CalendarDay.find({ status: "ACTIVE", dateKey: { $gte: days[0].key, $lte: days.at(-1).key }, $or: [{ scopeLevel: "GLOBAL" }, { companyId }, { branchId }] }).lean()),
         trackSource(Department.find({ companyId, branchId, status: { $ne: "ARCHIVED" } }).select("code name").lean()),
         trackSource(Position.find({ companyId, branchId, status: { $ne: "ARCHIVED" } }).select("code title departmentId").lean()),
+        HrDashboardTarget.find({
+            companyId,
+            branchId,
+            metric: "ABSENCE_RATE",
+            year,
+            month: { $in: [monthNumber, 0] },
+            status: "ACTIVE",
+            employeeTypeId: { $ne: null },
+            departmentId: null,
+            positionId: null,
+            lineId: null,
+            employeeTypeChildId: null,
+        }).sort({ employeeTypeId: 1, month: -1, updatedAt: -1 })
+            .select("employeeTypeId targetRate month")
+            .lean(),
     ])
     onProgress({ phase: "LOADING_DATA", percent: 35, processedRows: 5, totalRows: 5 })
 
+    const targetByEmployeeType = new Map()
+    for (const target of attendanceTargetRecords) {
+        const employeeTypeId = String(target.employeeTypeId || "")
+        if (employeeTypeId && !targetByEmployeeType.has(employeeTypeId)) {
+            targetByEmployeeType.set(employeeTypeId, target)
+        }
+    }
+    const employeeTypeCounts = new Map()
+    for (const employee of employees) {
+        const employeeTypeId = String(employee.employeeTypeId || "")
+        if (employeeTypeId) {
+            employeeTypeCounts.set(employeeTypeId, (employeeTypeCounts.get(employeeTypeId) || 0) + 1)
+        }
+    }
+    const targetSources = [...targetByEmployeeType.entries()]
+        .map(([employeeTypeId, target]) => ({
+            employeeTypeId,
+            rate: Number(target.targetRate),
+            month: Number(target.month),
+            employeeCount: employeeTypeCounts.get(employeeTypeId) || 0,
+        }))
+        .filter((item) => item.employeeCount > 0)
+    const coveredEmployees = targetSources.reduce((sum, item) => sum + item.employeeCount, 0)
+    const weightedTargetRate = coveredEmployees
+        ? targetSources.reduce((sum, item) => sum + (item.rate * item.employeeCount), 0) / coveredEmployees
+        : null
+
     const calendarByDate = new Map()
-    for (const item of calendarDays) calendarByDate.set(item.dateKey, item)
+    const scopeRank = { GLOBAL: 1, COMPANY: 2, BRANCH: 3 }
+    for (const item of calendarDays) {
+        const current = calendarByDate.get(item.dateKey)
+        if (!current || (scopeRank[item.scopeLevel] || 0) > (scopeRank[current.scopeLevel] || 0)) {
+            calendarByDate.set(item.dateKey, item)
+        }
+    }
     const reportDays = days.map((day) => {
         const calendar = calendarByDate.get(day.key)
         const dayType = calendar?.dayType || (day.weekday === 0 ? "WEEKEND" : "WORKING_DAY")
@@ -246,6 +296,15 @@ export async function buildAttendanceDailyReport({ query, user, onProgress = () 
 
     return {
         month: query.month,
+        attendanceTarget: weightedTargetRate !== null
+            ? {
+                rate: weightedTargetRate,
+                method: targetSources.length === 1 ? "EMPLOYEE_TYPE" : "HEADCOUNT_WEIGHTED",
+                coveredEmployees,
+                totalEmployees: employees.length,
+                sources: targetSources,
+            }
+            : null,
         days: reportDays,
         summary: {
             totalEmployees: daily.map((item) => item.totalEmployees),
@@ -281,9 +340,10 @@ export async function buildAttendanceDailyReport({ query, user, onProgress = () 
     }
 }
 
-function percentFill(value) {
-    if (value < 4) return "C6EFCE"
-    if (value < 6) return "FFEB9C"
+function percentFill(value, targetRate) {
+    if (targetRate === null) return "C6EFCE"
+    if (value < Math.max(targetRate - 2, 0)) return "C6EFCE"
+    if (value < targetRate) return "FFEB9C"
     return "FFC7CE"
 }
 
@@ -294,7 +354,7 @@ export async function buildAttendanceDailyReportWorkbook(report, onProgress = ()
     sheet.columns = [{ width: 24 }, ...report.days.map(() => ({ width: 6 })), { width: 7 }]
     const addRow = (label, values, avg, percent = false) => {
         const row = sheet.addRow([label, ...values.map((value) => value === null ? "" : percent ? value / 100 : value), percent ? avg / 100 : avg])
-        if (percent) row.eachCell((cell, column) => { if (column > 1 && typeof cell.value === "number") { cell.numFmt = "0.0%"; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: percentFill(cell.value * 100) } } } })
+        if (percent) row.eachCell((cell, column) => { if (column > 1 && typeof cell.value === "number") { cell.numFmt = "0.0%"; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: percentFill(cell.value * 100, report.attendanceTarget?.rate ?? null) } } } })
         return row
     }
     sheet.addRow(["Attendance Daily Report", ...report.days.map((day) => day.day), "Avg"])

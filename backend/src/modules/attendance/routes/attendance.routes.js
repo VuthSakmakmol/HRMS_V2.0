@@ -37,6 +37,14 @@ import {
     buildAttendanceDailyReport,
     buildAttendanceDailyReportWorkbook,
 } from "../services/attendanceDailyReport.service.js"
+import {
+    getAttendanceDailyEmailStatus,
+    sendAttendanceDailyEmail,
+} from "../services/attendanceDailyEmail.service.js"
+import {
+    getAttendanceDailyEmailSchedule,
+    saveAttendanceDailyEmailSchedule,
+} from "../services/attendanceDailyEmailSchedule.service.js"
 
 const router = Router()
 const upload = multer({
@@ -176,6 +184,78 @@ router.get(
         res.setHeader("Content-Disposition", `attachment; filename="${artifact.fileName}"`)
         res.status(200).send(artifact.buffer)
         dailyReportExports.delete(req.params.jobId)
+    },
+)
+
+router.get(
+    "/daily-report/email-status",
+    requirePermission("ATTENDANCE.RECORD.VIEW"),
+    async (req, res, next) => {
+        try {
+            const status = await getAttendanceDailyEmailStatus({
+                date: req.query.date,
+                companyId: req.query.companyId,
+                branchId: req.query.branchId,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: { status } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/daily-report/send-email",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const result = await sendAttendanceDailyEmail({
+                date: req.body.date,
+                companyId: req.body.companyId,
+                branchId: req.body.branchId,
+                force: req.body.force === true,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: result })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.get(
+    "/daily-report/email-schedule",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const schedule = await getAttendanceDailyEmailSchedule({
+                companyId: req.query.companyId,
+                branchId: req.query.branchId,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.put(
+    "/daily-report/email-schedule",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const schedule = await saveAttendanceDailyEmailSchedule({
+                companyId: req.body.companyId,
+                branchId: req.body.branchId,
+                payload: req.body,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
     },
 )
 

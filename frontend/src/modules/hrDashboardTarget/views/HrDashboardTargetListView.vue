@@ -51,9 +51,6 @@ const importVisible = ref(false)
 const importFile = ref(null)
 const loadingLookups = ref(false)
 const hydratingForm = ref(false)
-const departments = ref([])
-const positions = ref([])
-const lines = ref([])
 const employeeTypes = ref([])
 let lookupController = null
 
@@ -121,47 +118,11 @@ const employeeTypeFilterOptions = computed(() => [
     ...employeeTypeOptions.value,
 ])
 
-const selectedEmployeeType = computed(() =>
-    employeeTypes.value.find((item) => item.id === form.employeeTypeId) || null,
-)
-
-const childOptions = computed(() =>
-    (selectedEmployeeType.value?.children || []).map((item) => ({
-        label: `${item.code} - ${item.name}`,
-        value: item.id,
-    })),
-)
-
-const departmentOptions = computed(() =>
-    departments.value.map((item) => ({
-        label: `${item.code} - ${item.name}`,
-        value: item.id,
-    })),
-)
-
-const positionOptions = computed(() =>
-    positions.value.map((item) => ({
-        label: `${item.code} - ${item.title}`,
-        value: item.id,
-    })),
-)
-
-const lineOptions = computed(() =>
-    lines.value.map((item) => ({
-        label: `${item.code} - ${item.name}`,
-        value: item.id,
-    })),
-)
-
 const columns = computed(() => [
     { field: "metric", header: t("hrDashboardTarget.metric"), frozen: true, width: "11rem", minWidth: "11rem" },
     { field: "year", header: t("hrDashboardTarget.year"), width: "6rem", minWidth: "6rem" },
     { field: "month", header: t("hrDashboardTarget.month"), width: "8rem", minWidth: "8rem" },
     { field: "employeeType", header: t("hrDashboardTarget.employeeType"), width: "12rem", minWidth: "12rem" },
-    { field: "employeeTypeChildName", header: t("hrDashboardTarget.employeeTypeChild"), width: "11rem", minWidth: "11rem" },
-    { field: "department", header: t("hrDashboardTarget.department"), width: "12rem", minWidth: "12rem" },
-    { field: "position", header: t("hrDashboardTarget.position"), width: "13rem", minWidth: "13rem" },
-    { field: "line", header: t("hrDashboardTarget.line"), width: "11rem", minWidth: "11rem" },
     { field: "targetRate", header: t("hrDashboardTarget.targetRate"), width: "8rem", minWidth: "8rem" },
     { field: "remark", header: t("common.remark"), width: "16rem", minWidth: "16rem" },
     { field: "status", header: t("common.status"), width: "8rem", minWidth: "8rem" },
@@ -187,6 +148,7 @@ const dialogTitle = computed(() =>
 const formValid = computed(() =>
     workspace.ready &&
     Boolean(form.metric) &&
+    Boolean(form.employeeTypeId) &&
     Number.isInteger(Number(form.year)) &&
     Number(form.year) >= 2000 &&
     Number(form.year) <= 2100 &&
@@ -200,10 +162,6 @@ function emptyForm() {
         year: currentYear,
         month: 0,
         employeeTypeId: "",
-        employeeTypeChildId: "",
-        departmentId: "",
-        positionId: "",
-        lineId: "",
         targetRate: 0,
         remark: "",
         status: "ACTIVE",
@@ -239,11 +197,8 @@ function statusLabel(value) {
     return te(key) ? t(key) : value
 }
 
-async function loadLookups(departmentId = "") {
+async function loadLookups() {
     if (!workspace.ready) {
-        departments.value = []
-        positions.value = []
-        lines.value = []
         employeeTypes.value = []
         return
     }
@@ -256,13 +211,9 @@ async function loadLookups(departmentId = "") {
         const result = await fetchHrDashboardTargetLookups({
             companyId: workspace.companyId,
             branchId: workspace.branchId,
-            departmentId,
         })
 
-        departments.value = result.departments || []
         employeeTypes.value = result.employeeTypes || []
-        positions.value = result.positions || []
-        lines.value = result.lines || []
     } catch (error) {
         if (error?.name !== "CanceledError") {
             toast.add({
@@ -328,15 +279,11 @@ async function openEdit(row) {
         year: Number(row.year),
         month: Number(row.month || 0),
         employeeTypeId: row.employeeTypeId || "",
-        employeeTypeChildId: row.employeeTypeChildId || "",
-        departmentId: row.departmentId || "",
-        positionId: row.positionId || "",
-        lineId: row.lineId || "",
         targetRate: Number(row.targetRate || 0),
         remark: row.remark || "",
         status: row.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
     })
-    await loadLookups(form.departmentId)
+    await loadLookups()
     hydratingForm.value = false
     dialogVisible.value = true
 }
@@ -348,11 +295,7 @@ function payload() {
         metric: form.metric,
         year: Number(form.year),
         month: Number(form.month || 0),
-        employeeTypeId: form.employeeTypeId || null,
-        employeeTypeChildId: form.employeeTypeChildId || null,
-        departmentId: form.departmentId || null,
-        positionId: form.positionId || null,
-        lineId: form.lineId || null,
+        employeeTypeId: form.employeeTypeId,
         targetRate: Number(form.targetRate || 0),
         remark: form.remark.trim(),
         status: form.status,
@@ -456,22 +399,6 @@ function actions(row) {
     ]
 }
 
-watch(
-    () => form.departmentId,
-    async (departmentId) => {
-        if (hydratingForm.value) return
-        form.positionId = ""
-        form.lineId = ""
-        await loadLookups(departmentId)
-    },
-)
-
-watch(
-    () => form.employeeTypeId,
-    () => {
-        if (!hydratingForm.value) form.employeeTypeChildId = ""
-    },
-)
 
 watch(
     () => workspace.revision,
@@ -639,11 +566,7 @@ onBeforeUnmount(() => lookupController?.abort())
             <strong>{{ metricLabel(row.metric) }}</strong>
         </template>
         <template #cell-month="{ row }">{{ monthLabel(row.month) }}</template>
-        <template #cell-employeeType="{ row }">{{ row.employeeType?.name || 'All' }}</template>
-        <template #cell-employeeTypeChildName="{ row }">{{ row.employeeTypeChildName || 'All' }}</template>
-        <template #cell-department="{ row }">{{ row.department?.name || 'All' }}</template>
-        <template #cell-position="{ row }">{{ row.position?.title || row.position?.name || 'All' }}</template>
-        <template #cell-line="{ row }">{{ row.line?.name || 'All' }}</template>
+        <template #cell-employeeType="{ row }">{{ row.employeeType?.name || '—' }}</template>
         <template #cell-targetRate="{ row }">
             <strong class="target-rate">{{ Number(row.targetRate || 0).toFixed(2) }}%</strong>
         </template>
@@ -688,25 +611,8 @@ onBeforeUnmount(() => lookupController?.abort())
             </label>
 
             <label>
-                <span>{{ t('hrDashboardTarget.employeeType') }}</span>
-                <Select v-model="form.employeeTypeId" :options="employeeTypeOptions" option-label="label" option-value="value" filter show-clear />
-            </label>
-            <label>
-                <span>{{ t('hrDashboardTarget.employeeTypeChild') }}</span>
-                <Select v-model="form.employeeTypeChildId" :options="childOptions" option-label="label" option-value="value" :disabled="!childOptions.length" show-clear />
-            </label>
-            <label>
-                <span>{{ t('hrDashboardTarget.department') }}</span>
-                <Select v-model="form.departmentId" :options="departmentOptions" option-label="label" option-value="value" filter show-clear />
-            </label>
-
-            <label>
-                <span>{{ t('hrDashboardTarget.position') }}</span>
-                <Select v-model="form.positionId" :options="positionOptions" option-label="label" option-value="value" filter show-clear :disabled="!form.departmentId || loadingLookups" />
-            </label>
-            <label>
-                <span>{{ t('hrDashboardTarget.line') }}</span>
-                <Select v-model="form.lineId" :options="lineOptions" option-label="label" option-value="value" filter show-clear :disabled="!form.departmentId || loadingLookups" />
+                <span>{{ t('hrDashboardTarget.employeeType') }} *</span>
+                <Select v-model="form.employeeTypeId" :options="employeeTypeOptions" option-label="label" option-value="value" filter :loading="loadingLookups" />
             </label>
             <label>
                 <span>{{ t('hrDashboardTarget.targetRate') }} *</span>

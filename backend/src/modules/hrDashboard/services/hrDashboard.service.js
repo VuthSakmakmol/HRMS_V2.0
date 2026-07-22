@@ -813,9 +813,6 @@ function dashboardTargetMatches(target = {}, query = {}) {
     const fields = [
         "companyId",
         "branchId",
-        "departmentId",
-        "positionId",
-        "lineId",
         "employeeTypeId",
     ]
 
@@ -823,10 +820,6 @@ function dashboardTargetMatches(target = {}, query = {}) {
         if (!targetFieldMatches(target, query, field)) {
             return false
         }
-    }
-
-    if (target.employeeTypeChildCode) {
-        return target.employeeTypeChildCode === (query.employeeTypeChildCode || "")
     }
 
     return true
@@ -838,15 +831,11 @@ function dashboardTargetSpecificity(target = {}, month) {
     for (const field of [
         "companyId",
         "branchId",
-        "departmentId",
-        "positionId",
-        "lineId",
         "employeeTypeId",
     ]) {
         if (toOptionalStringId(target[field])) score += 10
     }
 
-    if (target.employeeTypeChildCode) score += 10
     if (Number(target.month) === month) score += 100
 
     return score
@@ -898,6 +887,10 @@ async function loadDashboardTargets(query, year) {
         status: "ACTIVE",
         metric: { $in: ["ABSENCE_RATE", "TURNOVER_RATE"] },
         year,
+        departmentId: null,
+        positionId: null,
+        lineId: null,
+        employeeTypeChildId: null,
     }
 
     if (query.companyId) {
@@ -915,11 +908,7 @@ async function loadDashboardTargets(query, year) {
             "metric",
             "year",
             "month",
-            "departmentId",
-            "positionId",
-            "lineId",
             "employeeTypeId",
-            "employeeTypeChildCode",
             "targetRate",
             "updatedAt",
         ])

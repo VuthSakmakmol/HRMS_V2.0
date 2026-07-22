@@ -11,6 +11,12 @@ const optionalString = z.preprocess((value) => {
     return normalizedValue === "" ? undefined : normalizedValue
 }, z.string().trim().min(1).optional())
 
+const optionalBoolean = z.preprocess((value) => {
+    if (value === undefined || value === "") return undefined
+    if (typeof value === "boolean") return value
+    return String(value).trim().toLowerCase() === "true"
+}, z.boolean().optional())
+
 const environmentSchema = z.object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 
@@ -31,6 +37,22 @@ const environmentSchema = z.object({
     SEED_ROOT_PASSWORD: optionalString,
 
     SEED_ROOT_DISPLAY_NAME: optionalString,
+
+    SMTP_HOST: optionalString,
+
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+
+    SMTP_SECURE: optionalBoolean.default(false),
+
+    SMTP_USER: optionalString,
+
+    SMTP_PASSWORD: optionalString,
+
+    SMTP_FROM: optionalString,
+
+    ATTENDANCE_EMAIL_TO: optionalString,
+
+    ATTENDANCE_EMAIL_CC: optionalString,
 })
 
 const parsedEnvironment = environmentSchema.safeParse(process.env)

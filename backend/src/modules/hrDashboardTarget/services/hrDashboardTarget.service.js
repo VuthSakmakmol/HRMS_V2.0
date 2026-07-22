@@ -9,9 +9,6 @@ import { AppError } from "../../../shared/errors/AppError.js"
 
 import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
-import Department from "../../organization/models/Department.js"
-import Position from "../../organization/models/Position.js"
-import Line from "../../line/models/Line.js"
 import EmployeeType from "../../employeeType/models/EmployeeType.js"
 import HrDashboardTarget from "../models/HrDashboardTarget.js"
 
@@ -127,8 +124,6 @@ function buildSearchFilter(search) {
 
     return {
         $or: [
-            { employeeTypeChildCode: regex },
-            { employeeTypeChildName: regex },
             { remark: regex },
             { metric: regex },
         ],
@@ -153,92 +148,12 @@ function targetPopulate(query) {
     return query
         .populate({ path: "companyId", select: "code displayName legalName status" })
         .populate({ path: "branchId", select: "companyId code name shortName status" })
-        .populate({ path: "departmentId", select: "companyId branchId code name shortName status" })
-        .populate({ path: "positionId", select: "companyId branchId departmentId code title shortName level isManager status" })
-        .populate({ path: "lineId", select: "companyId branchId departmentId code name shortName status" })
         .populate({ path: "employeeTypeId", select: "code name shortName status" })
 }
 
-function findEmployeeTypePositionMatch(employeeType, positionId) {
-    if (!employeeType || !positionId) return null
+async function validateReferences(payload, user, { requireEmployeeType = true } = {}) {
+    if (!requireEmployeeType) return
 
-    if ((employeeType.positionIds || []).some((id) => sameId(id, positionId))) {
-        return {
-            employeeTypeChildId: null,
-            employeeTypeChildCode: "",
-            employeeTypeChildName: "",
-        }
-    }
-
-    for (const child of employeeType.children || []) {
-        if ((child.positionIds || []).some((id) => sameId(id, positionId))) {
-            return {
-                employeeTypeChildId: toId(child._id || child.id),
-                employeeTypeChildCode: child.code || "",
-                employeeTypeChildName: child.name || "",
-            }
-        }
-    }
-
-    return null
-}
-
-async function resolveEmployeeTypeChild(payload) {
-    if (!payload.employeeTypeId) {
-        return {
-            employeeTypeChildId: null,
-            employeeTypeChildCode: "",
-            employeeTypeChildName: "",
-        }
-    }
-
-    const employeeType = await EmployeeType.findOne({
-        _id: payload.employeeTypeId,
-        status: { $ne: "ARCHIVED" },
-    }).lean()
-
-    if (!employeeType) {
-        throw new AppError({
-            statusCode: 404,
-            code: "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_NOT_FOUND",
-            messageKey: "errors.report.hrDashboardTarget.employeeTypeNotFound",
-        })
-    }
-
-    if (payload.employeeTypeChildId) {
-        const child = (employeeType.children || []).find((item) =>
-            sameId(item._id, payload.employeeTypeChildId),
-        )
-
-        if (!child) {
-            throw new AppError({
-                statusCode: 404,
-                code: "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_CHILD_NOT_FOUND",
-                messageKey: "errors.report.hrDashboardTarget.employeeTypeChildNotFound",
-            })
-        }
-
-        return {
-            employeeTypeChildId: toId(child._id),
-            employeeTypeChildCode: child.code || "",
-            employeeTypeChildName: child.name || "",
-        }
-    }
-
-    if (payload.positionId) {
-        const match = findEmployeeTypePositionMatch(employeeType, payload.positionId)
-
-        if (match) return match
-    }
-
-    return {
-        employeeTypeChildId: null,
-        employeeTypeChildCode: "",
-        employeeTypeChildName: "",
-    }
-}
-
-async function validateReferences(payload, user) {
     ensureObjectId(
         payload.companyId,
         "HR_DASHBOARD_TARGET_COMPANY_INVALID_ID",
@@ -277,38 +192,27 @@ async function validateReferences(payload, user) {
         })
     }
 
-    const optionalModels = [
-        [payload.departmentId, Department, { companyId: payload.companyId, branchId: payload.branchId }, "departmentId"],
-        [payload.positionId, Position, { companyId: payload.companyId, branchId: payload.branchId }, "positionId"],
-        [payload.lineId, Line, { companyId: payload.companyId, branchId: payload.branchId }, "lineId"],
-        [payload.employeeTypeId, EmployeeType, { companyId: payload.companyId }, "employeeTypeId"],
-    ]
+    ensureObjectId(
+        payload.employeeTypeId,
+        "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_INVALID_ID",
+        "errors.report.hrDashboardTarget.invalidReference",
+    )
 
-    for (const [id, Model, extra, field] of optionalModels) {
-        if (!id) continue
+    const employeeType = await EmployeeType.exists({
+        _id: payload.employeeTypeId,
+        companyId: payload.companyId,
+        status: { $ne: "ARCHIVED" },
+    })
 
-        ensureObjectId(
-            id,
-            "HR_DASHBOARD_TARGET_INVALID_REFERENCE",
-            "errors.report.hrDashboardTarget.invalidReference",
-        )
-
-        const exists = await Model.exists({
-            _id: id,
-            ...extra,
-            status: { $ne: "ARCHIVED" },
+    if (!employeeType) {
+        throw new AppError({
+            statusCode: 404,
+            code: "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_NOT_FOUND",
+            messageKey: "errors.report.hrDashboardTarget.employeeTypeNotFound",
+            fields: {
+                employeeTypeId: ["errors.report.hrDashboardTarget.employeeTypeNotFound"],
+            },
         })
-
-        if (!exists) {
-            throw new AppError({
-                statusCode: 404,
-                code: "HR_DASHBOARD_TARGET_REFERENCE_NOT_FOUND",
-                messageKey: "errors.report.hrDashboardTarget.referenceNotFound",
-                fields: {
-                    [field]: ["errors.report.hrDashboardTarget.referenceNotFound"],
-                },
-            })
-        }
     }
 }
 
@@ -316,6 +220,7 @@ function buildListFilter(query, user) {
     const filter = {
         ...getTargetScopeFilter(user),
         ...buildSearchFilter(query.search),
+        employeeTypeId: { $ne: null },
     }
 
     for (const key of [
@@ -324,11 +229,7 @@ function buildListFilter(query, user) {
         "metric",
         "year",
         "month",
-        "departmentId",
-        "positionId",
-        "lineId",
         "employeeTypeId",
-        "employeeTypeChildId",
     ]) {
         if (query[key] !== undefined && query[key] !== null && query[key] !== "") {
             filter[key] = query[key]
@@ -353,13 +254,7 @@ function buildMutationPayload(payload, accountId) {
         "metric",
         "year",
         "month",
-        "departmentId",
-        "positionId",
-        "lineId",
         "employeeTypeId",
-        "employeeTypeChildId",
-        "employeeTypeChildCode",
-        "employeeTypeChildName",
         "targetRate",
         "remark",
         "status",
@@ -382,6 +277,27 @@ function handleDuplicate(error) {
     })
 }
 
+async function assertNoDuplicate(payload, excludedId = null) {
+    const filter = {
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        metric: payload.metric,
+        year: payload.year,
+        month: payload.month,
+        employeeTypeId: payload.employeeTypeId,
+        status: { $ne: "ARCHIVED" },
+    }
+    if (excludedId) filter._id = { $ne: excludedId }
+
+    if (await HrDashboardTarget.exists(filter)) {
+        throw new AppError({
+            statusCode: 409,
+            code: "HR_DASHBOARD_TARGET_DUPLICATE_EMPLOYEE_TYPE_PERIOD",
+            messageKey: "errors.report.hrDashboardTarget.duplicateScope",
+        })
+    }
+}
+
 export function serializeHrDashboardTarget(target) {
     if (!target) return null
 
@@ -394,21 +310,12 @@ export function serializeHrDashboardTarget(target) {
         metric: raw.metric,
         year: raw.year,
         month: Number(raw.month || 0),
-        departmentId: toId(raw.departmentId),
-        positionId: toId(raw.positionId),
-        lineId: toId(raw.lineId),
         employeeTypeId: toId(raw.employeeTypeId),
-        employeeTypeChildId: toId(raw.employeeTypeChildId),
-        employeeTypeChildCode: raw.employeeTypeChildCode || "",
-        employeeTypeChildName: raw.employeeTypeChildName || "",
         targetRate: Number(raw.targetRate || 0),
         remark: raw.remark || "",
         status: raw.status,
         company: simpleOrg(raw.companyId),
         branch: simpleOrg(raw.branchId),
-        department: simpleOrg(raw.departmentId),
-        position: simpleOrg(raw.positionId),
-        line: simpleOrg(raw.lineId),
         employeeType: simpleOrg(raw.employeeTypeId),
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
@@ -485,13 +392,11 @@ export async function getHrDashboardTargetById({ targetId, user }) {
 
 export async function createHrDashboardTarget({ payload, user }) {
     await validateReferences(payload, user)
-
-    const child = await resolveEmployeeTypeChild(payload)
+    await assertNoDuplicate(payload)
 
     try {
         const target = await HrDashboardTarget.create({
             ...payload,
-            ...child,
             status: payload.status || "ACTIVE",
             createdByAccountId: user.accountId,
             updatedByAccountId: user.accountId,
@@ -540,13 +445,11 @@ export async function updateHrDashboardTarget({ targetId, payload, user }) {
     }
 
     await validateReferences(merged, user)
-
-    const child = await resolveEmployeeTypeChild(merged)
+    await assertNoDuplicate(merged, existing._id)
 
     try {
         const updatePayload = {
             ...buildMutationPayload(payload, user.accountId),
-            ...child,
         }
 
         const updated = await HrDashboardTarget.findByIdAndUpdate(
@@ -617,14 +520,6 @@ function lookupItem(item) {
         title: item.title || item.name || "",
         companyId: toId(item.companyId),
         branchId: toId(item.branchId),
-        departmentId: toId(item.departmentId),
-        children: (item.children || [])
-            .filter((child) => child.status !== "ARCHIVED")
-            .map((child) => ({
-                id: toId(child._id),
-                code: child.code || "",
-                name: child.name || "",
-            })),
     }
 }
 
@@ -633,49 +528,20 @@ export async function getHrDashboardTargetLookups({ query, user }) {
         {
             companyId: query.companyId,
             branchId: query.branchId,
-            departmentId: null,
-            positionId: null,
-            lineId: null,
-            employeeTypeId: null,
         },
         user,
+        { requireEmployeeType: false },
     )
 
-    const baseFilter = {
-        companyId: query.companyId,
-        branchId: query.branchId,
-        status: "ACTIVE",
-    }
-    const [departments, employeeTypes, positions, lines] = await Promise.all([
-        Department.find(baseFilter)
-            .select("code name companyId branchId")
-            .sort({ code: 1, name: 1 })
-            .lean(),
-        EmployeeType.find({
+    const employeeTypes = await EmployeeType.find({
             companyId: query.companyId,
             status: "ACTIVE",
         })
-            .select("code name companyId children")
+            .select("code name companyId")
             .sort({ code: 1, name: 1 })
-            .lean(),
-        query.departmentId
-            ? Position.find({ ...baseFilter, departmentId: query.departmentId })
-                .select("code title companyId branchId departmentId")
-                .sort({ code: 1, title: 1 })
-                .lean()
-            : [],
-        query.departmentId
-            ? Line.find({ ...baseFilter, departmentId: query.departmentId })
-                .select("code name companyId branchId departmentId")
-                .sort({ code: 1, name: 1 })
-                .lean()
-            : [],
-    ])
+            .lean()
 
     return {
-        departments: departments.map(lookupItem),
         employeeTypes: employeeTypes.map(lookupItem),
-        positions: positions.map(lookupItem),
-        lines: lines.map(lookupItem),
     }
 }

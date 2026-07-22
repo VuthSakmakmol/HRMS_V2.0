@@ -3,6 +3,7 @@ import http from "node:http"
 import app from "./app.js"
 import { connectDatabase, disconnectDatabase } from "./config/database.js"
 import { env } from "./config/env.js"
+import { startAttendanceDailyEmailScheduler } from "./modules/attendance/services/attendanceDailyEmailSchedule.service.js"
 
 const server = http.createServer(app)
 
@@ -16,6 +17,7 @@ server.keepAliveTimeout = 65_000
 async function startServer() {
     try {
         await connectDatabase()
+        startAttendanceDailyEmailScheduler()
 
         server.listen(env.PORT, () => {
             console.log(`[api] running at http://localhost:${env.PORT}`)

@@ -145,11 +145,7 @@ export const hrDashboardTargetListQuerySchema = z.object({
     branchId: optionalObjectIdSchema(),
     year: optionalIntegerFromQuery(2000, 2100),
     month: optionalIntegerFromQuery(0, 12),
-    departmentId: optionalObjectIdSchema(),
-    positionId: optionalObjectIdSchema(),
-    lineId: optionalObjectIdSchema(),
     employeeTypeId: optionalObjectIdSchema(),
-    employeeTypeChildId: optionalObjectIdSchema(),
 })
 
 export const hrDashboardTargetCreateSchema = z.object({
@@ -158,11 +154,7 @@ export const hrDashboardTargetCreateSchema = z.object({
     metric: metricSchema,
     year: z.coerce.number().int().min(2000).max(2100),
     month: z.coerce.number().int().min(0).max(12).default(0),
-    departmentId: nullableObjectIdSchema(),
-    positionId: nullableObjectIdSchema(),
-    lineId: nullableObjectIdSchema(),
-    employeeTypeId: nullableObjectIdSchema(),
-    employeeTypeChildId: nullableObjectIdSchema(),
+    employeeTypeId: objectIdSchema,
     targetRate: z.coerce.number().min(0).max(100),
     remark: z.string().trim().max(500).optional().default(""),
     status: statusSchema.optional().default("ACTIVE"),
@@ -177,5 +169,4 @@ export const hrDashboardTargetIdParamSchema = z.object({
 export const hrDashboardTargetLookupQuerySchema = z.object({
     companyId: objectIdSchema,
     branchId: objectIdSchema,
-    departmentId: optionalObjectIdSchema(),
 })

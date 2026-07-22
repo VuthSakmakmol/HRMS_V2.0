@@ -1,8 +1,11 @@
 <script setup>
 import Button from "primevue/button"
+import Checkbox from "primevue/checkbox"
+import Dialog from "primevue/dialog"
 import Message from "primevue/message"
 import ProgressBar from "primevue/progressbar"
 import Select from "primevue/select"
+import ToggleSwitch from "primevue/toggleswitch"
 import { computed, onMounted, reactive, ref, watch } from "vue"
 import { useToast } from "primevue/usetoast"
 
@@ -19,6 +22,10 @@ import {
     exportAttendanceDailyReport,
     fetchAttendanceDailyReport,
     fetchAttendanceDailyReportJob,
+    fetchAttendanceDailyEmailStatus,
+    fetchAttendanceDailyEmailSchedule,
+    saveAttendanceDailyEmailSchedule,
+    sendAttendanceDailyEmail,
 } from "../services/attendance.api.js"
 
 const toast = useToast()
@@ -29,6 +36,24 @@ const filters = reactive({ month: currentMonth, reportDate: `${currentMonth}-01`
 const report = ref(null)
 const loading = ref(false)
 const exporting = ref(false)
+const sendingEmail = ref(false)
+const emailDialogVisible = ref(false)
+const resendDialogVisible = ref(false)
+const scheduleDialogVisible = ref(false)
+const savingSchedule = ref(false)
+const emailStatus = ref({ sent: false })
+const emailSchedule = reactive({
+    enabled: false,
+    sendTime: "08:00",
+    timeZone: "Asia/Phnom_Penh",
+    allowedDayTypes: ["WORKING_DAY", "SPECIAL_WORKING_DAY"],
+    dayTypeOptions: [],
+    lastSentDate: null,
+    lastSentAt: null,
+    lastError: "",
+    lastSkippedDate: null,
+    lastSkippedDayType: "",
+})
 const error = ref("")
 const departments = ref([])
 const collapsedDepartments = ref(new Set())
@@ -45,6 +70,107 @@ function params() {
         departmentId: filters.departmentId,
         companyId: workspace.companyId,
         branchId: workspace.branchId,
+    }
+}
+
+function emailParams() {
+    return {
+        date: filters.reportDate,
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+    }
+}
+
+async function refreshEmailStatus() {
+    if (!workspace.ready || !filters.reportDate) return
+    try {
+        emailStatus.value = await fetchAttendanceDailyEmailStatus(emailParams())
+    } catch {
+        emailStatus.value = { sent: false }
+    }
+}
+
+async function loadEmailSchedule() {
+    if (!workspace.ready) return
+    try {
+        const schedule = await fetchAttendanceDailyEmailSchedule({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+        })
+        Object.assign(emailSchedule, schedule)
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Schedule unavailable", detail: errorMessage(requestError), life: 5000 })
+    }
+}
+
+async function openScheduleDialog() {
+    await loadEmailSchedule()
+    scheduleDialogVisible.value = true
+}
+
+async function saveEmailSchedule() {
+    savingSchedule.value = true
+    try {
+        const schedule = await saveAttendanceDailyEmailSchedule({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+            enabled: emailSchedule.enabled,
+            sendTime: emailSchedule.sendTime,
+            timeZone: emailSchedule.timeZone,
+            allowedDayTypes: emailSchedule.allowedDayTypes,
+        })
+        Object.assign(emailSchedule, schedule)
+        scheduleDialogVisible.value = false
+        toast.add({
+            severity: "success",
+            summary: emailSchedule.enabled ? "Automatic email enabled" : "Automatic email disabled",
+            detail: emailSchedule.enabled
+                ? `The daily report will send at ${emailSchedule.sendTime} Cambodia time.`
+                : "The automatic daily email schedule is turned off.",
+            life: 4500,
+        })
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Schedule not saved", detail: errorMessage(requestError), life: 5000 })
+    } finally {
+        savingSchedule.value = false
+    }
+}
+
+function openEmailReview() {
+    emailDialogVisible.value = true
+}
+
+function requestEmailSend() {
+    if (emailStatus.value.sent) {
+        emailDialogVisible.value = false
+        resendDialogVisible.value = true
+        return
+    }
+
+    confirmSendEmail(false)
+}
+
+async function confirmSendEmail(force = false) {
+    sendingEmail.value = true
+    try {
+        await sendAttendanceDailyEmail({ ...emailParams(), force })
+        emailDialogVisible.value = false
+        resendDialogVisible.value = false
+        await refreshEmailStatus()
+        toast.add({ severity: "success", summary: "Email sent", detail: "Daily attendance summary sent successfully.", life: 4000 })
+    } catch (requestError) {
+        if (requestError?.response?.status === 409 && !force) {
+            emailDialogVisible.value = false
+            resendDialogVisible.value = true
+        } else {
+            const code = requestError?.response?.data?.error?.code
+            const detail = code === "ATTENDANCE_EMAIL_NOT_CONFIGURED"
+                ? "Email is not configured. Add the SMTP settings to backend/.env and restart the backend."
+                : errorMessage(requestError)
+            toast.add({ severity: "error", summary: "Email failed", detail, life: 6000 })
+        }
+    } finally {
+        sendingEmail.value = false
     }
 }
 
@@ -70,6 +196,7 @@ async function load() {
         const completed = await waitForReportJob(queued.jobId, false)
         report.value = completed.result.report
         collapsedDepartments.value = new Set()
+        await refreshEmailStatus()
     } catch (requestError) {
         error.value = errorMessage(requestError)
         toast.add({ severity: "error", summary: "Report failed", detail: error.value, life: 5000 })
@@ -133,10 +260,18 @@ const progressText = computed(() => {
 
 function percentageClass(value) {
     if (value === null || value === undefined) return "day-off"
-    if (value < 4) return "rate-good"
-    if (value < 6) return "rate-warning"
+    const target = report.value?.attendanceTarget?.rate
+    if (target === null || target === undefined) return "rate-good"
+    if (value < Math.max(target - 2, 0)) return "rate-good"
+    if (value < target) return "rate-warning"
     return "rate-danger"
 }
+
+const attendanceTargetText = computed(() => {
+    const target = report.value?.attendanceTarget
+    if (!target) return "Attendance target is not configured"
+    return `${Number(target.rate).toFixed(1)}% target${target.month === 0 ? " (year)" : " (month)"}`
+})
 
 function number(value) {
     return Math.round(Number(value || 0)).toLocaleString()
@@ -233,13 +368,16 @@ function collapseAllDepartments() {
     collapsedDepartments.value = new Set(expandableDepartmentKeys.value)
 }
 
-watch(() => filters.reportDate, syncReportMonth)
+watch(() => filters.reportDate, (value) => {
+    syncReportMonth(value)
+    refreshEmailStatus()
+})
 
 watch(() => workspace.revision, async () => {
     filters.departmentId = ""
-    await Promise.all([loadDepartments(), load()])
+    await Promise.all([loadDepartments(), load(), loadEmailSchedule()])
 })
-onMounted(() => Promise.all([loadDepartments(), load()]))
+onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule()]))
 </script>
 
 <template>
@@ -248,6 +386,15 @@ onMounted(() => Promise.all([loadDepartments(), load()]))
             <template #start>
                 <Button label="Refresh" icon="pi pi-refresh" severity="secondary" text :loading="loading" @click="load" />
                 <PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT" label="Export Excel" icon="pi pi-file-excel" severity="secondary" text :loading="exporting" @click="exportReport" />
+                <PermissionButton :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT" label="Send Daily Attendance Email" icon="pi pi-envelope" severity="primary" :loading="sendingEmail" :disabled="!report || loading" @click="openEmailReview" />
+                <PermissionButton
+                    :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT"
+                    :label="emailSchedule.enabled ? `Auto Email ${emailSchedule.sendTime}` : 'Set Auto Email'"
+                    icon="pi pi-clock"
+                    :severity="emailSchedule.enabled ? 'success' : 'secondary'"
+                    text
+                    @click="openScheduleDialog"
+                />
             </template>
             <template #filters>
                 <EnterpriseFilterBar :loading="loading">
@@ -280,7 +427,7 @@ onMounted(() => Promise.all([loadDepartments(), load()]))
             <div class="report-heading">
                 <div><strong>Attendance Daily Report</strong><span>{{ report.month }}</span></div>
                 <div class="report-heading-actions">
-                    <div class="legend"><span class="rate-good">&lt; 4%</span><span class="rate-warning">4–5.9%</span><span class="rate-danger">≥ 6%</span></div>
+                    <div class="legend"><span>{{ attendanceTargetText }}</span></div>
                 </div>
             </div>
             <div class="table-scroll">
@@ -332,6 +479,94 @@ onMounted(() => Promise.all([loadDepartments(), load()]))
                 </table>
             </div>
         </div>
+
+        <Dialog v-model:visible="emailDialogVisible" modal header="Send Daily Attendance Email" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
+            <div class="email-review">
+                <p>Review the selected attendance day before sending.</p>
+                <dl>
+                    <dt>Date</dt><dd>{{ filters.reportDate }}</dd>
+                    <dt>To</dt><dd>sakamakmol.vut@traxapparel.com</dd>
+                    <dt>CC</dt><dd>kakvey.ket@traxapparel.com</dd>
+                    <dt>Content</dt><dd>Daily totals, scans, absent, leave, unmatched IDs, sender and completion time</dd>
+                </dl>
+                <Message v-if="emailStatus.sent" severity="warn" :closable="false">This date was already emailed by {{ emailStatus.sentByName || 'an HR user' }}.</Message>
+            </div>
+            <template #footer>
+                <Button label="Cancel" severity="secondary" text :disabled="sendingEmail" @click="emailDialogVisible = false" />
+                <Button
+                    :label="emailStatus.sent ? 'Send Again' : 'Send Email'"
+                    icon="pi pi-send"
+                    :severity="emailStatus.sent ? 'warn' : 'primary'"
+                    :loading="sendingEmail"
+                    @click="requestEmailSend"
+                />
+            </template>
+        </Dialog>
+
+        <Dialog v-model:visible="resendDialogVisible" modal header="Email Already Sent" :style="{ width: '31rem' }" :breakpoints="{ '640px': '94vw' }">
+            <Message severity="warn" :closable="false">A daily attendance email for this date has already been sent. Send it again only if the attendance was corrected.</Message>
+            <template #footer>
+                <Button label="Cancel" severity="secondary" text :disabled="sendingEmail" @click="resendDialogVisible = false" />
+                <Button label="Send Again" icon="pi pi-send" severity="warn" :loading="sendingEmail" @click="confirmSendEmail(true)" />
+            </template>
+        </Dialog>
+
+        <Dialog v-model:visible="scheduleDialogVisible" modal header="Automatic Attendance Email" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
+            <div class="schedule-form">
+                <div class="schedule-switch-row">
+                    <div>
+                        <strong>Send automatically every day</strong>
+                        <span>No Send button is required when this is enabled.</span>
+                    </div>
+                    <ToggleSwitch v-model="emailSchedule.enabled" />
+                </div>
+
+                <label class="schedule-field">
+                    <span>Exact sending time</span>
+                    <input v-model="emailSchedule.sendTime" type="time" step="60" :disabled="!emailSchedule.enabled" />
+                    <small>Cambodia time (Asia/Phnom_Penh)</small>
+                </label>
+
+                <fieldset class="day-type-fieldset" :disabled="!emailSchedule.enabled">
+                    <legend>Calendar day types allowed to send</legend>
+                    <p>The list comes from the existing internal Calendar setup. Unchecked types are skipped automatically.</p>
+                    <label v-for="option in emailSchedule.dayTypeOptions" :key="option.value" class="day-type-option">
+                        <Checkbox
+                            v-model="emailSchedule.allowedDayTypes"
+                            :input-id="`email-day-type-${option.value}`"
+                            :value="option.value"
+                        />
+                        <span>{{ option.label }}</span>
+                    </label>
+                    <Message v-if="emailSchedule.enabled && !emailSchedule.allowedDayTypes.length" severity="warn" :closable="false">
+                        No day type is allowed, so automatic emails will not be sent.
+                    </Message>
+                </fieldset>
+
+                <Message severity="info" :closable="false">
+                    The system sends today's full Attendance Daily Report with the Excel attachment. If today's selected time has already passed when you save, the first automatic email starts tomorrow. After activation, a temporary backend outage will not permanently miss a report. It will not create a duplicate if today's report was already sent manually.
+                </Message>
+
+                <dl v-if="emailSchedule.lastSentDate || emailSchedule.lastSkippedDate || emailSchedule.lastError" class="schedule-status">
+                    <template v-if="emailSchedule.lastSentDate">
+                        <dt>Last automatic date</dt>
+                        <dd>{{ emailSchedule.lastSentDate }}</dd>
+                    </template>
+                    <template v-if="emailSchedule.lastSkippedDate">
+                        <dt>Last skipped date</dt>
+                        <dd>{{ emailSchedule.lastSkippedDate }} ({{ emailSchedule.lastSkippedDayType }})</dd>
+                    </template>
+                    <template v-if="emailSchedule.lastError">
+                        <dt>Last error</dt>
+                        <dd class="schedule-error">{{ emailSchedule.lastError }}</dd>
+                    </template>
+                </dl>
+            </div>
+            <template #footer>
+                <Button label="Cancel" severity="secondary" text :disabled="savingSchedule" @click="scheduleDialogVisible = false" />
+                <Button label="Save Schedule" icon="pi pi-check" :loading="savingSchedule" @click="saveEmailSchedule" />
+            </template>
+        </Dialog>
     </section>
 </template>
 
@@ -353,6 +588,118 @@ onMounted(() => Promise.all([loadDepartments(), load()]))
     border: 1px solid var(--p-content-border-color);
     border-radius: 8px;
     background: var(--p-content-background);
+}
+
+.email-review p {
+    margin-top: 0;
+}
+
+.email-review dl {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 0.55rem 0.75rem;
+    margin: 0 0 1rem;
+}
+
+.email-review dt {
+    color: var(--p-text-muted-color);
+    font-weight: 600;
+}
+
+.email-review dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.schedule-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.schedule-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.schedule-switch-row > div,
+.schedule-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.schedule-switch-row span,
+.schedule-field small {
+    color: var(--p-text-muted-color);
+    font-size: 0.78rem;
+}
+
+.schedule-field > span {
+    font-weight: 600;
+}
+
+.schedule-field input[type="time"] {
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--p-form-field-border-color);
+    border-radius: var(--p-form-field-border-radius);
+    background: var(--p-form-field-background);
+    color: var(--p-form-field-color);
+    font: inherit;
+}
+
+.schedule-status {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: 0.4rem 0.75rem;
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+.schedule-status dt {
+    color: var(--p-text-muted-color);
+    font-weight: 600;
+}
+
+.schedule-status dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.schedule-error {
+    color: var(--p-red-600);
+}
+
+.day-type-fieldset {
+    display: grid;
+    gap: 0.65rem;
+    margin: 0;
+    padding: 0.85rem;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: 8px;
+}
+
+.day-type-fieldset legend {
+    padding: 0 0.35rem;
+    font-weight: 600;
+}
+
+.day-type-fieldset p {
+    margin: 0;
+    color: var(--p-text-muted-color);
+    font-size: 0.78rem;
+}
+
+.day-type-option {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: pointer;
 }
 
 .progress-state {

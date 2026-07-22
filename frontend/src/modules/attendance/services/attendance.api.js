@@ -147,6 +147,32 @@ export async function downloadAttendanceDailyReportExport(jobId, fileName) {
     downloadBlob(response.data, fileName || "attendance-daily-report.xlsx")
 }
 
+export async function fetchAttendanceDailyEmailStatus(params = {}) {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/daily-report/email-status`, {
+        params: withoutBlankParams(params),
+    })
+    return response.data.data.status
+}
+
+export async function sendAttendanceDailyEmail(payload) {
+    const response = await apiClient.post(`${ATTENDANCE_ENDPOINT}/daily-report/send-email`, payload, {
+        timeout: 0,
+    })
+    return response.data.data
+}
+
+export async function fetchAttendanceDailyEmailSchedule(params = {}) {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/daily-report/email-schedule`, {
+        params: withoutBlankParams(params),
+    })
+    return response.data.data.schedule
+}
+
+export async function saveAttendanceDailyEmailSchedule(payload) {
+    const response = await apiClient.put(`${ATTENDANCE_ENDPOINT}/daily-report/email-schedule`, payload)
+    return response.data.data.schedule
+}
+
 
 const POLICY_ENDPOINT = "/attendance/policies"
 const SCAN_ENDPOINT = "/attendance/scans"

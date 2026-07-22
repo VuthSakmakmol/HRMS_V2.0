@@ -45,43 +45,11 @@ const hrDashboardTargetSchema = new Schema(
             index: true,
         },
 
-        departmentId: {
-            type: Schema.Types.ObjectId,
-            ref: "Department",
-            default: null,
-        },
-        positionId: {
-            type: Schema.Types.ObjectId,
-            ref: "Position",
-            default: null,
-        },
-        lineId: {
-            type: Schema.Types.ObjectId,
-            ref: "Line",
-            default: null,
-        },
-
         employeeTypeId: {
             type: Schema.Types.ObjectId,
             ref: "EmployeeType",
-            default: null,
-        },
-        employeeTypeChildId: {
-            type: Schema.Types.ObjectId,
-            default: null,
-        },
-        employeeTypeChildCode: {
-            type: String,
-            trim: true,
-            maxlength: 30,
-            default: "",
-        },
-        employeeTypeChildName: {
-            type: String,
-            trim: true,
-            maxlength: 120,
-            set: normalizeText,
-            default: "",
+            required: true,
+            index: true,
         },
 
         targetRate: {
@@ -132,15 +100,10 @@ hrDashboardTargetSchema.index(
         metric: 1,
         year: 1,
         month: 1,
-        departmentId: 1,
-        positionId: 1,
-        lineId: 1,
         employeeTypeId: 1,
-        employeeTypeChildId: 1,
     },
     {
-        unique: true,
-        name: "uq_hr_dashboard_target_scope_period_metric",
+        name: "idx_hr_dashboard_target_employee_type_period_metric",
     },
 )
 
