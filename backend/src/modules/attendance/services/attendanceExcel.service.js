@@ -9,7 +9,54 @@ const HEADERS = [
     "Employee No",
     "Time1",
     "Time2",
+    "Vacation",
 ]
+
+const VACATION_OPTIONS = [
+    "Annual Leave",
+    "Her Maternity Leave",
+    "Her Maternity Leave(0%)",
+    "Sick Leave",
+    "Sick Leave (60%)",
+    "Sick Leave (Hours)",
+    "Unpaid Leave",
+]
+
+const VACATION_CODE_BY_VALUE = new Map([
+    ["annual leave", "AL"],
+    ["her maternity leave", "ML"],
+    ["her maternity leave(0%)", "ML"],
+    ["her maternity leave (0%)", "ML"],
+    ["sick leave", "SL"],
+    ["sick leave (60%)", "SL"],
+    ["sick leave (hours)", "SL"],
+    ["unpaid leave", "UL"],
+])
+
+function normalizeVacation(value) {
+    const normalized = String(value || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase()
+
+    if (!normalized || normalized === "(blanks)" || normalized === "blanks") {
+        return { leaveCode: null, vacation: "" }
+    }
+
+    const leaveCode = VACATION_CODE_BY_VALUE.get(normalized)
+    return leaveCode
+        ? { leaveCode, vacation: String(value).trim() }
+        : null
+}
+
+function vacationLabel(leaveCode) {
+    return {
+        AL: "Annual Leave",
+        ML: "Maternity Leave",
+        SL: "Sick Leave",
+        UL: "Unpaid Leave",
+    }[leaveCode] || ""
+}
 
 function excelDateToDate(value) {
     if (!value) {
@@ -130,7 +177,8 @@ export async function buildAttendanceImportTemplate() {
     const sheet = workbook.addWorksheet("Attendance Import")
 
     sheet.addRow(HEADERS)
-    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP001", 729, 1625])
+    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP001", 729, 1625, ""])
+    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP002", "", "", "Annual Leave"])
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
     sheet.getRow(1).fill = {
         type: "pattern",
@@ -138,17 +186,26 @@ export async function buildAttendanceImportTemplate() {
         fgColor: { argb: "FF2563EB" },
     }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
-    sheet.autoFilter = { from: "A1", to: "D1" }
+    sheet.autoFilter = { from: "A1", to: "E1" }
     sheet.columns = [
         { width: 18 },
         { width: 20 },
         { width: 12 },
         { width: 12 },
+        { width: 26 },
     ]
     sheet.getColumn(1).numFmt = "dd/mm/yyyy"
     sheet.getCell("A2").numFmt = "dd/mm/yyyy"
     sheet.getColumn(3).numFmt = "0000"
     sheet.getColumn(4).numFmt = "0000"
+    sheet.dataValidations.add("E2:E50000", {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${VACATION_OPTIONS.join(",")}"`],
+        showErrorMessage: true,
+        errorTitle: "Invalid Vacation",
+        error: "Choose a Vacation value from the list.",
+    })
 
     return workbook
 }
@@ -166,6 +223,7 @@ export async function buildAttendanceExportWorkbook(records = []) {
         { header: "Shift", key: "shift", width: 16 },
         { header: "First In", key: "firstIn", width: 20 },
         { header: "Last Out", key: "lastOut", width: 20 },
+        { header: "Vacation", key: "vacation", width: 20 },
         { header: "Worked Minutes", key: "workedMinutes", width: 16 },
         { header: "Late Minutes", key: "lateMinutes", width: 14 },
         { header: "Early Leave Minutes", key: "earlyLeaveMinutes", width: 18 },
@@ -186,6 +244,7 @@ export async function buildAttendanceExportWorkbook(records = []) {
             shift: record.shiftId?.name || record.shiftId?.code || "",
             firstIn: record.firstInAt,
             lastOut: record.lastOutAt,
+            vacation: vacationLabel(record.leaveCode),
             workedMinutes: record.workedMinutes,
             lateMinutes: record.lateMinutes,
             earlyLeaveMinutes: record.earlyLeaveMinutes,
@@ -198,7 +257,7 @@ export async function buildAttendanceExportWorkbook(records = []) {
     }
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
-    sheet.autoFilter = { from: "A1", to: "Q1" }
+    sheet.autoFilter = { from: "A1", to: "R1" }
     return workbook
 }
 
@@ -240,12 +299,14 @@ export async function parseAttendanceWorkbook(buffer) {
         const employeeCode = String(row.getCell(2).value || "").trim()
         const rawTime1 = row.getCell(3).value
         const rawTime2 = row.getCell(4).value
+        const rawVacation = row.getCell(5).value
+        const vacation = normalizeVacation(rawVacation)
         const hasTime1 = rawTime1 !== null && rawTime1 !== undefined && rawTime1 !== ""
         const hasTime2 = rawTime2 !== null && rawTime2 !== undefined && rawTime2 !== ""
         const time1 = hasTime1 ? normalizeFourDigitTime(rawTime1) : null
         const time2 = hasTime2 ? normalizeFourDigitTime(rawTime2) : null
 
-        if (!employeeCode && !attendanceDate && !row.getCell(3).value && !row.getCell(4).value) {
+        if (!employeeCode && !attendanceDate && !row.getCell(3).value && !row.getCell(4).value && !rawVacation) {
             return
         }
 
@@ -261,6 +322,15 @@ export async function parseAttendanceWorkbook(buffer) {
             errors.push({
                 row: rowNumber,
                 message: "Time1 and Time2 must use valid HHmm values, for example 0729 or 1625.",
+            })
+            return
+        }
+
+        if (!vacation) {
+            errors.push({
+                row: rowNumber,
+                code: "INVALID_VACATION",
+                message: `Vacation must be blank or one of: ${VACATION_OPTIONS.join(", ")}.`,
             })
             return
         }
@@ -287,6 +357,7 @@ export async function parseAttendanceWorkbook(buffer) {
                           time1Minutes !== null && time2Minutes <= time1Minutes,
                       )
                     : null,
+                leaveCode: vacation.leaveCode,
                 note: "",
             },
         })
@@ -295,13 +366,17 @@ export async function parseAttendanceWorkbook(buffer) {
     return { rows, errors }
 }
 
-export async function importAttendanceRows({ rows, parseErrors, user, workspace }) {
+export async function importAttendanceRows({ rows, parseErrors, user, workspace, onProgress }) {
     const importBatchId = new mongoose.Types.ObjectId()
     const summary = {
         importBatchId: importBatchId.toString(),
         totalRows: rows.length + parseErrors.length,
         successCount: 0,
         absentCount: 0,
+        annualLeaveCount: 0,
+        maternityLeaveCount: 0,
+        sickLeaveCount: 0,
+        unpaidLeaveCount: 0,
         missingInCount: 0,
         missingOutCount: 0,
         unmatchedCount: 0,
@@ -310,7 +385,7 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace 
         issues: [],
     }
 
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
         try {
             const record = await upsertAttendanceRecord({
                 payload: { ...row.payload, ...workspace },
@@ -319,7 +394,11 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace 
             })
 
             summary.successCount += 1
-            if (record.status === "ABSENT") summary.absentCount += 1
+            if (record.status === "ABSENT" && !record.leaveCode) summary.absentCount += 1
+            if (record.leaveCode === "AL") summary.annualLeaveCount += 1
+            if (record.leaveCode === "ML") summary.maternityLeaveCount += 1
+            if (record.leaveCode === "SL") summary.sickLeaveCount += 1
+            if (record.leaveCode === "UL") summary.unpaidLeaveCount += 1
             if (record.status === "MISSING_IN") summary.missingInCount += 1
             if (record.status === "MISSING_OUT") summary.missingOutCount += 1
         } catch (error) {
@@ -338,6 +417,7 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace 
                             sourceRow: row.rowNumber,
                             firstInAt: row.payload.firstInAt,
                             lastOutAt: row.payload.lastOutAt,
+                            leaveCode: row.payload.leaveCode || null,
                             createdByAccountId: user.accountId,
                         },
                         $setOnInsert: {
@@ -357,6 +437,12 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace 
                     employeeCode: row.payload.employeeCode,
                     message: `Employee No ${row.payload.employeeCode} was not found. The row was saved to Unmatched Attendance.`,
                 })
+                onProgress?.({
+                    phase: "SAVING_ROWS",
+                    percent: 35 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 60),
+                    processedRows: index + 1,
+                    totalRows: summary.totalRows,
+                })
                 continue
             }
 
@@ -371,6 +457,13 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace 
                 message: messages[error.code] || "Attendance row could not be imported.",
             })
         }
+
+        onProgress?.({
+            phase: "SAVING_ROWS",
+            percent: 35 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 60),
+            processedRows: index + 1,
+            totalRows: summary.totalRows,
+        })
     }
 
     return summary

@@ -56,20 +56,47 @@ export async function downloadAttendanceTemplate() {
     downloadBlob(response.data, "attendance-import-template.xlsx")
 }
 
-export async function importAttendance(file, onUploadProgress) {
+function delay(milliseconds, signal) {
+    return new Promise((resolve, reject) => {
+        const timeoutId = window.setTimeout(resolve, milliseconds)
+        signal?.addEventListener("abort", () => {
+            window.clearTimeout(timeoutId)
+            reject(new DOMException("Aborted", "AbortError"))
+        }, { once: true })
+    })
+}
+
+async function waitForImportJob(endpoint, jobId, { onProgress, signal } = {}) {
+    while (true) {
+        const response = await apiClient.get(`${endpoint}/import-jobs/${jobId}`, { signal })
+        const job = response.data.data.job
+        onProgress?.(job)
+        if (job.status === "COMPLETED") return job.result
+        if (job.status === "FAILED") {
+            const error = new Error(job.error?.message || "Attendance import failed.")
+            error.code = job.error?.code
+            error.importSummary = job.error?.details?.importSummary || null
+            throw error
+        }
+        await delay(500, signal)
+    }
+}
+
+export async function importAttendance(file, { onUploadProgress, onProgress, signal } = {}) {
     const formData = new FormData()
     formData.append("file", file)
 
     const response = await apiClient.post(
-        `${ATTENDANCE_ENDPOINT}/import`,
+        `${ATTENDANCE_ENDPOINT}/import-jobs`,
         formData,
         {
             timeout: 0,
             onUploadProgress,
+            signal,
         },
     )
 
-    return response.data.data.summary
+    return waitForImportJob(ATTENDANCE_ENDPOINT, response.data.data.job.jobId, { onProgress, signal })
 }
 
 export async function fetchAttendanceImportIssues(params = {}) {
@@ -88,6 +115,36 @@ export async function exportAttendanceRecords(params = {}) {
         timeout: 0,
     })
     downloadBlob(response.data, "attendance-records.xlsx")
+}
+
+export async function fetchAttendanceDailyReport(params = {}) {
+    const response = await apiClient.post(`${ATTENDANCE_ENDPOINT}/daily-report/jobs`, {}, {
+        params: withoutBlankParams(params),
+        timeout: 0,
+    })
+    return response.data.data.job
+}
+
+export async function exportAttendanceDailyReport(params = {}) {
+    const response = await apiClient.post(`${ATTENDANCE_ENDPOINT}/daily-report/export-jobs`, {}, {
+        params: withoutBlankParams(params),
+        timeout: 0,
+    })
+    return response.data.data.job
+}
+
+export async function fetchAttendanceDailyReportJob(jobId, exportJob = false) {
+    const segment = exportJob ? "export-jobs" : "jobs"
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/daily-report/${segment}/${jobId}`)
+    return response.data.data.job
+}
+
+export async function downloadAttendanceDailyReportExport(jobId, fileName) {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/daily-report/export-jobs/${jobId}/download`, {
+        responseType: "blob",
+        timeout: 0,
+    })
+    downloadBlob(response.data, fileName || "attendance-daily-report.xlsx")
 }
 
 
@@ -138,19 +195,20 @@ export async function downloadRawScanTemplate() {
     downloadBlob(response.data, "attendance-raw-scan-template.xlsx")
 }
 
-export async function importRawScans(file, onUploadProgress) {
+export async function importRawScans(file, { onUploadProgress, onProgress, signal } = {}) {
     const formData = new FormData()
     formData.append("file", file)
 
     const response = await apiClient.post(
-        `${SCAN_ENDPOINT}/import`,
+        `${SCAN_ENDPOINT}/import-jobs`,
         formData,
         {
             timeout: 0,
             onUploadProgress,
+            signal,
         },
     )
-    return response.data.data.summary
+    return waitForImportJob(SCAN_ENDPOINT, response.data.data.job.jobId, { onProgress, signal })
 }
 
 export async function runAttendanceVerification(payload) {

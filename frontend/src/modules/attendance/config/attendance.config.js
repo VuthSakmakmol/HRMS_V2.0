@@ -21,6 +21,7 @@ export const attendanceColumns = [
     { field: "shift", header: "Shift", width: "9rem", minWidth: "9rem" },
     { field: "firstInAt", header: "First In", width: "8rem", minWidth: "8rem" },
     { field: "lastOutAt", header: "Last Out", width: "8rem", minWidth: "8rem" },
+    { field: "vacation", header: "Vacation", width: "10rem", minWidth: "10rem" },
     { field: "workedMinutes", header: "Worked", width: "8rem", minWidth: "8rem" },
     { field: "lateMinutes", header: "Late", width: "7rem", minWidth: "7rem" },
     { field: "earlyLeaveMinutes", header: "Early Leave", width: "8rem", minWidth: "8rem" },

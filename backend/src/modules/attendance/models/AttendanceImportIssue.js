@@ -12,6 +12,11 @@ const attendanceImportIssueSchema = new Schema(
         attendanceDate: { type: Date, required: true },
         firstInAt: { type: Date, default: null },
         lastOutAt: { type: Date, default: null },
+        leaveCode: {
+            type: String,
+            enum: ["AL", "ML", "SL", "UL", null],
+            default: null,
+        },
         status: {
             type: String,
             enum: ["NO_EMPLOYEE_MATCH", "RESOLVED", "ARCHIVED"],

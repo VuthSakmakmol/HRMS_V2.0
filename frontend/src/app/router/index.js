@@ -182,6 +182,16 @@ const router = createRouter({
                 },
 
                 {
+                    path: "reports/attendance-daily",
+                    name: "attendance-daily-report",
+                    component: () => import("@/modules/attendance/views/AttendanceDailyReportView.vue"),
+                    meta: {
+                        titleKey: "nav.attendanceDailyReport",
+                        permissionCode: "ATTENDANCE.RECORD.VIEW",
+                    },
+                },
+
+                {
                     path: "attendance/policies",
                     name: "attendance-policies",
                     component: () => import("@/modules/attendance/views/AttendancePolicyView.vue"),

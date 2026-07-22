@@ -50,6 +50,11 @@ const attendanceRecordSchema = new Schema(
         workedMinutes: { type: Number, min: 0, default: 0 },
         lateMinutes: { type: Number, min: 0, default: 0 },
         earlyLeaveMinutes: { type: Number, min: 0, default: 0 },
+        leaveCode: {
+            type: String,
+            enum: ["AL", "ML", "SL", "UL", null],
+            default: null,
+        },
         dayType: {
             type: String,
             enum: ["WORKING_DAY", "REST_DAY", "HOLIDAY", "CLOSED_DAY"],
@@ -122,6 +127,10 @@ attendanceRecordSchema.index(
 attendanceRecordSchema.index(
     { issueCodes: 1, attendanceDate: 1 },
     { name: "idx_attendance_issues" },
+)
+attendanceRecordSchema.index(
+    { leaveCode: 1, attendanceDate: 1, companyId: 1, branchId: 1 },
+    { name: "idx_attendance_leave" },
 )
 
 attendanceRecordSchema.set("toJSON", {

@@ -27,6 +27,7 @@ import {
 import EmployeeTypeArchiveDialog from "../components/EmployeeTypeArchiveDialog.vue"
 import EmployeeTypeFormDialog from "../components/EmployeeTypeFormDialog.vue"
 import EmployeeTypeImportDialog from "../components/EmployeeTypeImportDialog.vue"
+import EmployeeTypeReconciliationDialog from "../components/EmployeeTypeReconciliationDialog.vue"
 import { useEmployeeTypeForm } from "../composables/useEmployeeTypeForm.js"
 import { useEmployeeTypeImport } from "../composables/useEmployeeTypeImport.js"
 import { useEmployeeTypeList } from "../composables/useEmployeeTypeList.js"
@@ -62,6 +63,9 @@ const {
     errors: formErrors,
     mode: formMode,
     saving: formSaving,
+    savingMessage: formSavingMessage,
+    reconciliationDialogVisible,
+    reconciliationSummary,
 } = formState
 
 const {
@@ -670,7 +674,7 @@ onMounted(load)
         :positions="positions"
         :positions-loading="positionsLoading"
         :saving="formSaving"
-        :saving-message="formState.savingMessage.value"
+        :saving-message="formSavingMessage"
         @update:visible="formVisible = $event"
         @save="saveEmployeeType"
         @clear-error="formState.clearError"
@@ -685,6 +689,13 @@ onMounted(load)
         @update:visible="archiveVisible = $event"
         @confirm="confirmArchive"
         @cancel="archiveVisible = false"
+    />
+
+    <EmployeeTypeReconciliationDialog
+        :visible="reconciliationDialogVisible"
+        :summary="reconciliationSummary"
+        @confirm="formState.confirmReconciliation"
+        @cancel="formState.cancelReconciliation"
     />
 
     <EmployeeTypeImportDialog

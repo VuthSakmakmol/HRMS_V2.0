@@ -43,6 +43,7 @@ export const attendanceUpsertSchema = z.object({
     attendanceDate: dateSchema,
     firstInAt: z.coerce.date().nullable().optional(),
     lastOutAt: z.coerce.date().nullable().optional(),
+    leaveCode: z.enum(["AL", "ML", "SL", "UL"]).nullable().optional(),
     note: z.string().trim().max(1000).default(""),
 })
 
