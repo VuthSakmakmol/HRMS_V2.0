@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
 
 import Message from "primevue/message"
@@ -15,10 +15,12 @@ import RecruitmentChannelSection from "../components/recruitment/RecruitmentChan
 import TurnoverDashboardSection from "../components/turnover/TurnoverDashboardSection.vue"
 import ExitAnalysisSection from "../components/exitAnalysis/ExitAnalysisSection.vue"
 import { useHrDashboardStore } from "../stores/hrDashboard.store.js"
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 
 
 const { t } = useI18n()
 const dashboardStore = useHrDashboardStore()
+const workspaceStore = useWorkspaceStore()
 
 const filters = ref(normalizeFilters(dashboardStore.filters))
 
@@ -136,8 +138,8 @@ function createDefaultFilters() {
     return {
         startDate: `${year}-01-01`,
         endDate: `${year}-12-31`,
-        companyId: undefined,
-        branchId: undefined,
+        companyId: workspaceStore.companyId || undefined,
+        branchId: workspaceStore.branchId || undefined,
         employeeTypeFilterKey: undefined,
         departmentId: undefined,
         positionId: undefined,
@@ -167,10 +169,34 @@ async function resetFilters() {
     ])
 }
 
+watch(
+    () => [workspaceStore.companyId, workspaceStore.branchId],
+    async ([companyId, branchId], previousScope) => {
+        if (!previousScope) return
+
+        filters.value = {
+            ...filters.value,
+            companyId: companyId || undefined,
+            branchId: branchId || undefined,
+            employeeTypeFilterKey: undefined,
+            departmentId: undefined,
+            positionId: undefined,
+            lineId: undefined,
+        }
+
+        await Promise.all([
+            loadLookups(filters.value),
+            loadDashboard(),
+        ])
+    },
+)
+
 onMounted(async () => {
     filters.value = normalizeFilters({
         ...createDefaultFilters(),
         ...dashboardStore.filters,
+        companyId: workspaceStore.companyId || undefined,
+        branchId: workspaceStore.branchId || undefined,
     })
 
     await Promise.all([

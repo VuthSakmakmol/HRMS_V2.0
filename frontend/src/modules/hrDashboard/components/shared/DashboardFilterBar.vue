@@ -36,20 +36,17 @@ const emit = defineEmits([
 
 const { t } = useI18n()
 
-const companyOptions = computed(() => props.lookups.companies || [])
-
-const branchOptions = computed(() =>
-    (props.lookups.branches || []).filter((item) =>
-        !props.modelValue.companyId ||
-        item.companyId === props.modelValue.companyId,
+const employeeTypeOptions = computed(() =>
+    (props.lookups.employeeTypes || []).filter((item) =>
+        (!props.modelValue.companyId ||
+            item.companyId === props.modelValue.companyId) &&
+        (!props.modelValue.branchId ||
+            item.branchId === props.modelValue.branchId),
     ),
 )
 
-const employeeTypeOptions = computed(() =>
-    (props.lookups.employeeTypes || []).filter((item) =>
-        !props.modelValue.companyId ||
-        item.companyId === props.modelValue.companyId,
-    ),
+const employeeTypeParentOptions = computed(() =>
+    employeeTypeOptions.value.filter((item) => item.type === "TYPE"),
 )
 
 const selectedEmployeeTypeOption = computed(() => {
@@ -59,6 +56,23 @@ const selectedEmployeeTypeOption = computed(() => {
         (item) => item.key === props.modelValue.employeeTypeFilterKey,
     ) || null
 })
+
+const selectedEmployeeTypeId = computed(() =>
+    selectedEmployeeTypeOption.value?.employeeTypeId || null,
+)
+
+const employeeTypeChildOptions = computed(() =>
+    employeeTypeOptions.value.filter((item) =>
+        item.type === "CHILD" &&
+        item.employeeTypeId === selectedEmployeeTypeId.value,
+    ),
+)
+
+const selectedEmployeeTypeChildKey = computed(() =>
+    selectedEmployeeTypeOption.value?.type === "CHILD"
+        ? selectedEmployeeTypeOption.value.key
+        : undefined,
+)
 
 const selectedEmployeeTypeAllowedPositionIds = computed(() =>
     new Set(selectedEmployeeTypeOption.value?.positionIds || []),
@@ -163,9 +177,29 @@ function updateField(field, value, dependentFields = []) {
 
     emit("update:modelValue", nextValue)
 
-    if (["companyId", "branchId", "departmentId"].includes(field)) {
+    if (field === "departmentId") {
         emit("scope-change", nextValue)
     }
+}
+
+function updateEmployeeType(employeeTypeId) {
+    updateField(
+        "employeeTypeFilterKey",
+        employeeTypeId ? `TYPE:${employeeTypeId}` : undefined,
+        ["departmentId", "positionId", "lineId"],
+    )
+}
+
+function updateEmployeeTypeChild(childKey) {
+    updateField(
+        "employeeTypeFilterKey",
+        childKey || (
+            selectedEmployeeTypeId.value
+                ? `TYPE:${selectedEmployeeTypeId.value}`
+                : undefined
+        ),
+        ["departmentId", "positionId", "lineId"],
+    )
 }
 </script>
 
@@ -210,60 +244,30 @@ function updateField(field, value, dependentFields = []) {
             />
 
             <Select
-                class="dashboard-filter-field"
-                :model-value="modelValue.companyId"
-                :options="companyOptions"
-                :option-label="optionLabel"
-                option-value="id"
-                :placeholder="t('hrDashboard.filters.allCompanies')"
-                show-clear
-                filter
-                :loading="lookupLoading"
-                @update:model-value="updateField(
-                    'companyId',
-                    $event,
-                    [
-                        'branchId',
-                        'employeeTypeFilterKey',
-                        'departmentId',
-                        'positionId',
-                        'lineId',
-                    ],
-                )"
-            />
-
-            <Select
-                class="dashboard-filter-field"
-                :model-value="modelValue.branchId"
-                :options="branchOptions"
-                :option-label="optionLabel"
-                option-value="id"
-                :placeholder="t('hrDashboard.filters.allBranches')"
-                show-clear
-                filter
-                :loading="lookupLoading"
-                @update:model-value="updateField(
-                    'branchId',
-                    $event,
-                    ['departmentId', 'positionId', 'lineId'],
-                )"
-            />
-
-            <Select
                 class="dashboard-filter-field dashboard-filter-field--employee-type"
-                :model-value="modelValue.employeeTypeFilterKey"
-                :options="employeeTypeOptions"
+                :model-value="selectedEmployeeTypeId"
+                :options="employeeTypeParentOptions"
                 :option-label="optionLabel"
-                option-value="key"
+                option-value="employeeTypeId"
                 :placeholder="t('hrDashboard.filters.allEmployeeTypes')"
                 show-clear
                 filter
                 :loading="lookupLoading"
-                @update:model-value="updateField(
-                    'employeeTypeFilterKey',
-                    $event,
-                    ['departmentId', 'positionId', 'lineId'],
-                )"
+                @update:model-value="updateEmployeeType"
+            />
+
+            <Select
+                v-if="employeeTypeChildOptions.length"
+                class="dashboard-filter-field dashboard-filter-field--employee-type"
+                :model-value="selectedEmployeeTypeChildKey"
+                :options="employeeTypeChildOptions"
+                :option-label="optionLabel"
+                option-value="key"
+                :placeholder="t('hrDashboard.filters.allEmployeeTypeChildren')"
+                show-clear
+                filter
+                :loading="lookupLoading"
+                @update:model-value="updateEmployeeTypeChild"
             />
 
             <Select

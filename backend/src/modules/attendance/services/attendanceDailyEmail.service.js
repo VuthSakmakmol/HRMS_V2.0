@@ -4,9 +4,14 @@ import Account from "../../access/models/Account.js"
 import HrDashboardTarget from "../../hrDashboardTarget/models/HrDashboardTarget.js"
 import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
 import AttendanceDailyEmailLog from "../models/AttendanceDailyEmailLog.js"
+import AttendanceRecord from "../models/AttendanceRecord.js"
 import { env } from "../../../config/env.js"
 import { AppError } from "../../../shared/errors/AppError.js"
-import { startOfBusinessDay, endOfBusinessDay } from "../utils/attendanceDate.util.js"
+import {
+    startOfBusinessDay,
+    endOfBusinessDay,
+    toBusinessDateKey,
+} from "../utils/attendanceDate.util.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 import {
     buildAttendanceDailyReport,
@@ -91,6 +96,36 @@ function compactReportDate(date) {
     return `${day}${month}${year}`
 }
 
+async function resolveLatestAttendanceDate({ companyId, branchId, requestedDate }) {
+    const month = requestedDate.slice(0, 7)
+    const firstDate = `${month}-01`
+    const [year, monthNumber] = month.split("-").map(Number)
+    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
+    const lastDate = `${month}-${String(lastDay).padStart(2, "0")}`
+
+    const latest = await AttendanceRecord.findOne({
+        companyId,
+        branchId,
+        attendanceDate: {
+            $gte: startOfBusinessDay(firstDate),
+            $lte: endOfBusinessDay(lastDate),
+        },
+    })
+        .sort({ attendanceDate: -1 })
+        .select("attendanceDate")
+        .lean()
+
+    if (!latest?.attendanceDate) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ATTENDANCE_REPORT_NO_DATA",
+            messageKey: "errors.attendance.reportNoData",
+        })
+    }
+
+    return toBusinessDateKey(latest.attendanceDate)
+}
+
 async function loadAttendanceTarget({ companyId, branchId, date }) {
     const [year, month] = date.split("-").map(Number)
     const targets = await HrDashboardTarget.find({
@@ -136,11 +171,11 @@ function reportHtml({ date, report, attendanceTarget }) {
 
     return `<!doctype html><html><body style="margin:0;background:#fff;font-family:Arial,sans-serif;color:#17365d">
 <div style="margin:16px;background:#fff;padding:2px">
-<p style="font-size:16px;margin:0 0 28px">Dear all head of departments,</p>
-<p style="font-size:16px;margin:0 0 8px">Please see attendance report as of <span style="background:#fff200;padding:2px 5px">${escapeHtml(formatReportDate(date))}</span></p>
+<p style="font-size:16px;margin:0 0 28px">${escapeHtml(env.ATTENDANCE_EMAIL_GREETING)}</p>
+<p style="font-size:16px;margin:0 0 8px">${escapeHtml(env.ATTENDANCE_EMAIL_INTRO)} <span style="background:#fff200;padding:2px 5px">${escapeHtml(formatReportDate(date))}</span></p>
 <div style="font-size:16px;margin:0 0 26px;padding-left:30px;line-height:1.55">
-<div>- &nbsp; Overall Absent rate <span style="background:#fff200;padding:1px 4px">${percentText(overallRate)}</span> &nbsp; (${targetText})</div>
-<div>- &nbsp; Sewers Absent rate <span style="background:#fff200;padding:1px 4px">${percentText(sewerRate)}</span></div>
+<div>- &nbsp; ${escapeHtml(env.ATTENDANCE_EMAIL_OVERALL_LABEL)} <span style="background:#fff200;padding:1px 4px">${percentText(overallRate)}</span> &nbsp; (${targetText})</div>
+<div>- &nbsp; ${escapeHtml(env.ATTENDANCE_EMAIL_SEWER_LABEL)} <span style="background:#fff200;padding:1px 4px">${percentText(sewerRate)}</span></div>
 </div>
 <div style="overflow-x:auto"><table role="presentation" style="border-collapse:collapse;width:100%"><thead><tr><th style="${headCell};text-align:left">Daily Summary</th>${dayHeaders}<th style="${headCell}">Avg</th></tr></thead><tbody>
 ${row("TOTAL EMPLOYEE", report.summary.totalEmployees, report.summary.averages.totalEmployees)}
@@ -166,18 +201,24 @@ ${row("TOTAL ABSENT RATE", report.sewerAbsentRate.totalAbsentRate, report.sewerA
 export async function getAttendanceDailyEmailStatus({ date, companyId, branchId, user }) {
     assertAttendanceScope(user, companyId, branchId)
     const { to } = emailRecipients()
+    const reportDate = await resolveLatestAttendanceDate({
+        companyId,
+        branchId,
+        requestedDate: date,
+    })
     const latest = await AttendanceDailyEmailLog.findOne({
         companyId,
         branchId,
-        reportDate: date,
+        reportDate,
         to,
     }).sort({ sentAt: -1 }).lean()
 
     return latest ? {
         sent: true,
+        reportDate,
         sentAt: latest.sentAt,
         sentByName: latest.sentByName,
-    } : { sent: false }
+    } : { sent: false, reportDate }
 }
 
 export async function sendAttendanceDailyEmail({
@@ -193,11 +234,16 @@ export async function sendAttendanceDailyEmail({
     }
     assertAttendanceScope(user, companyId, branchId)
     const { to, cc } = emailRecipients()
+    const reportDate = await resolveLatestAttendanceDate({
+        companyId,
+        branchId,
+        requestedDate: date,
+    })
 
     const existing = await AttendanceDailyEmailLog.findOne({
         companyId,
         branchId,
-        reportDate: date,
+        reportDate,
         to,
     }).sort({ sentAt: -1 }).lean()
 
@@ -210,9 +256,9 @@ export async function sendAttendanceDailyEmail({
         })
     }
 
-    const month = date.slice(0, 7)
+    const month = reportDate.slice(0, 7)
     const report = await buildAttendanceDailyReport({ query: { month, companyId, branchId }, user })
-    const dayIndex = report.days.findIndex((day) => day.key === date)
+    const dayIndex = report.days.findIndex((day) => day.key === reportDate)
     if (dayIndex < 0) {
         throw new AppError({ statusCode: 422, code: "REPORT_DATE_NOT_FOUND", messageKey: "errors.validationFailed" })
     }
@@ -222,11 +268,15 @@ export async function sendAttendanceDailyEmail({
         AttendanceImportIssue.countDocuments({
             companyId,
             branchId,
-            attendanceDate: { $gte: startOfBusinessDay(date), $lte: endOfBusinessDay(date) },
+            attendanceDate: { $gte: startOfBusinessDay(reportDate), $lte: endOfBusinessDay(reportDate) },
             status: "NO_EMPLOYEE_MATCH",
         }),
     ])
-    const attendanceTarget = report.attendanceTarget?.rate ?? await loadAttendanceTarget({ companyId, branchId, date })
+    const attendanceTarget = report.attendanceTarget?.rate ?? await loadAttendanceTarget({
+        companyId,
+        branchId,
+        date: reportDate,
+    })
 
     const leave = report.summary.leaves
     const totalEmployees = report.summary.totalEmployees[dayIndex] || 0
@@ -251,7 +301,7 @@ export async function sendAttendanceDailyEmail({
     const senderName = triggerType === "AUTOMATIC"
         ? "Automatic attendance schedule"
         : account?.displayName || account?.loginId || user.displayName || "HRMS user"
-    const subject = `HR Daily Report ${formatReportDate(date).replaceAll(" ", "-")}`
+    const subject = `${env.ATTENDANCE_EMAIL_SUBJECT_PREFIX} ${formatReportDate(reportDate).replaceAll(" ", "-")}`
     const workbook = await buildAttendanceDailyReportWorkbook(report)
     const workbookBuffer = Buffer.from(await workbook.xlsx.writeBuffer())
     const info = await transporter().sendMail({
@@ -259,10 +309,10 @@ export async function sendAttendanceDailyEmail({
         to,
         cc,
         subject,
-        html: reportHtml({ date, report, attendanceTarget }),
+        html: reportHtml({ date: reportDate, report, attendanceTarget }),
         attachments: [
             {
-                filename: `Daily_Att_Report_${compactReportDate(date)}.xlsx`,
+                filename: `Daily_Att_Report_${compactReportDate(reportDate)}.xlsx`,
                 content: workbookBuffer,
                 contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             },
@@ -272,7 +322,7 @@ export async function sendAttendanceDailyEmail({
     const log = await AttendanceDailyEmailLog.create({
         companyId,
         branchId,
-        reportDate: date,
+        reportDate,
         to,
         cc,
         subject,
@@ -284,5 +334,12 @@ export async function sendAttendanceDailyEmail({
         sentAt: new Date(),
     })
 
-    return { log, summary, recipients: { to, cc } }
+    return {
+        log,
+        reportDate,
+        requestedDate: date,
+        attendanceTarget,
+        summary,
+        recipients: { to, cc },
+    }
 }

@@ -2283,6 +2283,7 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
                 ? `${employeeType.code} - ${parentName}`
                 : parentName,
             companyId: employeeType.companyId?.toString?.() || null,
+            branchId: employeeType.branchId?.toString?.() || null,
             employeeTypeId: parentId,
             employeeTypeChildCode: null,
             dashboardCategory: employeeType.dashboardCategory || "CUSTOM",
@@ -2307,6 +2308,7 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
                 name: child.name,
                 label: `${parentName} / ${child.name}`,
                 companyId: employeeType.companyId?.toString?.() || null,
+                branchId: employeeType.branchId?.toString?.() || null,
                 employeeTypeId: parentId,
                 employeeTypeChildCode: child.code,
                 dashboardCategory: child.dashboardCategory || "CUSTOM",
@@ -2422,6 +2424,7 @@ export async function getHrDashboardLookups({ query }) {
     const employeeTypeMatch = {
         status: "ACTIVE",
         ...(query.companyId ? { companyId: toObjectId(query.companyId) } : {}),
+        ...(query.branchId ? { branchId: toObjectId(query.branchId) } : {}),
     }
 
     const [companies, branches, departments, positions, lines, employeeTypes] =
@@ -2448,6 +2451,7 @@ export async function getHrDashboardLookups({ query }) {
                     "name",
                     "companyId",
                     "branchId",
+                    "branchId",
                     "departmentId",
                     "positionIds",
                     "allowedPositionIds",
@@ -2459,6 +2463,7 @@ export async function getHrDashboardLookups({ query }) {
                     "code",
                     "name",
                     "companyId",
+                    "branchId",
                     "dashboardCategory",
                     "positionAssignmentMode",
                     "positionIds",

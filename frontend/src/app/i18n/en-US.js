@@ -1824,7 +1824,10 @@ export default {
             workspaceRequired: "Select a company and branch in the top bar first.",
             policyNotFound: "Attendance policy was not found.",
             policyBranchInvalid: "The selected branch is invalid or outside the active company.",
-            policyDateOverlap: "An active attendance policy already covers part of this effective period."
+            policyDateOverlap: "An active attendance policy already covers part of this effective period.",
+            emailNotConfigured: "Attendance email is not configured.",
+            dailyEmailAlreadySent: "The latest available attendance report has already been emailed.",
+            reportNoData: "No stored attendance exists for the selected month."
         }
     },
     employee: {

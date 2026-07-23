@@ -53,6 +53,16 @@ const environmentSchema = z.object({
     ATTENDANCE_EMAIL_TO: optionalString,
 
     ATTENDANCE_EMAIL_CC: optionalString,
+
+    ATTENDANCE_EMAIL_SUBJECT_PREFIX: z.string().trim().default("HR Daily Report"),
+
+    ATTENDANCE_EMAIL_GREETING: z.string().trim().default("Dear all head of departments,"),
+
+    ATTENDANCE_EMAIL_INTRO: z.string().trim().default("Please see attendance report as of"),
+
+    ATTENDANCE_EMAIL_OVERALL_LABEL: z.string().trim().default("Overall Absent rate"),
+
+    ATTENDANCE_EMAIL_SEWER_LABEL: z.string().trim().default("Sewers Absent rate"),
 })
 
 const parsedEnvironment = environmentSchema.safeParse(process.env)
