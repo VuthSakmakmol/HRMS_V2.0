@@ -2,7 +2,7 @@ import ExcelJS from "exceljs"
 import mongoose from "mongoose"
 
 import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
-import { upsertAttendanceRecord } from "./attendance.service.js"
+import { invalidateAttendanceCaches, upsertAttendanceRecord } from "./attendance.service.js"
 
 const HEADERS = [
     "Record Date",
@@ -385,12 +385,14 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
         issues: [],
     }
 
-    for (const [index, row] of rows.entries()) {
+    let completedRows = 0
+    const processRow = async (row) => {
         try {
             const record = await upsertAttendanceRecord({
                 payload: { ...row.payload, ...workspace },
                 user,
                 source: "EXCEL_IMPORT",
+                invalidateCache: false,
             })
 
             summary.successCount += 1
@@ -437,13 +439,7 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
                     employeeCode: row.payload.employeeCode,
                     message: `Employee No ${row.payload.employeeCode} was not found. The row was saved to Unmatched Attendance.`,
                 })
-                onProgress?.({
-                    phase: "SAVING_ROWS",
-                    percent: 35 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 60),
-                    processedRows: index + 1,
-                    totalRows: summary.totalRows,
-                })
-                continue
+                return
             }
 
             const messages = {
@@ -458,12 +454,29 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
             })
         }
 
-        onProgress?.({
-            phase: "SAVING_ROWS",
-            percent: 35 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 60),
-            processedRows: index + 1,
-            totalRows: summary.totalRows,
-        })
+        finally {
+            completedRows += 1
+        }
+    }
+
+    // Keep enough parallelism to saturate MongoDB without flooding the pool.
+    const concurrency = Math.min(16, Math.max(1, rows.length))
+    let cursor = 0
+    const workers = Array.from({ length: concurrency }, async () => {
+        while (cursor < rows.length) {
+            const index = cursor++
+            await processRow(rows[index])
+            onProgress?.({
+                phase: "SAVING_ROWS",
+                percent: 35 + Math.round((completedRows / Math.max(rows.length, 1)) * 60),
+                processedRows: completedRows,
+                totalRows: summary.totalRows,
+            })
+        }
+    })
+    await Promise.all(workers)
+    if (rows.length) {
+        invalidateAttendanceCaches()
     }
 
     return summary

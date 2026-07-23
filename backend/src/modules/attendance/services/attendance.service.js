@@ -64,7 +64,7 @@ function assertUnlocked(record) {
     }
 }
 
-export async function upsertAttendanceRecord({ payload, user, source = "MANUAL", session = null }) {
+export async function upsertAttendanceRecord({ payload, user, source = "MANUAL", session = null, invalidateCache = true }) {
     const { employee, shift } = await resolveEmployeeAndShift(payload.employeeCode, user, payload)
     assertAttendanceScope(user, employee.companyId, employee.branchId)
     const workDate = toBusinessDateKey(payload.attendanceDate)
@@ -131,7 +131,7 @@ export async function upsertAttendanceRecord({ payload, user, source = "MANUAL",
         },
         { upsert: true, returnDocument: "after", runValidators: true, session },
     )
-    invalidateAttendanceCaches()
+    if (invalidateCache) invalidateAttendanceCaches()
     return record.toJSON()
 }
 

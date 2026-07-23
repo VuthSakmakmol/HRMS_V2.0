@@ -96,6 +96,7 @@ export function failImportJob(jobId, error) {
             messageKey:
                 error?.messageKey || "organization.position.importFailed",
             message: error?.message || "Position import failed.",
+            details: error?.details || null,
         },
     })
 }

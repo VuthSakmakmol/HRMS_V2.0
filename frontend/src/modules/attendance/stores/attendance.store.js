@@ -31,6 +31,9 @@ export const useAttendanceStore = defineStore("attendance", {
         importing: false,
         exporting: false,
         importProgress: 0,
+        importPhase: "",
+        importProcessedRows: 0,
+        importTotalRows: 0,
         importSummary: null,
         error: null,
         listCache: {},
@@ -112,13 +115,22 @@ export const useAttendanceStore = defineStore("attendance", {
         async importFile(file) {
             this.importing = true
             this.importProgress = 1
+            this.importPhase = "UPLOADING"
+            this.importProcessedRows = 0
+            this.importTotalRows = 0
             this.importSummary = null
 
             try {
-                const summary = await importAttendance(file, (event) => {
-                    if (event.total) {
-                        this.importProgress = Math.min(95, Math.round((event.loaded * 100) / event.total))
-                    }
+                const summary = await importAttendance(file, {
+                    onUploadProgress: (event) => {
+                        if (event.total) this.importProgress = Math.min(5, Math.round((event.loaded / event.total) * 5))
+                    },
+                    onProgress: (job) => {
+                        this.importProgress = job.percent
+                        this.importPhase = job.phase
+                        this.importProcessedRows = job.processedRows || 0
+                        this.importTotalRows = job.totalRows || 0
+                    },
                 })
                 this.importProgress = 100
                 this.importSummary = summary

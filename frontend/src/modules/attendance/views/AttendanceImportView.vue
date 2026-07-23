@@ -32,6 +32,9 @@ const rows = ref([])
 const loading = ref(false)
 const importing = ref(false)
 const progress = ref(0)
+const phase = ref("")
+const processedRows = ref(0)
+const totalRows = ref(0)
 const dialogVisible = ref(false)
 const selectedFile = ref(null)
 const importSummary = ref(null)
@@ -67,10 +70,21 @@ async function runImport() {
     if (!selectedFile.value) return
     importing.value = true
     progress.value = 1
+    phase.value = "UPLOADING"
+    processedRows.value = 0
+    totalRows.value = 0
     importSummary.value = null
     try {
-        const summary = await importRawScans(selectedFile.value, (event) => {
-            if (event.total) progress.value = Math.min(95, Math.round((event.loaded * 100) / event.total))
+        const summary = await importRawScans(selectedFile.value, {
+            onUploadProgress: (event) => {
+                if (event.total) progress.value = Math.min(5, Math.round((event.loaded / event.total) * 5))
+            },
+            onProgress: (job) => {
+                progress.value = job.percent
+                phase.value = job.phase
+                processedRows.value = job.processedRows || 0
+                totalRows.value = job.totalRows || 0
+            },
         })
         progress.value = 100
         importSummary.value = summary
@@ -129,7 +143,7 @@ onMounted(() => load())
     </EnterpriseListPage>
 
     <EnterpriseDialog :visible="dialogVisible" title="Import Raw Scanner Data" width="38rem" :busy="importing" @update:visible="dialogVisible = $event">
-        <div class="scan-import"><p>The backend validates every Employee ID against the active company and branch. If any row is invalid, nothing is saved.</p><input type="file" accept=".xlsx,.xls" @change="selectedFile = $event.target.files?.[0] || null"><ProgressBar v-if="importing" :value="progress" /></div>
+        <div class="scan-import"><p>The backend validates every Employee ID against the active company and branch. If any row is invalid, nothing is saved.</p><input type="file" accept=".xlsx,.xls" @change="selectedFile = $event.target.files?.[0] || null"><div v-if="importing" class="scan-progress"><div><strong>{{ phase.replaceAll('_', ' ') }}</strong><span v-if="totalRows">{{ processedRows }} / {{ totalRows }} rows</span></div><ProgressBar :value="progress" /></div></div>
         <template #footer><EnterpriseFormFooter save-label="Import" :saving="importing" :disabled="!selectedFile" @cancel="dialogVisible = false" @save="runImport" /></template>
     </EnterpriseDialog>
 </template>
@@ -139,4 +153,6 @@ onMounted(() => load())
 .scan-search :deep(.p-inputtext) { width: 100%; }
 .scan-import { display: grid; gap: 1rem; }
 .scan-import p { margin: 0; color: var(--p-text-muted-color); font-size: .8rem; }
+.scan-progress { display: grid; gap: .45rem; }
+.scan-progress > div { display: flex; justify-content: space-between; font-size: .78rem; }
 </style>

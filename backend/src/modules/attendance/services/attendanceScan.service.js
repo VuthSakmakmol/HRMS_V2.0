@@ -45,7 +45,7 @@ export async function buildRawScanTemplate() {
     return workbook
 }
 
-export async function importRawScans({ buffer, user, companyId, branchId }) {
+export async function importRawScans({ buffer, user, companyId, branchId, onProgress }) {
     if (!companyId || !branchId) {
         throw new AppError({
             statusCode: 422,
@@ -55,6 +55,7 @@ export async function importRawScans({ buffer, user, companyId, branchId }) {
     }
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer)
+    onProgress?.({ phase: "PARSING_ROWS", percent: 20 })
 
     const sheet = workbook.worksheets[0]
     const importBatchId = crypto.randomUUID()
@@ -86,6 +87,7 @@ export async function importRawScans({ buffer, user, companyId, branchId }) {
 
     const parseErrorCount = errors.length
     const totalRows = parsedRows.length + parseErrorCount
+    onProgress?.({ phase: "MATCHING_EMPLOYEES", percent: 40, processedRows: 0, totalRows })
     const codes = [...new Set(parsedRows.map((row) => row.employeeCode))]
     const employees = await Employee.find({
         employeeCode: { $in: codes },
@@ -140,12 +142,18 @@ export async function importRawScans({ buffer, user, companyId, branchId }) {
     })
 
     let importedCount = 0
-
-    if (operations.length > 0) {
-        const result = await AttendanceRawScan.bulkWrite(operations, {
-            ordered: false,
+    const batchSize = 2000
+    for (let start = 0; start < operations.length; start += batchSize) {
+        const batch = operations.slice(start, start + batchSize)
+        const result = await AttendanceRawScan.bulkWrite(batch, { ordered: false })
+        importedCount += result.upsertedCount || 0
+        const processedRows = Math.min(start + batch.length, operations.length)
+        onProgress?.({
+            phase: "SAVING_ROWS",
+            percent: 45 + Math.round((processedRows / Math.max(operations.length, 1)) * 50),
+            processedRows,
+            totalRows,
         })
-        importedCount = result.upsertedCount || 0
     }
 
     return {
