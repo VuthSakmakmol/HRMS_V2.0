@@ -140,7 +140,7 @@ export async function buildAttendanceDailyReport({
         $or: [{ resignDate: null }, { resignDate: { $gte: start } }],
       })
         .select(
-          "_id joinDate resignDate departmentId positionId employeeTypeId",
+          "_id joinDate resignDate departmentId positionId employeeTypeId employeeTypeChildId",
         )
         .lean(),
     ),
@@ -179,14 +179,9 @@ export async function buildAttendanceDailyReport({
       year,
       month: { $in: [monthNumber, 0] },
       status: "ACTIVE",
-      employeeTypeId: { $ne: null },
-      departmentId: null,
-      positionId: null,
-      lineId: null,
-      employeeTypeChildId: null,
     })
       .sort({ employeeTypeId: 1, month: -1, updatedAt: -1 })
-      .select("employeeTypeId targetRate month")
+      .select("targetScope employeeTypeId employeeTypeChildId targetRate month")
       .lean(),
   ]);
   onProgress({
@@ -196,29 +191,38 @@ export async function buildAttendanceDailyReport({
     totalRows: 5,
   });
 
+  const targetKey = (value) =>
+    `${String(value.employeeTypeId || "")}|${String(value.employeeTypeChildId || "")}`;
+  const overallTarget = attendanceTargetRecords.find(
+    (target) => target.targetScope === "OVERALL" && !target.employeeTypeId,
+  );
   const targetByEmployeeType = new Map();
   for (const target of attendanceTargetRecords) {
-    const employeeTypeId = String(target.employeeTypeId || "");
-    if (employeeTypeId && !targetByEmployeeType.has(employeeTypeId)) {
-      targetByEmployeeType.set(employeeTypeId, target);
+    const key = targetKey(target);
+    if (
+      target.targetScope !== "OVERALL" &&
+      target.employeeTypeId &&
+      !targetByEmployeeType.has(key)
+    ) {
+      targetByEmployeeType.set(key, target);
     }
   }
   const employeeTypeCounts = new Map();
   for (const employee of employees) {
-    const employeeTypeId = String(employee.employeeTypeId || "");
-    if (employeeTypeId) {
-      employeeTypeCounts.set(
-        employeeTypeId,
-        (employeeTypeCounts.get(employeeTypeId) || 0) + 1,
-      );
+    const key = targetKey(employee);
+    if (employee.employeeTypeId) {
+      employeeTypeCounts.set(key, (employeeTypeCounts.get(key) || 0) + 1);
     }
   }
   const targetSources = [...targetByEmployeeType.entries()]
-    .map(([employeeTypeId, target]) => ({
-      employeeTypeId,
+    .map(([key, target]) => ({
+      employeeTypeId: String(target.employeeTypeId),
+      employeeTypeChildId: target.employeeTypeChildId
+        ? String(target.employeeTypeChildId)
+        : null,
       rate: Number(target.targetRate),
       month: Number(target.month),
-      employeeCount: employeeTypeCounts.get(employeeTypeId) || 0,
+      employeeCount: employeeTypeCounts.get(key) || 0,
     }))
     .filter((item) => item.employeeCount > 0);
   const coveredEmployees = targetSources.reduce(
@@ -469,19 +473,16 @@ export async function buildAttendanceDailyReport({
 
   return {
     month: query.month,
-    attendanceTarget:
-      weightedTargetRate !== null
-        ? {
-            rate: weightedTargetRate,
-            method:
-              targetSources.length === 1
-                ? "EMPLOYEE_TYPE"
-                : "HEADCOUNT_WEIGHTED",
-            coveredEmployees,
-            totalEmployees: employees.length,
-            sources: targetSources,
-          }
-        : null,
+    attendanceTarget: overallTarget
+      ? {
+          rate: Number(overallTarget.targetRate),
+          method: "OVERALL",
+          month: Number(overallTarget.month),
+          coveredEmployees,
+          totalEmployees: employees.length,
+          sources: targetSources,
+        }
+      : null,
     days: reportDays,
     summary: {
       totalEmployees: daily.map((item) => item.totalEmployees),

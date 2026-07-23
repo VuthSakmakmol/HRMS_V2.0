@@ -822,6 +822,13 @@ function dashboardTargetMatches(target = {}, query = {}) {
         }
     }
 
+    if (
+        target.employeeTypeChildId &&
+        String(target.employeeTypeChildCode || "") !== String(query.employeeTypeChildCode || "")
+    ) {
+        return false
+    }
+
     return true
 }
 
@@ -832,6 +839,8 @@ function dashboardTargetSpecificity(target = {}, month) {
         "companyId",
         "branchId",
         "employeeTypeId",
+        "employeeTypeChildId",
+        "employeeTypeChildCode",
     ]) {
         if (toOptionalStringId(target[field])) score += 10
     }
@@ -887,10 +896,6 @@ async function loadDashboardTargets(query, year) {
         status: "ACTIVE",
         metric: { $in: ["ABSENCE_RATE", "TURNOVER_RATE"] },
         year,
-        departmentId: null,
-        positionId: null,
-        lineId: null,
-        employeeTypeChildId: null,
     }
 
     if (query.companyId) {
@@ -909,6 +914,8 @@ async function loadDashboardTargets(query, year) {
             "year",
             "month",
             "employeeTypeId",
+            "employeeTypeChildId",
+            "employeeTypeChildCode",
             "targetRate",
             "updatedAt",
         ])

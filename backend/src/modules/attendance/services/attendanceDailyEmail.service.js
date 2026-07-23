@@ -100,23 +100,14 @@ async function loadAttendanceTarget({ companyId, branchId, date }) {
         year,
         status: "ACTIVE",
         month: { $in: [month, 0] },
-        employeeTypeId: { $ne: null },
-        departmentId: null,
-        positionId: null,
-        lineId: null,
-        employeeTypeChildId: null,
+        targetScope: "OVERALL",
+        employeeTypeId: null,
     })
-        .sort({ employeeTypeId: 1, month: -1, updatedAt: -1 })
-        .select("employeeTypeId targetRate month")
+        .sort({ month: -1, updatedAt: -1 })
+        .select("targetRate month")
         .lean()
 
-    const latestByType = new Map()
-    for (const target of targets) {
-        const key = String(target.employeeTypeId)
-        if (!latestByType.has(key)) latestByType.set(key, Number(target.targetRate))
-    }
-    const rates = [...latestByType.values()]
-    return rates.length ? rates.reduce((sum, rate) => sum + rate, 0) / rates.length : null
+    return targets.length ? Number(targets[0].targetRate) : null
 }
 
 function reportHtml({ date, report, attendanceTarget }) {

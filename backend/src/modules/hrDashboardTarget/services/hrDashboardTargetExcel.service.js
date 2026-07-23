@@ -6,10 +6,12 @@ import EmployeeType from "../../employeeType/models/EmployeeType.js"
 import HrDashboardTarget from "../models/HrDashboardTarget.js"
 
 const HEADERS = [
+    "Target Scope",
     "Metric",
     "Year",
     "Month",
     "Employee Type Code",
+    "Employee Type Child Code",
     "Target Rate",
     "Remark",
     "Status",
@@ -28,7 +30,14 @@ function id(value) {
 }
 
 function keyOf(payload) {
-    return [payload.metric, payload.year, payload.month, id(payload.employeeTypeId)].join("|")
+    return [
+        payload.metric,
+        payload.year,
+        payload.month,
+        payload.targetScope,
+        id(payload.employeeTypeId),
+        id(payload.employeeTypeChildId),
+    ].join("|")
 }
 
 function styleSheet(sheet) {
@@ -39,17 +48,19 @@ function styleSheet(sheet) {
         fgColor: { argb: "FF2563EB" },
     }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
-    sheet.autoFilter = { from: "A1", to: "G1" }
+    sheet.autoFilter = { from: "A1", to: "I1" }
     sheet.columns = [
+        { width: 20 },
         { width: 20 },
         { width: 10 },
         { width: 10 },
         { width: 24 },
+        { width: 26 },
         { width: 14 },
         { width: 40 },
         { width: 14 },
     ]
-    sheet.getColumn(5).numFmt = "0.00"
+    sheet.getColumn(7).numFmt = "0.00"
 }
 
 export async function buildHrDashboardTargetTemplate() {
@@ -57,10 +68,23 @@ export async function buildHrDashboardTargetTemplate() {
     const sheet = workbook.addWorksheet("Dashboard Targets")
     sheet.addRow(HEADERS)
     sheet.addRow([
+        "OVERALL",
+        "ABSENCE_RATE",
+        new Date().getFullYear(),
+        0,
+        "",
+        "",
+        3.5,
+        "Whole-year overall target",
+        "ACTIVE",
+    ])
+    sheet.addRow([
+        "EMPLOYEE_TYPE",
         "ABSENCE_RATE",
         new Date().getFullYear(),
         0,
         "BLUE_COLLAR",
+        "DIRECT",
         3.5,
         "Whole-year employee type target",
         "ACTIVE",
@@ -75,10 +99,12 @@ export async function buildHrDashboardTargetExport(records = []) {
     sheet.addRow(HEADERS)
     for (const record of records) {
         sheet.addRow([
+            record.targetScope,
             record.metric,
             record.year,
             record.month,
             record.employeeType?.code || "",
+            record.employeeTypeChildCode || "",
             record.targetRate,
             record.remark || "",
             record.status,
@@ -111,13 +137,15 @@ export async function parseHrDashboardTargetWorkbook(buffer) {
         if (values.every((value) => value === null || value === undefined || text(value) === "")) return
         rows.push({
             rowNumber,
-            metric: code(values[0]),
-            year: Number(values[1]),
-            month: Number(values[2]),
-            employeeTypeCode: code(values[3]),
-            targetRate: Number(values[4]),
-            remark: text(values[5]),
-            status: code(values[6]) || "ACTIVE",
+            targetScope: code(values[0]),
+            metric: code(values[1]),
+            year: Number(values[2]),
+            month: Number(values[3]),
+            employeeTypeCode: code(values[4]),
+            employeeTypeChildCode: code(values[5]),
+            targetRate: Number(values[6]),
+            remark: text(values[7]),
+            status: code(values[8]) || "ACTIVE",
         })
     })
     return { rows, errors: [] }
@@ -141,33 +169,54 @@ export async function importHrDashboardTargets({ rows, parseErrors, workspace, u
 
     for (const row of rows) {
         const rowErrors = []
+        if (!["OVERALL", "EMPLOYEE_TYPE"].includes(row.targetScope)) rowErrors.push("Target Scope must be OVERALL or EMPLOYEE_TYPE.")
         if (!["ABSENCE_RATE", "TURNOVER_RATE"].includes(row.metric)) rowErrors.push("Metric must be ABSENCE_RATE or TURNOVER_RATE.")
         if (!Number.isInteger(row.year) || row.year < 2000 || row.year > 2100) rowErrors.push("Year must be from 2000 to 2100.")
         if (!Number.isInteger(row.month) || row.month < 0 || row.month > 12) rowErrors.push("Month must be 0 for whole year or 1 to 12.")
-        if (!row.employeeTypeCode) rowErrors.push("Employee Type Code is required.")
+        if (row.targetScope === "EMPLOYEE_TYPE" && !row.employeeTypeCode) rowErrors.push("Employee Type Code is required for EMPLOYEE_TYPE scope.")
+        if (row.targetScope === "OVERALL" && (row.employeeTypeCode || row.employeeTypeChildCode)) rowErrors.push("Employee Type and Child Code must be blank for OVERALL scope.")
         if (!Number.isFinite(row.targetRate) || row.targetRate < 0 || row.targetRate > 100) rowErrors.push("Target Rate must be from 0 to 100.")
         if (!["ACTIVE", "INACTIVE"].includes(row.status)) rowErrors.push("Status must be ACTIVE or INACTIVE.")
         if (row.remark.length > 500) rowErrors.push("Remark cannot exceed 500 characters.")
 
-        const employeeType = employeeTypeMap.get(row.employeeTypeCode)
+        const employeeType = row.targetScope === "EMPLOYEE_TYPE"
+            ? employeeTypeMap.get(row.employeeTypeCode)
+            : null
         if (row.employeeTypeCode && !employeeType) rowErrors.push(`Employee Type ${row.employeeTypeCode} was not found.`)
+        const children = employeeType?.children || []
+        const employeeTypeChild = row.employeeTypeChildCode
+            ? children.find((child) => code(child.code) === row.employeeTypeChildCode)
+            : null
+        if (row.targetScope === "EMPLOYEE_TYPE" && children.length && !row.employeeTypeChildCode) {
+            rowErrors.push(`Employee Type Child Code is required for ${row.employeeTypeCode}.`)
+        }
+        if (row.employeeTypeChildCode && !employeeTypeChild) {
+            rowErrors.push(`Employee Type Child ${row.employeeTypeChildCode} was not found under ${row.employeeTypeCode}.`)
+        }
+        if (!children.length && row.employeeTypeChildCode) {
+            rowErrors.push(`Employee Type ${row.employeeTypeCode} does not have child groups.`)
+        }
 
         const payload = {
             ...scope,
             metric: row.metric,
             year: row.year,
             month: row.month,
+            targetScope: row.targetScope,
             employeeTypeId: employeeType?._id,
+            employeeTypeChildId: employeeTypeChild?._id || null,
+            employeeTypeChildCode: employeeTypeChild?.code || "",
+            employeeTypeChildName: employeeTypeChild?.name || "",
             targetRate: row.targetRate,
             remark: row.remark,
             status: row.status,
             updatedByAccountId: user.accountId,
         }
         const uniqueKey = keyOf(payload)
-        if (fileKeys.has(uniqueKey)) rowErrors.push("Duplicate metric, period, and employee type inside the Excel file.")
+        if (fileKeys.has(uniqueKey)) rowErrors.push("Duplicate target scope, metric, and period inside the Excel file.")
         fileKeys.add(uniqueKey)
         const existing = existingMap.get(uniqueKey)
-        if (existing?.status === "ARCHIVED") rowErrors.push("An archived target already exists for this metric, period, and employee type.")
+        if (existing?.status === "ARCHIVED") rowErrors.push("An archived target already exists for this metric, period, employee type, and child.")
 
         if (rowErrors.length) errors.push({ row: row.rowNumber, message: rowErrors.join(" ") })
         else payloads.push({ payload, existing })
@@ -184,7 +233,9 @@ export async function importHrDashboardTargets({ rows, parseErrors, workspace, u
                 metric: payload.metric,
                 year: payload.year,
                 month: payload.month,
+                targetScope: payload.targetScope,
                 employeeTypeId: payload.employeeTypeId,
+                employeeTypeChildId: payload.employeeTypeChildId,
             },
             update: {
                 $set: payload,

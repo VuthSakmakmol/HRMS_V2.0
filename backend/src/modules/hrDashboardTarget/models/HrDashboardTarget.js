@@ -45,11 +45,38 @@ const hrDashboardTargetSchema = new Schema(
             index: true,
         },
 
+        targetScope: {
+            type: String,
+            enum: ["OVERALL", "EMPLOYEE_TYPE"],
+            default: "EMPLOYEE_TYPE",
+            required: true,
+            index: true,
+        },
+
         employeeTypeId: {
             type: Schema.Types.ObjectId,
             ref: "EmployeeType",
-            required: true,
+            default: null,
             index: true,
+        },
+
+        employeeTypeChildId: {
+            type: Schema.Types.ObjectId,
+            default: null,
+            index: true,
+        },
+        employeeTypeChildCode: {
+            type: String,
+            trim: true,
+            maxlength: 30,
+            default: "",
+        },
+        employeeTypeChildName: {
+            type: String,
+            trim: true,
+            maxlength: 120,
+            set: normalizeText,
+            default: "",
         },
 
         targetRate: {
@@ -100,10 +127,12 @@ hrDashboardTargetSchema.index(
         metric: 1,
         year: 1,
         month: 1,
+        targetScope: 1,
         employeeTypeId: 1,
+        employeeTypeChildId: 1,
     },
     {
-        name: "idx_hr_dashboard_target_employee_type_period_metric",
+        name: "idx_hr_dashboard_target_employee_type_child_period_metric",
     },
 )
 

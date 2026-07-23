@@ -437,7 +437,10 @@ export default {
         archiveConfirm: "Archive this dashboard target? It will no longer be used by HR Dashboard or Attendance.",
         allMetrics: "All metrics",
         allMonths: "All months",
+        allScopes: "All target scopes",
         wholeYear: "Whole year",
+        overallTarget: "Overall target",
+        targetScope: "Target scope",
         noChild: "No child / all children",
         metric: "Metric",
         year: "Year",
@@ -448,6 +451,12 @@ export default {
         branch: "Branch",
         employeeType: "Employee type",
         employeeTypeChild: "Employee type child",
+        allEmployeeTypeChildren: "All employee type children",
+        selectEmployeeTypeChild: "Select employee type child",
+        scopes: {
+            overall: "Overall target",
+            employeeType: "Employee type target"
+        },
         department: "Department",
         position: "Position",
         line: "Line",
@@ -455,7 +464,7 @@ export default {
         import: "Import",
         export: "Export",
         importTitle: "Import dashboard targets",
-        importDescription: "Company and branch come from the topbar. Set one target per employee type; the backend validates every row before saving anything.",
+        importDescription: "Company and branch come from the topbar. Use OVERALL with blank employee type columns, or EMPLOYEE_TYPE with an Employee Type Code and required child code where applicable. The backend validates every row before saving anything.",
         importCompleted: "Dashboard target import completed",
         importRejected: "Dashboard target import rejected",
         metrics: {
@@ -1535,11 +1544,13 @@ export default {
                 invalidId: "Invalid dashboard target ID.",
                 notFound: "Dashboard target was not found.",
                 archived: "Archived dashboard target cannot be updated.",
-                duplicateScope: "A dashboard target already exists for this employee type, metric, and period.",
+                duplicateScope: "A dashboard target already exists for this scope, metric, and period.",
                 invalidReference: "One or more selected references are invalid.",
                 referenceNotFound: "One or more selected references were not found or are archived.",
                 employeeTypeNotFound: "Employee type was not found or is archived.",
                 employeeTypeChildNotFound: "Employee type child was not found.",
+                employeeTypeChildRequired: "Select an employee type child for this employee type.",
+                employeeTypeChildNotAllowed: "The selected employee type does not have child groups.",
                 importFileRequired: "Choose an Excel file to import.",
                 importValidationFailed: "The import contains validation errors. Review the listed Excel rows."
             }

@@ -133,6 +133,7 @@ function optionalEnumFromQuery(values) {
 const statusSchema = z.enum(["ACTIVE", "INACTIVE", "ARCHIVED"])
 const listStatusSchema = z.enum(["ALL", "ACTIVE", "INACTIVE", "ARCHIVED"])
 const metricSchema = z.enum(["ABSENCE_RATE", "TURNOVER_RATE"])
+const targetScopeSchema = z.enum(["OVERALL", "EMPLOYEE_TYPE"])
 
 export const hrDashboardTargetListQuerySchema = z.object({
     page: integerFromQuery(1, 1, 100000),
@@ -145,7 +146,9 @@ export const hrDashboardTargetListQuerySchema = z.object({
     branchId: optionalObjectIdSchema(),
     year: optionalIntegerFromQuery(2000, 2100),
     month: optionalIntegerFromQuery(0, 12),
+    targetScope: optionalEnumFromQuery(["OVERALL", "EMPLOYEE_TYPE"]),
     employeeTypeId: optionalObjectIdSchema(),
+    employeeTypeChildId: optionalObjectIdSchema(),
 })
 
 export const hrDashboardTargetCreateSchema = z.object({
@@ -154,7 +157,9 @@ export const hrDashboardTargetCreateSchema = z.object({
     metric: metricSchema,
     year: z.coerce.number().int().min(2000).max(2100),
     month: z.coerce.number().int().min(0).max(12).default(0),
-    employeeTypeId: objectIdSchema,
+    targetScope: targetScopeSchema.default("EMPLOYEE_TYPE"),
+    employeeTypeId: nullableObjectIdSchema(),
+    employeeTypeChildId: nullableObjectIdSchema(),
     targetRate: z.coerce.number().min(0).max(100),
     remark: z.string().trim().max(500).optional().default(""),
     status: statusSchema.optional().default("ACTIVE"),

@@ -148,12 +148,10 @@ function targetPopulate(query) {
     return query
         .populate({ path: "companyId", select: "code displayName legalName status" })
         .populate({ path: "branchId", select: "companyId code name shortName status" })
-        .populate({ path: "employeeTypeId", select: "code name shortName status" })
+        .populate({ path: "employeeTypeId", select: "code name children status" })
 }
 
 async function validateReferences(payload, user, { requireEmployeeType = true } = {}) {
-    if (!requireEmployeeType) return
-
     ensureObjectId(
         payload.companyId,
         "HR_DASHBOARD_TARGET_COMPANY_INVALID_ID",
@@ -192,17 +190,24 @@ async function validateReferences(payload, user, { requireEmployeeType = true } 
         })
     }
 
+    if (!requireEmployeeType) return
+
+    if (payload.targetScope === "OVERALL") {
+        return { employeeType: null, child: null }
+    }
+
     ensureObjectId(
         payload.employeeTypeId,
         "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_INVALID_ID",
         "errors.report.hrDashboardTarget.invalidReference",
     )
 
-    const employeeType = await EmployeeType.exists({
+    const employeeType = await EmployeeType.findOne({
         _id: payload.employeeTypeId,
         companyId: payload.companyId,
+        branchId: payload.branchId,
         status: { $ne: "ARCHIVED" },
-    })
+    }).select("children").lean()
 
     if (!employeeType) {
         throw new AppError({
@@ -214,13 +219,44 @@ async function validateReferences(payload, user, { requireEmployeeType = true } 
             },
         })
     }
+
+    const children = employeeType.children || []
+    const selectedChild = payload.employeeTypeChildId
+        ? children.find((child) => sameId(child._id, payload.employeeTypeChildId))
+        : null
+
+    if (children.length && !selectedChild) {
+        throw new AppError({
+            statusCode: 422,
+            code: "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_CHILD_REQUIRED",
+            messageKey: "errors.report.hrDashboardTarget.employeeTypeChildRequired",
+            fields: {
+                employeeTypeChildId: ["errors.report.hrDashboardTarget.employeeTypeChildRequired"],
+            },
+        })
+    }
+
+    if (!children.length && payload.employeeTypeChildId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "HR_DASHBOARD_TARGET_EMPLOYEE_TYPE_CHILD_NOT_ALLOWED",
+            messageKey: "errors.report.hrDashboardTarget.employeeTypeChildNotAllowed",
+            fields: {
+                employeeTypeChildId: ["errors.report.hrDashboardTarget.employeeTypeChildNotAllowed"],
+            },
+        })
+    }
+
+    return {
+        employeeType,
+        child: selectedChild,
+    }
 }
 
 function buildListFilter(query, user) {
     const filter = {
         ...getTargetScopeFilter(user),
         ...buildSearchFilter(query.search),
-        employeeTypeId: { $ne: null },
     }
 
     for (const key of [
@@ -229,7 +265,9 @@ function buildListFilter(query, user) {
         "metric",
         "year",
         "month",
+        "targetScope",
         "employeeTypeId",
+        "employeeTypeChildId",
     ]) {
         if (query[key] !== undefined && query[key] !== null && query[key] !== "") {
             filter[key] = query[key]
@@ -254,7 +292,11 @@ function buildMutationPayload(payload, accountId) {
         "metric",
         "year",
         "month",
+        "targetScope",
         "employeeTypeId",
+        "employeeTypeChildId",
+        "employeeTypeChildCode",
+        "employeeTypeChildName",
         "targetRate",
         "remark",
         "status",
@@ -284,7 +326,9 @@ async function assertNoDuplicate(payload, excludedId = null) {
         metric: payload.metric,
         year: payload.year,
         month: payload.month,
+        targetScope: payload.targetScope,
         employeeTypeId: payload.employeeTypeId,
+        employeeTypeChildId: payload.employeeTypeChildId || null,
         status: { $ne: "ARCHIVED" },
     }
     if (excludedId) filter._id = { $ne: excludedId }
@@ -310,7 +354,18 @@ export function serializeHrDashboardTarget(target) {
         metric: raw.metric,
         year: raw.year,
         month: Number(raw.month || 0),
+        targetScope: raw.targetScope || (raw.employeeTypeId ? "EMPLOYEE_TYPE" : "OVERALL"),
         employeeTypeId: toId(raw.employeeTypeId),
+        employeeTypeChildId: toId(raw.employeeTypeChildId),
+        employeeTypeChildCode: raw.employeeTypeChildCode || "",
+        employeeTypeChildName: raw.employeeTypeChildName || "",
+        employeeTypeChild: raw.employeeTypeChildId
+            ? {
+                id: toId(raw.employeeTypeChildId),
+                code: raw.employeeTypeChildCode || "",
+                name: raw.employeeTypeChildName || "",
+            }
+            : null,
         targetRate: Number(raw.targetRate || 0),
         remark: raw.remark || "",
         status: raw.status,
@@ -391,7 +446,12 @@ export async function getHrDashboardTargetById({ targetId, user }) {
 }
 
 export async function createHrDashboardTarget({ payload, user }) {
-    await validateReferences(payload, user)
+    payload.targetScope = payload.targetScope || "EMPLOYEE_TYPE"
+    const references = await validateReferences(payload, user)
+    payload.employeeTypeId = payload.targetScope === "OVERALL" ? null : payload.employeeTypeId
+    payload.employeeTypeChildId = payload.targetScope === "OVERALL" ? null : references.child?._id || null
+    payload.employeeTypeChildCode = payload.targetScope === "OVERALL" ? "" : references.child?.code || ""
+    payload.employeeTypeChildName = payload.targetScope === "OVERALL" ? "" : references.child?.name || ""
     await assertNoDuplicate(payload)
 
     try {
@@ -443,8 +503,15 @@ export async function updateHrDashboardTarget({ targetId, payload, user }) {
         ...existing,
         ...payload,
     }
+    merged.targetScope = merged.targetScope || (merged.employeeTypeId ? "EMPLOYEE_TYPE" : "OVERALL")
 
-    await validateReferences(merged, user)
+    const references = await validateReferences(merged, user)
+    payload.targetScope = merged.targetScope
+    payload.employeeTypeId = merged.targetScope === "OVERALL" ? null : merged.employeeTypeId
+    payload.employeeTypeChildId = merged.targetScope === "OVERALL" ? null : references.child?._id || null
+    payload.employeeTypeChildCode = merged.targetScope === "OVERALL" ? "" : references.child?.code || ""
+    payload.employeeTypeChildName = merged.targetScope === "OVERALL" ? "" : references.child?.name || ""
+    Object.assign(merged, payload)
     await assertNoDuplicate(merged, existing._id)
 
     try {
@@ -520,6 +587,11 @@ function lookupItem(item) {
         title: item.title || item.name || "",
         companyId: toId(item.companyId),
         branchId: toId(item.branchId),
+        children: (item.children || []).map((child) => ({
+            id: toId(child._id || child.id),
+            code: child.code || "",
+            name: child.name || "",
+        })),
     }
 }
 
@@ -537,7 +609,7 @@ export async function getHrDashboardTargetLookups({ query, user }) {
             companyId: query.companyId,
             status: "ACTIVE",
         })
-            .select("code name companyId")
+            .select("code name companyId branchId children")
             .sort({ code: 1, name: 1 })
             .lean()
 
