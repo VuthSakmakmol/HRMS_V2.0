@@ -63,6 +63,8 @@ const environmentSchema = z.object({
     ATTENDANCE_EMAIL_OVERALL_LABEL: z.string().trim().default("Overall Absent rate"),
 
     ATTENDANCE_EMAIL_SEWER_LABEL: z.string().trim().default("Sewers Absent rate"),
+
+    ATTENDANCE_AGENT_TOKEN: z.string().trim().min(32).optional(),
 })
 
 const parsedEnvironment = environmentSchema.safeParse(process.env)

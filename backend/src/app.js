@@ -26,6 +26,7 @@ import attendanceRoutes from "./modules/attendance/routes/attendance.routes.js"
 import attendancePolicyRoutes from "./modules/attendance/routes/attendancePolicy.routes.js"
 import attendanceScanRoutes from "./modules/attendance/routes/attendanceScan.routes.js"
 import attendanceVerificationRoutes from "./modules/attendance/routes/attendanceVerification.routes.js"
+import attendanceAgentRoutes from "./modules/attendance/routes/attendanceAgent.routes.js"
 import recruitmentChannelRoutes from "./modules/recruitmentChannel/routes/recruitmentChannel.routes.js"
 import hrDashboardTargetRoutes from "./modules/hrDashboardTarget/routes/hrDashboardTarget.routes.js"
 import exitReasonRoutes from "./modules/exitReason/routes/exitReason.routes.js"
@@ -105,6 +106,7 @@ app.use("/api/v1/reports/manpower-plans", manpowerPlanRoutes)
 app.use("/api/v1/approvals", approvalRoutes)
 app.use("/api/v1/calendar", calendarRoutes)
 app.use("/api/v1/hr-dashboard", hrDashboardRoutes)
+app.use("/api/v1/attendance/agent", attendanceAgentRoutes)
 app.use("/api/v1/attendance", attendanceRoutes)
 app.use("/api/v1/attendance/policies", attendancePolicyRoutes)
 app.use("/api/v1/attendance/scans", attendanceScanRoutes)
