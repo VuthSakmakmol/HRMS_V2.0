@@ -52,6 +52,7 @@ import {
 import {
     getPayrollSchedule,
     requestPayrollRunNow,
+    requestPayrollRunCancellation,
     savePayrollSchedule,
 } from "../services/attendancePayrollSchedule.service.js"
 
@@ -156,6 +157,26 @@ router.get(
                 user: req.auth.user,
             })
             res.status(200).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/payroll-schedule/cancel",
+    requirePermission("ATTENDANCE.RECORD.IMPORT"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(
+                attendancePayrollScheduleQuerySchema,
+                req.body,
+            )
+            const schedule = await requestPayrollRunCancellation({
+                ...payload,
+                user: req.auth.user,
+            })
+            res.status(202).json({ success: true, data: { schedule } })
         } catch (error) {
             next(error)
         }

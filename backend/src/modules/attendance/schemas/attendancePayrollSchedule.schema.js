@@ -19,7 +19,19 @@ export const attendancePayrollRunResultSchema = z.object({
     companyId: objectId,
     branchId: objectId,
     claimToken: z.string().uuid(),
-    success: z.boolean(),
+    outcome: z.enum(["SUCCESS", "FAILED", "CANCELLED"]),
     importedFile: z.string().trim().max(255).default(""),
     error: z.string().trim().max(4000).default(""),
 })
+
+export const attendancePayrollRunStatusSchema =
+    attendancePayrollScheduleQuerySchema.extend({
+        claimToken: z.string().uuid(),
+    })
+
+export const attendancePayrollRunProgressSchema =
+    attendancePayrollRunStatusSchema.extend({
+        percent: z.number().int().min(0).max(100),
+        phase: z.string().trim().min(1).max(80),
+        detail: z.string().trim().max(500).default(""),
+    })

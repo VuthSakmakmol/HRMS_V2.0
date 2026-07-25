@@ -196,6 +196,14 @@ export async function runAttendancePayrollBotNow(payload) {
     return response.data.data.schedule
 }
 
+export async function cancelAttendancePayrollBotRun(payload) {
+    const response = await apiClient.post(
+        `${ATTENDANCE_ENDPOINT}/payroll-schedule/cancel`,
+        payload,
+    )
+    return response.data.data.schedule
+}
+
 
 const POLICY_ENDPOINT = "/attendance/policies"
 const SCAN_ENDPOINT = "/attendance/scans"

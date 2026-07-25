@@ -6,7 +6,7 @@ import Message from "primevue/message"
 import ProgressBar from "primevue/progressbar"
 import Select from "primevue/select"
 import ToggleSwitch from "primevue/toggleswitch"
-import { computed, onMounted, reactive, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
 import { useToast } from "primevue/usetoast"
 
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
@@ -26,6 +26,7 @@ import {
     fetchAttendanceDailyEmailSchedule,
     fetchAttendancePayrollSchedule,
     runAttendancePayrollBotNow,
+    cancelAttendancePayrollBotRun,
     saveAttendanceDailyEmailSchedule,
     saveAttendancePayrollSchedule,
     sendAttendanceDailyEmail,
@@ -47,6 +48,8 @@ const savingSchedule = ref(false)
 const payrollScheduleDialogVisible = ref(false)
 const savingPayrollSchedule = ref(false)
 const requestingPayrollRun = ref(false)
+const cancellingPayrollRun = ref(false)
+let payrollStatusTimer = null
 const emailStatus = ref({ sent: false })
 const emailSchedule = reactive({
     enabled: false,
@@ -71,6 +74,13 @@ const payrollSchedule = reactive({
     lastImportedFile: "",
     lastError: "",
     runNowPending: false,
+    cancelPending: false,
+    canCancel: false,
+    lastCancelledAt: null,
+    progressPercent: 0,
+    progressPhase: "",
+    progressDetail: "",
+    progressUpdatedAt: null,
 })
 const error = ref("")
 const departments = ref([])
@@ -154,13 +164,19 @@ async function saveEmailSchedule() {
     }
 }
 
-async function loadPayrollSchedule() {
+async function loadPayrollSchedule({ preserveForm = false } = {}) {
     if (!workspace.ready) return
     try {
+        const enabled = payrollSchedule.enabled
+        const runTime = payrollSchedule.runTime
         Object.assign(payrollSchedule, await fetchAttendancePayrollSchedule({
             companyId: workspace.companyId,
             branchId: workspace.branchId,
         }))
+        if (preserveForm) {
+            payrollSchedule.enabled = enabled
+            payrollSchedule.runTime = runTime
+        }
     } catch (requestError) {
         toast.add({ severity: "error", summary: "Payroll schedule unavailable", detail: errorMessage(requestError), life: 5000 })
     }
@@ -214,6 +230,42 @@ async function runPayrollBotNow() {
     } finally {
         requestingPayrollRun.value = false
     }
+}
+
+async function cancelPayrollBotRun() {
+    cancellingPayrollRun.value = true
+    try {
+        Object.assign(payrollSchedule, await cancelAttendancePayrollBotRun({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+        }))
+        toast.add({
+            severity: "warn",
+            summary: "Cancellation requested",
+            detail: payrollSchedule.cancelPending
+                ? "The bot will stop safely at its next step."
+                : "The pending run was cancelled.",
+            life: 4500,
+        })
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Cancel failed", detail: errorMessage(requestError), life: 5000 })
+    } finally {
+        cancellingPayrollRun.value = false
+    }
+}
+
+function stopPayrollStatusPolling() {
+    if (payrollStatusTimer) window.clearInterval(payrollStatusTimer)
+    payrollStatusTimer = null
+}
+
+function startPayrollStatusPolling() {
+    stopPayrollStatusPolling()
+    payrollStatusTimer = window.setInterval(() => {
+        if (payrollScheduleDialogVisible.value) {
+            loadPayrollSchedule({ preserveForm: true })
+        }
+    }, 2000)
 }
 
 function openEmailReview() {
@@ -457,7 +509,12 @@ watch(() => workspace.revision, async () => {
     filters.departmentId = ""
     await Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()])
 })
+watch(payrollScheduleDialogVisible, (visible) => {
+    if (visible) startPayrollStatusPolling()
+    else stopPayrollStatusPolling()
+})
 onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()]))
+onBeforeUnmount(stopPayrollStatusPolling)
 </script>
 
 <template>
@@ -676,9 +733,21 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loa
                     The Payroll computer must be powered on, signed in to Windows, and connected to the HRMS server. The bot process exits automatically after export, conversion, and import finish.
                 </Message>
 
+                <div
+                    v-if="payrollSchedule.runNowPending || ['RUNNING', 'CANCEL_REQUESTED'].includes(payrollSchedule.status) || payrollSchedule.progressPercent"
+                    class="payroll-progress"
+                >
+                    <div>
+                        <strong>{{ payrollSchedule.progressPhase ? payrollSchedule.progressPhase.replaceAll("_", " ") : "WAITING FOR PAYROLL COMPUTER" }}</strong>
+                        <span>{{ payrollSchedule.progressPercent || 0 }}%</span>
+                    </div>
+                    <ProgressBar :value="payrollSchedule.progressPercent || 0" />
+                    <small v-if="payrollSchedule.progressDetail">{{ payrollSchedule.progressDetail }}</small>
+                </div>
+
                 <dl class="schedule-status">
                     <dt>Status</dt>
-                    <dd>{{ payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status }}</dd>
+                    <dd>{{ payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status.replaceAll("_", " ") }}</dd>
                     <template v-if="payrollSchedule.lastRunAt">
                         <dt>Last run started</dt>
                         <dd>{{ new Date(payrollSchedule.lastRunAt).toLocaleString() }}</dd>
@@ -691,6 +760,10 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loa
                         <dt>Last imported file</dt>
                         <dd>{{ payrollSchedule.lastImportedFile }}</dd>
                     </template>
+                    <template v-if="payrollSchedule.lastCancelledAt">
+                        <dt>Last cancelled</dt>
+                        <dd>{{ new Date(payrollSchedule.lastCancelledAt).toLocaleString() }}</dd>
+                    </template>
                     <template v-if="payrollSchedule.lastError">
                         <dt>Last error</dt>
                         <dd class="schedule-error">{{ payrollSchedule.lastError }}</dd>
@@ -698,13 +771,23 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loa
                 </dl>
             </div>
             <template #footer>
-                <Button label="Close" severity="secondary" text :disabled="savingPayrollSchedule || requestingPayrollRun" @click="payrollScheduleDialogVisible = false" />
+                <Button label="Close" severity="secondary" text :disabled="savingPayrollSchedule || requestingPayrollRun || cancellingPayrollRun" @click="payrollScheduleDialogVisible = false" />
+                <PermissionButton
+                    v-if="payrollSchedule.canCancel"
+                    :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT"
+                    label="Cancel Run"
+                    icon="pi pi-stop-circle"
+                    severity="danger"
+                    :loading="cancellingPayrollRun"
+                    @click="cancelPayrollBotRun"
+                />
                 <PermissionButton
                     :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT"
                     label="Run Now"
                     icon="pi pi-play"
                     severity="secondary"
                     :loading="requestingPayrollRun"
+                    :disabled="payrollSchedule.canCancel || cancellingPayrollRun"
                     @click="runPayrollBotNow"
                 />
                 <Button label="Save Schedule" icon="pi pi-check" :loading="savingPayrollSchedule" @click="savePayrollBotSchedule" />
@@ -802,6 +885,27 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loa
     gap: 0.4rem 0.75rem;
     margin: 0;
     font-size: 0.82rem;
+}
+
+.payroll-progress {
+    display: grid;
+    gap: 0.45rem;
+    padding: 0.75rem;
+    border: 1px solid var(--p-surface-200);
+    border-radius: 0.65rem;
+    background: var(--p-surface-50);
+}
+
+.payroll-progress > div:first-child {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.82rem;
+}
+
+.payroll-progress small {
+    color: var(--p-text-muted-color);
 }
 
 .schedule-status dt {

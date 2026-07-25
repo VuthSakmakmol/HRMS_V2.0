@@ -5,10 +5,14 @@ import { requireAttendanceAgent } from "../middleware/attendanceAgentAuth.middle
 import {
     attendancePayrollRunResultSchema,
     attendancePayrollScheduleQuerySchema,
+    attendancePayrollRunStatusSchema,
+    attendancePayrollRunProgressSchema,
 } from "../schemas/attendancePayrollSchedule.schema.js"
 import {
     claimDuePayrollRun,
     finishPayrollRun,
+    getPayrollRunStatus,
+    updatePayrollRunProgress,
 } from "../services/attendancePayrollSchedule.service.js"
 
 const router = Router()
@@ -72,6 +76,44 @@ router.post("/payroll-schedule/result", async (req, res, next) => {
             data: {
                 schedule,
             },
+        })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.post("/payroll-schedule/progress", async (req, res, next) => {
+    try {
+        const parsed = attendancePayrollRunProgressSchema.safeParse(req.body)
+        if (!parsed.success) {
+            throw new AppError({
+                statusCode: 422,
+                code: "ATTENDANCE_PAYROLL_PROGRESS_VALIDATION_FAILED",
+                messageKey: "errors.validationFailed",
+                fields: parsed.error.flatten().fieldErrors,
+            })
+        }
+        const schedule = await updatePayrollRunProgress(parsed.data)
+        res.status(200).json({ success: true, data: { schedule } })
+    } catch (error) {
+        next(error)
+    }
+})
+
+router.get("/payroll-schedule/status", async (req, res, next) => {
+    try {
+        const parsed = attendancePayrollRunStatusSchema.safeParse(req.query)
+        if (!parsed.success) {
+            throw new AppError({
+                statusCode: 422,
+                code: "ATTENDANCE_PAYROLL_STATUS_VALIDATION_FAILED",
+                messageKey: "errors.validationFailed",
+                fields: parsed.error.flatten().fieldErrors,
+            })
+        }
+        res.status(200).json({
+            success: true,
+            data: await getPayrollRunStatus(parsed.data),
         })
     } catch (error) {
         next(error)
