@@ -45,6 +45,15 @@ import {
     getAttendanceDailyEmailSchedule,
     saveAttendanceDailyEmailSchedule,
 } from "../services/attendanceDailyEmailSchedule.service.js"
+import {
+    attendancePayrollScheduleQuerySchema,
+    attendancePayrollScheduleSaveSchema,
+} from "../schemas/attendancePayrollSchedule.schema.js"
+import {
+    getPayrollSchedule,
+    requestPayrollRunNow,
+    savePayrollSchedule,
+} from "../services/attendancePayrollSchedule.service.js"
 
 const router = Router()
 const upload = multer({
@@ -132,6 +141,66 @@ function parseRequest(schema, value) {
 }
 
 router.use(requireAuthentication)
+
+router.get(
+    "/payroll-schedule",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(
+                attendancePayrollScheduleQuerySchema,
+                req.query,
+            )
+            const schedule = await getPayrollSchedule({
+                ...payload,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.put(
+    "/payroll-schedule",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(
+                attendancePayrollScheduleSaveSchema,
+                req.body,
+            )
+            const schedule = await savePayrollSchedule({
+                payload,
+                user: req.auth.user,
+            })
+            res.status(200).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/payroll-schedule/run-now",
+    requirePermission("ATTENDANCE.RECORD.IMPORT"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(
+                attendancePayrollScheduleQuerySchema,
+                req.body,
+            )
+            const schedule = await requestPayrollRunNow({
+                ...payload,
+                user: req.auth.user,
+            })
+            res.status(202).json({ success: true, data: { schedule } })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
 
 router.post(
     "/daily-report/jobs",

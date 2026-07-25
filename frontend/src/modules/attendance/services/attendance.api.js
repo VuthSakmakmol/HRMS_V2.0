@@ -173,6 +173,29 @@ export async function saveAttendanceDailyEmailSchedule(payload) {
     return response.data.data.schedule
 }
 
+export async function fetchAttendancePayrollSchedule(params = {}) {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/payroll-schedule`, {
+        params: withoutBlankParams(params),
+    })
+    return response.data.data.schedule
+}
+
+export async function saveAttendancePayrollSchedule(payload) {
+    const response = await apiClient.put(
+        `${ATTENDANCE_ENDPOINT}/payroll-schedule`,
+        payload,
+    )
+    return response.data.data.schedule
+}
+
+export async function runAttendancePayrollBotNow(payload) {
+    const response = await apiClient.post(
+        `${ATTENDANCE_ENDPOINT}/payroll-schedule/run-now`,
+        payload,
+    )
+    return response.data.data.schedule
+}
+
 
 const POLICY_ENDPOINT = "/attendance/policies"
 const SCAN_ENDPOINT = "/attendance/scans"

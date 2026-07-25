@@ -22,21 +22,22 @@ import manpowerPlanRoutes from "./modules/manpowerPlan/routes/manpowerPlan.route
 import approvalRoutes from "./modules/approval/routes/approval.routes.js"
 import calendarRoutes from "./modules/calendar/routes/calendar.routes.js"
 import hrDashboardRoutes from "./modules/hrDashboard/routes/hrDashboard.routes.js"
-import attendanceRoutes from "./modules/attendance/routes/attendance.routes.js"
+
+import attendanceAgentRoutes from "./modules/attendance/routes/attendanceAgent.routes.js"
 import attendancePolicyRoutes from "./modules/attendance/routes/attendancePolicy.routes.js"
 import attendanceScanRoutes from "./modules/attendance/routes/attendanceScan.routes.js"
 import attendanceVerificationRoutes from "./modules/attendance/routes/attendanceVerification.routes.js"
+import attendanceRoutes from "./modules/attendance/routes/attendance.routes.js"
+
 import recruitmentChannelRoutes from "./modules/recruitmentChannel/routes/recruitmentChannel.routes.js"
 import hrDashboardTargetRoutes from "./modules/hrDashboardTarget/routes/hrDashboardTarget.routes.js"
 import exitReasonRoutes from "./modules/exitReason/routes/exitReason.routes.js"
-
 
 import { AppError } from "./shared/errors/AppError.js"
 import { errorHandler } from "./shared/middleware/errorHandler.js"
 import { notFound } from "./shared/middleware/notFound.js"
 import { requestContext } from "./shared/middleware/requestContext.js"
 import { requestMetrics } from "./shared/middleware/requestMetrics.js"
-
 
 const allowedOrigins = new Set(
     env.CLIENT_URL.split(",")
@@ -78,7 +79,12 @@ app.use(
 )
 
 app.use(express.json({ limit: env.REQUEST_BODY_LIMIT }))
-app.use(express.urlencoded({ extended: false, limit: env.REQUEST_BODY_LIMIT }))
+app.use(
+    express.urlencoded({
+        extended: false,
+        limit: env.REQUEST_BODY_LIMIT,
+    }),
+)
 
 app.use(
     morgan(
@@ -88,9 +94,16 @@ app.use(
     ),
 )
 
+/*
+ * System and access
+ */
 app.use("/api/v1", systemRoutes)
 app.use("/api/v1/auth", authRoutes)
 app.use("/api/v1/access", accessManagementRoutes)
+
+/*
+ * Organization setup
+ */
 app.use("/api/v1/organization/companies", companyRoutes)
 app.use("/api/v1/organization/branches", branchRoutes)
 app.use("/api/v1/organization/departments", departmentRoutes)
@@ -99,20 +112,50 @@ app.use("/api/v1/organization/lines", lineRoutes)
 app.use("/api/v1/organization/shifts", shiftRoutes)
 app.use("/api/v1/organization/employee-types", employeeTypeRoutes)
 app.use("/api/v1/organization/locations", locationRoutes)
-app.use("/api/v1/employees", employeeRoutes)
-app.use("/api/v1/employee-movements", employeeMovementRoutes)
-app.use("/api/v1/reports/manpower-plans", manpowerPlanRoutes)
-app.use("/api/v1/approvals", approvalRoutes)
-app.use("/api/v1/calendar", calendarRoutes)
-app.use("/api/v1/hr-dashboard", hrDashboardRoutes)
-app.use("/api/v1/attendance", attendanceRoutes)
-app.use("/api/v1/attendance/policies", attendancePolicyRoutes)
-app.use("/api/v1/attendance/scans", attendanceScanRoutes)
-app.use("/api/v1/attendance/verification", attendanceVerificationRoutes)
-app.use("/api/v1/organization/recruitment-channels", recruitmentChannelRoutes)
-app.use("/api/v1/reports/hr-dashboard-targets", hrDashboardTargetRoutes)
+app.use(
+    "/api/v1/organization/recruitment-channels",
+    recruitmentChannelRoutes,
+)
 app.use("/api/v1/organization/exit-reasons", exitReasonRoutes)
 
+/*
+ * Employee and approval
+ */
+app.use("/api/v1/employees", employeeRoutes)
+app.use("/api/v1/employee-movements", employeeMovementRoutes)
+app.use("/api/v1/approvals", approvalRoutes)
+
+/*
+ * Calendar and reports
+ */
+app.use("/api/v1/calendar", calendarRoutes)
+app.use("/api/v1/hr-dashboard", hrDashboardRoutes)
+app.use("/api/v1/reports/manpower-plans", manpowerPlanRoutes)
+app.use(
+    "/api/v1/reports/hr-dashboard-targets",
+    hrDashboardTargetRoutes,
+)
+
+/*
+ * Attendance
+ *
+ * Important:
+ * Specific attendance routes must be registered before the general
+ * /api/v1/attendance router. Otherwise attendanceRoutes can capture
+ * agent requests and apply normal HRMS JWT authentication.
+ */
+app.use("/api/v1/attendance/agent", attendanceAgentRoutes)
+app.use("/api/v1/attendance/policies", attendancePolicyRoutes)
+app.use("/api/v1/attendance/scans", attendanceScanRoutes)
+app.use(
+    "/api/v1/attendance/verification",
+    attendanceVerificationRoutes,
+)
+app.use("/api/v1/attendance", attendanceRoutes)
+
+/*
+ * Error handling
+ */
 app.use(notFound)
 app.use(errorHandler)
 

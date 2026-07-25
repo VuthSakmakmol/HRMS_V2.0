@@ -24,7 +24,10 @@ import {
     fetchAttendanceDailyReportJob,
     fetchAttendanceDailyEmailStatus,
     fetchAttendanceDailyEmailSchedule,
+    fetchAttendancePayrollSchedule,
+    runAttendancePayrollBotNow,
     saveAttendanceDailyEmailSchedule,
+    saveAttendancePayrollSchedule,
     sendAttendanceDailyEmail,
 } from "../services/attendance.api.js"
 
@@ -41,6 +44,9 @@ const emailDialogVisible = ref(false)
 const resendDialogVisible = ref(false)
 const scheduleDialogVisible = ref(false)
 const savingSchedule = ref(false)
+const payrollScheduleDialogVisible = ref(false)
+const savingPayrollSchedule = ref(false)
+const requestingPayrollRun = ref(false)
 const emailStatus = ref({ sent: false })
 const emailSchedule = reactive({
     enabled: false,
@@ -53,6 +59,18 @@ const emailSchedule = reactive({
     lastError: "",
     lastSkippedDate: null,
     lastSkippedDayType: "",
+})
+const payrollSchedule = reactive({
+    enabled: false,
+    runTime: "08:00",
+    timeZone: "Asia/Phnom_Penh",
+    status: "IDLE",
+    lastRunAt: null,
+    lastFinishedAt: null,
+    lastSuccessAt: null,
+    lastImportedFile: "",
+    lastError: "",
+    runNowPending: false,
 })
 const error = ref("")
 const departments = ref([])
@@ -133,6 +151,68 @@ async function saveEmailSchedule() {
         toast.add({ severity: "error", summary: "Schedule not saved", detail: errorMessage(requestError), life: 5000 })
     } finally {
         savingSchedule.value = false
+    }
+}
+
+async function loadPayrollSchedule() {
+    if (!workspace.ready) return
+    try {
+        Object.assign(payrollSchedule, await fetchAttendancePayrollSchedule({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+        }))
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Payroll schedule unavailable", detail: errorMessage(requestError), life: 5000 })
+    }
+}
+
+async function openPayrollScheduleDialog() {
+    await loadPayrollSchedule()
+    payrollScheduleDialogVisible.value = true
+}
+
+async function savePayrollBotSchedule() {
+    savingPayrollSchedule.value = true
+    try {
+        Object.assign(payrollSchedule, await saveAttendancePayrollSchedule({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+            enabled: payrollSchedule.enabled,
+            runTime: payrollSchedule.runTime,
+            timeZone: "Asia/Phnom_Penh",
+        }))
+        toast.add({
+            severity: "success",
+            summary: payrollSchedule.enabled ? "Automatic attendance enabled" : "Automatic attendance disabled",
+            detail: payrollSchedule.enabled
+                ? `The Payroll bot will run daily at ${payrollSchedule.runTime}.`
+                : "The Payroll bot schedule is turned off.",
+            life: 4500,
+        })
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Schedule not saved", detail: errorMessage(requestError), life: 5000 })
+    } finally {
+        savingPayrollSchedule.value = false
+    }
+}
+
+async function runPayrollBotNow() {
+    requestingPayrollRun.value = true
+    try {
+        Object.assign(payrollSchedule, await runAttendancePayrollBotNow({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+        }))
+        toast.add({
+            severity: "success",
+            summary: "Run requested",
+            detail: "The Payroll computer will start the bot within one minute.",
+            life: 4500,
+        })
+    } catch (requestError) {
+        toast.add({ severity: "error", summary: "Run request failed", detail: errorMessage(requestError), life: 5000 })
+    } finally {
+        requestingPayrollRun.value = false
     }
 }
 
@@ -375,9 +455,9 @@ watch(() => filters.reportDate, (value) => {
 
 watch(() => workspace.revision, async () => {
     filters.departmentId = ""
-    await Promise.all([loadDepartments(), load(), loadEmailSchedule()])
+    await Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()])
 })
-onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule()]))
+onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()]))
 </script>
 
 <template>
@@ -394,6 +474,14 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule()]))
                     :severity="emailSchedule.enabled ? 'success' : 'secondary'"
                     text
                     @click="openScheduleDialog"
+                />
+                <PermissionButton
+                    :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT"
+                    :label="payrollSchedule.enabled ? `Auto Import ${payrollSchedule.runTime}` : 'Set Auto Import'"
+                    icon="pi pi-desktop"
+                    :severity="payrollSchedule.enabled ? 'success' : 'secondary'"
+                    text
+                    @click="openPayrollScheduleDialog"
                 />
             </template>
             <template #filters>
@@ -565,6 +653,61 @@ onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule()]))
             <template #footer>
                 <Button label="Cancel" severity="secondary" text :disabled="savingSchedule" @click="scheduleDialogVisible = false" />
                 <Button label="Save Schedule" icon="pi pi-check" :loading="savingSchedule" @click="saveEmailSchedule" />
+            </template>
+        </Dialog>
+
+        <Dialog v-model:visible="payrollScheduleDialogVisible" modal header="Automatic Payroll Attendance Import" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
+            <div class="schedule-form">
+                <div class="schedule-switch-row">
+                    <div>
+                        <strong>Download and import automatically</strong>
+                        <span>The Payroll computer downloads today’s report and imports it into HRMS.</span>
+                    </div>
+                    <ToggleSwitch v-model="payrollSchedule.enabled" />
+                </div>
+
+                <label class="schedule-field">
+                    <span>Daily run time</span>
+                    <input v-model="payrollSchedule.runTime" type="time" step="60" :disabled="!payrollSchedule.enabled" />
+                    <small>Cambodia time (Asia/Phnom_Penh)</small>
+                </label>
+
+                <Message severity="info" :closable="false">
+                    The Payroll computer must be powered on, signed in to Windows, and connected to the HRMS server. The bot process exits automatically after export, conversion, and import finish.
+                </Message>
+
+                <dl class="schedule-status">
+                    <dt>Status</dt>
+                    <dd>{{ payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status }}</dd>
+                    <template v-if="payrollSchedule.lastRunAt">
+                        <dt>Last run started</dt>
+                        <dd>{{ new Date(payrollSchedule.lastRunAt).toLocaleString() }}</dd>
+                    </template>
+                    <template v-if="payrollSchedule.lastSuccessAt">
+                        <dt>Last success</dt>
+                        <dd>{{ new Date(payrollSchedule.lastSuccessAt).toLocaleString() }}</dd>
+                    </template>
+                    <template v-if="payrollSchedule.lastImportedFile">
+                        <dt>Last imported file</dt>
+                        <dd>{{ payrollSchedule.lastImportedFile }}</dd>
+                    </template>
+                    <template v-if="payrollSchedule.lastError">
+                        <dt>Last error</dt>
+                        <dd class="schedule-error">{{ payrollSchedule.lastError }}</dd>
+                    </template>
+                </dl>
+            </div>
+            <template #footer>
+                <Button label="Close" severity="secondary" text :disabled="savingPayrollSchedule || requestingPayrollRun" @click="payrollScheduleDialogVisible = false" />
+                <PermissionButton
+                    :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT"
+                    label="Run Now"
+                    icon="pi pi-play"
+                    severity="secondary"
+                    :loading="requestingPayrollRun"
+                    @click="runPayrollBotNow"
+                />
+                <Button label="Save Schedule" icon="pi pi-check" :loading="savingPayrollSchedule" @click="savePayrollBotSchedule" />
             </template>
         </Dialog>
     </section>
