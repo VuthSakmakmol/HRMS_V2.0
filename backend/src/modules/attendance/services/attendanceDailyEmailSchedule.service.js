@@ -153,7 +153,7 @@ export async function saveAttendanceDailyEmailSchedule({ companyId, branchId, pa
             },
             $setOnInsert: { companyId, branchId },
         },
-        { new: true, upsert: true, runValidators: true },
+        { returnDocument: "after", upsert: true, runValidators: true },
     ).lean()
 
     return { ...publicSchedule(schedule), dayTypeOptions: await getDayTypeOptions(companyId, branchId) }
@@ -179,7 +179,7 @@ async function claimSchedule(schedule, date, now) {
                 lastError: "",
             },
         },
-        { new: true },
+        { returnDocument: "after" },
     ).lean()
 }
 
