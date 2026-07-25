@@ -5,27 +5,6 @@ import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const CLAIM_TIMEOUT_MS = 30 * 60 * 1000
 
-function cambodiaParts(date = new Date()) {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Phnom_Penh",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hourCycle: "h23",
-    }).formatToParts(date)
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-    return {
-        date: `${value.year}-${value.month}-${value.day}`,
-        time: `${value.hour}:${value.minute}`,
-    }
-}
-
-function localDateKey(date) {
-    return date ? cambodiaParts(new Date(date)).date : ""
-}
-
 function publicSchedule(schedule) {
     if (!schedule) {
         return {
@@ -96,8 +75,7 @@ export async function savePayrollSchedule({ payload, user }) {
         { companyId: payload.companyId, branchId: payload.branchId },
         {
             $set: {
-                enabled: payload.enabled,
-                runTime: payload.runTime,
+                enabled: false,
                 timeZone: "Asia/Phnom_Penh",
                 updatedByAccountId: user.accountId,
             },
@@ -120,13 +98,13 @@ export async function requestPayrollRunNow({ companyId, branchId, user }) {
         { companyId, branchId },
         {
             $set: {
+                enabled: false,
                 runNowRequestedAt: new Date(),
                 lastError: "",
                 cancelRequestedAt: null,
                 updatedByAccountId: user.accountId,
             },
             $setOnInsert: {
-                enabled: false,
                 runTime: "08:00",
                 timeZone: "Asia/Phnom_Penh",
                 status: "IDLE",
@@ -208,11 +186,6 @@ export async function claimDuePayrollRun({ companyId, branchId }) {
     if (!schedule) return { shouldRun: false }
 
     const now = new Date()
-    const current = cambodiaParts(now)
-    const scheduledDue = schedule.enabled
-        && current.time >= schedule.runTime
-        && localDateKey(schedule.lastSuccessAt) !== current.date
-        && localDateKey(schedule.lastCancelledAt) !== current.date
     const runNowDue = Boolean(
         schedule.runNowRequestedAt
         && (!schedule.lastFinishedAt
@@ -224,7 +197,7 @@ export async function claimDuePayrollRun({ companyId, branchId }) {
     const claimExpired = !schedule.claimedAt
         || now.getTime() - schedule.claimedAt.getTime() > CLAIM_TIMEOUT_MS
 
-    if ((!scheduledDue && !runNowDue)
+    if ((!runNowDue)
         || (schedule.status === "RUNNING" && !claimExpired)) {
         return { shouldRun: false, schedule: publicSchedule(schedule.toObject()) }
     }
