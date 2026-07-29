@@ -1,9 +1,23 @@
 import crypto from "node:crypto"
 
+import { AppError } from "../../../shared/errors/AppError.js"
 import AttendancePayrollSchedule from "../models/AttendancePayrollSchedule.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const CLAIM_TIMEOUT_MS = 30 * 60 * 1000
+const DEFAULT_TIME_ZONE = "Asia/Phnom_Penh"
+
+function currentDateInTimeZone(timeZone = DEFAULT_TIME_ZONE) {
+    const parts = Object.fromEntries(
+        new Intl.DateTimeFormat("en-CA", {
+            timeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        }).formatToParts(new Date()).map((part) => [part.type, part.value]),
+    )
+    return `${parts.year}-${parts.month}-${parts.day}`
+}
 
 function publicSchedule(schedule) {
     if (!schedule) {
@@ -12,10 +26,13 @@ function publicSchedule(schedule) {
             runTime: "08:00",
             timeZone: "Asia/Phnom_Penh",
             status: "IDLE",
+            requestedDate: null,
             lastRunAt: null,
             lastFinishedAt: null,
             lastSuccessAt: null,
             lastImportedFile: "",
+            lastImportedDate: null,
+            lastImportedRowCount: 0,
             lastError: "",
             lastCancelledAt: null,
             runNowPending: false,
@@ -35,10 +52,13 @@ function publicSchedule(schedule) {
         runTime: schedule.runTime,
         timeZone: schedule.timeZone,
         status: schedule.status,
+        requestedDate: schedule.requestedDate || null,
         lastRunAt: schedule.lastRunAt,
         lastFinishedAt: schedule.lastFinishedAt,
         lastSuccessAt: schedule.lastSuccessAt,
         lastImportedFile: schedule.lastImportedFile,
+        lastImportedDate: schedule.lastImportedDate || null,
+        lastImportedRowCount: schedule.lastImportedRowCount || 0,
         lastError: schedule.lastError,
         lastCancelledAt: schedule.lastCancelledAt,
         runNowPending: Boolean(
@@ -92,22 +112,59 @@ export async function savePayrollSchedule({ payload, user }) {
     return publicSchedule(schedule)
 }
 
-export async function requestPayrollRunNow({ companyId, branchId, user }) {
+export async function requestPayrollRunNow({
+    companyId,
+    branchId,
+    reportDate,
+    user,
+}) {
     assertAttendanceScope(user, companyId, branchId)
+
+    if (reportDate > currentDateInTimeZone()) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ATTENDANCE_PAYROLL_FUTURE_DATE",
+            messageKey: "errors.validationFailed",
+            fields: {
+                reportDate: ["A future Payroll attendance date cannot be imported."],
+            },
+        })
+    }
+
+    const existing = await AttendancePayrollSchedule.findOne({
+        companyId,
+        branchId,
+    }).lean()
+    const existingPublic = publicSchedule(existing)
+    if (existingPublic.canCancel) {
+        throw new AppError({
+            statusCode: 409,
+            code: "ATTENDANCE_PAYROLL_RUN_ACTIVE",
+            messageKey: "errors.validationFailed",
+        })
+    }
+
+    const requestedAt = new Date()
     const schedule = await AttendancePayrollSchedule.findOneAndUpdate(
         { companyId, branchId },
         {
             $set: {
                 enabled: false,
-                runNowRequestedAt: new Date(),
+                status: "QUEUED",
+                requestedDate: reportDate,
+                runNowRequestedAt: requestedAt,
                 lastError: "",
                 cancelRequestedAt: null,
+                progressPercent: 0,
+                progressPhase: "QUEUED",
+                progressDetail:
+                    `Waiting for the Payroll computer to import ${reportDate}.`,
+                progressUpdatedAt: requestedAt,
                 updatedByAccountId: user.accountId,
             },
             $setOnInsert: {
                 runTime: "08:00",
                 timeZone: "Asia/Phnom_Penh",
-                status: "IDLE",
             },
         },
         { upsert: true, returnDocument: "after" },
@@ -233,6 +290,7 @@ export async function claimDuePayrollRun({ companyId, branchId }) {
     return {
         shouldRun: true,
         claimToken,
+        reportDate: claimed.requestedDate,
         schedule: publicSchedule(claimed),
     }
 }
@@ -266,35 +324,69 @@ export async function finishPayrollRun({
     claimToken,
     outcome,
     importedFile,
+    reportDate,
+    rowCount,
     error,
 }) {
     const now = new Date()
+    const scheduleBeforeFinish = await AttendancePayrollSchedule.findOne({
+        companyId,
+        branchId,
+        claimToken,
+    }).lean()
+    if (!scheduleBeforeFinish) return publicSchedule(null)
+
+    const dateMismatch = outcome === "SUCCESS"
+        && reportDate !== scheduleBeforeFinish.requestedDate
+    const normalizedOutcome = dateMismatch ? "FAILED" : outcome
+    const normalizedError = dateMismatch
+        ? `Payroll returned ${reportDate || "no date"}, but HRMS requested ${scheduleBeforeFinish.requestedDate}.`
+        : error
+
     const update = {
-        status: outcome,
+        status: normalizedOutcome,
         lastFinishedAt: now,
         claimToken: null,
         claimedAt: null,
-        lastError: outcome === "FAILED"
-            ? error || "Payroll attendance bot failed."
+        lastError: normalizedOutcome === "FAILED"
+            ? normalizedError || "Payroll attendance bot failed."
             : "",
         cancelRequestedAt: null,
-        progressPercent: outcome === "SUCCESS" ? 100 : 0,
-        progressPhase: outcome,
-        progressDetail: outcome === "SUCCESS"
-            ? "Attendance import completed. Payroll closed."
-            : "",
+        progressPercent: normalizedOutcome === "SUCCESS" ? 100 : 0,
+        progressPhase: normalizedOutcome,
+        progressDetail: normalizedOutcome === "SUCCESS"
+            ? `Attendance for ${reportDate} imported. Payroll and generated windows closed.`
+            : normalizedOutcome === "CANCELLED"
+                ? "Payroll attendance import cancelled."
+                : normalizedError || "Payroll attendance import failed.",
         progressUpdatedAt: now,
     }
-    if (outcome === "SUCCESS") {
+    if (normalizedOutcome === "SUCCESS") {
         update.lastSuccessAt = now
         update.lastImportedFile = importedFile || ""
+        update.lastImportedDate = reportDate
+        update.lastImportedRowCount = rowCount || 0
     }
-    if (outcome === "CANCELLED") {
+    if (normalizedOutcome === "CANCELLED") {
         update.lastCancelledAt = now
+    }
+    const updateOperation = { $set: update }
+    if (normalizedOutcome === "SUCCESS") {
+        updateOperation.$push = {
+            successfulImports: {
+                $each: [{
+                    reportDate,
+                    importedAt: now,
+                    importedFile: importedFile || "",
+                    rowCount: rowCount || 0,
+                }],
+                $slice: -90,
+            },
+        }
     }
     const schedule = await AttendancePayrollSchedule.findOneAndUpdate(
         { companyId, branchId, claimToken },
-        { $set: update },
+        updateOperation,
         { returnDocument: "after" },
     ).lean()
     return publicSchedule(schedule)

@@ -96,34 +96,41 @@ function compactReportDate(date) {
     return `${day}${month}${year}`
 }
 
-async function resolveLatestAttendanceDate({ companyId, branchId, requestedDate }) {
-    const month = requestedDate.slice(0, 7)
-    const firstDate = `${month}-01`
-    const [year, monthNumber] = month.split("-").map(Number)
-    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
-    const lastDate = `${month}-${String(lastDay).padStart(2, "0")}`
-
-    const latest = await AttendanceRecord.findOne({
+async function requireExactAttendanceDate({
+    companyId,
+    branchId,
+    requestedDate,
+}) {
+    const exactDateRecord = await AttendanceRecord.findOne({
         companyId,
         branchId,
         attendanceDate: {
-            $gte: startOfBusinessDay(firstDate),
-            $lte: endOfBusinessDay(lastDate),
+            $gte: startOfBusinessDay(requestedDate),
+            $lte: endOfBusinessDay(requestedDate),
         },
     })
-        .sort({ attendanceDate: -1 })
         .select("attendanceDate")
         .lean()
 
-    if (!latest?.attendanceDate) {
+    if (!exactDateRecord?.attendanceDate) {
         throw new AppError({
             statusCode: 422,
             code: "ATTENDANCE_REPORT_NO_DATA",
             messageKey: "errors.attendance.reportNoData",
+            details: { requestedDate },
         })
     }
 
-    return toBusinessDateKey(latest.attendanceDate)
+    const exactDate = toBusinessDateKey(exactDateRecord.attendanceDate)
+    if (exactDate !== requestedDate) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ATTENDANCE_REPORT_DATE_MISMATCH",
+            messageKey: "errors.attendance.reportNoData",
+            details: { requestedDate, exactDate },
+        })
+    }
+    return exactDate
 }
 
 async function loadAttendanceTarget({ companyId, branchId, date }) {
@@ -201,24 +208,19 @@ ${row("TOTAL ABSENT RATE", report.sewerAbsentRate.totalAbsentRate, report.sewerA
 export async function getAttendanceDailyEmailStatus({ date, companyId, branchId, user }) {
     assertAttendanceScope(user, companyId, branchId)
     const { to } = emailRecipients()
-    const reportDate = await resolveLatestAttendanceDate({
-        companyId,
-        branchId,
-        requestedDate: date,
-    })
     const latest = await AttendanceDailyEmailLog.findOne({
         companyId,
         branchId,
-        reportDate,
+        reportDate: date,
         to,
     }).sort({ sentAt: -1 }).lean()
 
     return latest ? {
         sent: true,
-        reportDate,
+        reportDate: date,
         sentAt: latest.sentAt,
         sentByName: latest.sentByName,
-    } : { sent: false, reportDate }
+    } : { sent: false, reportDate: date }
 }
 
 export async function sendAttendanceDailyEmail({
@@ -234,7 +236,7 @@ export async function sendAttendanceDailyEmail({
     }
     assertAttendanceScope(user, companyId, branchId)
     const { to, cc } = emailRecipients()
-    const reportDate = await resolveLatestAttendanceDate({
+    const reportDate = await requireExactAttendanceDate({
         companyId,
         branchId,
         requestedDate: date,

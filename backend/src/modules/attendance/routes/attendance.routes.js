@@ -47,6 +47,7 @@ import {
 } from "../services/attendanceDailyEmailSchedule.service.js"
 import {
     attendancePayrollScheduleQuerySchema,
+    attendancePayrollRunRequestSchema,
     attendancePayrollScheduleSaveSchema,
 } from "../schemas/attendancePayrollSchedule.schema.js"
 import {
@@ -209,7 +210,7 @@ router.post(
     async (req, res, next) => {
         try {
             const payload = parseRequest(
-                attendancePayrollScheduleQuerySchema,
+                attendancePayrollRunRequestSchema,
                 req.body,
             )
             const schedule = await requestPayrollRunNow({

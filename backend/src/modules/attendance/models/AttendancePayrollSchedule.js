@@ -21,6 +21,7 @@ const attendancePayrollScheduleSchema = new mongoose.Schema(
             type: String,
             enum: [
                 "IDLE",
+                "QUEUED",
                 "RUNNING",
                 "CANCEL_REQUESTED",
                 "CANCELLED",
@@ -28,6 +29,11 @@ const attendancePayrollScheduleSchema = new mongoose.Schema(
                 "FAILED",
             ],
             default: "IDLE",
+        },
+        requestedDate: {
+            type: String,
+            default: null,
+            match: /^\d{4}-\d{2}-\d{2}$/,
         },
         runNowRequestedAt: { type: Date, default: null },
         cancelRequestedAt: { type: Date, default: null },
@@ -37,6 +43,30 @@ const attendancePayrollScheduleSchema = new mongoose.Schema(
         lastFinishedAt: { type: Date, default: null },
         lastSuccessAt: { type: Date, default: null },
         lastImportedFile: { type: String, default: "" },
+        lastImportedDate: {
+            type: String,
+            default: null,
+            match: /^\d{4}-\d{2}-\d{2}$/,
+        },
+        lastImportedRowCount: { type: Number, min: 0, default: 0 },
+        successfulImports: {
+            type: [
+                new mongoose.Schema(
+                    {
+                        reportDate: {
+                            type: String,
+                            required: true,
+                            match: /^\d{4}-\d{2}-\d{2}$/,
+                        },
+                        importedAt: { type: Date, required: true },
+                        importedFile: { type: String, default: "" },
+                        rowCount: { type: Number, min: 0, default: 0 },
+                    },
+                    { _id: false },
+                ),
+            ],
+            default: [],
+        },
         lastError: { type: String, default: "" },
         lastCancelledAt: { type: Date, default: null },
         progressPercent: { type: Number, min: 0, max: 100, default: 0 },

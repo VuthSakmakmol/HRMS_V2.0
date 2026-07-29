@@ -1,13 +1,14 @@
 import Account from "../../access/models/Account.js"
 import { AppError } from "../../../shared/errors/AppError.js"
 import AttendanceDailyEmailSchedule from "../models/AttendanceDailyEmailSchedule.js"
+import AttendancePayrollSchedule from "../models/AttendancePayrollSchedule.js"
 import CalendarDay from "../../calendar/models/CalendarDay.js"
 import { resolveCalendarDay } from "../../calendar/services/calendar.service.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 import { sendAttendanceDailyEmail } from "./attendanceDailyEmail.service.js"
 
 const DEFAULT_TIME_ZONE = "Asia/Phnom_Penh"
-const RETRY_AFTER_MS = 5 * 60 * 1000
+const RETRY_AFTER_MS = 30 * 1000
 const CALENDAR_DAY_TYPES = [
     "WORKING_DAY",
     "WEEKEND",
@@ -58,12 +59,6 @@ function localClock(now, timeZone) {
     }
 }
 
-function nextCalendarDate(date) {
-    const [year, month, day] = date.split("-").map(Number)
-    const next = new Date(Date.UTC(year, month - 1, day + 1))
-    return next.toISOString().slice(0, 10)
-}
-
 function publicSchedule(schedule) {
     if (!schedule) {
         return {
@@ -73,6 +68,9 @@ function publicSchedule(schedule) {
             allowedDayTypes: DEFAULT_ALLOWED_DAY_TYPES,
             lastSentDate: null,
             lastSentAt: null,
+            lastBlockedDate: null,
+            lastBlockedAt: null,
+            lastBlockedReason: "",
             lastError: "",
         }
     }
@@ -90,6 +88,9 @@ function publicSchedule(schedule) {
         lastSentAt: schedule.lastSentAt,
         lastSkippedDate: schedule.lastSkippedDate || null,
         lastSkippedDayType: schedule.lastSkippedDayType || "",
+        lastBlockedDate: schedule.lastBlockedDate || null,
+        lastBlockedAt: schedule.lastBlockedAt || null,
+        lastBlockedReason: schedule.lastBlockedReason || "",
         lastError: schedule.lastError || "",
         updatedAt: schedule.updatedAt,
     }
@@ -138,7 +139,7 @@ export async function saveAttendanceDailyEmailSchedule({ companyId, branchId, pa
         throw new AppError({ statusCode: 422, code: "INVALID_CALENDAR_DAY_TYPE", messageKey: "errors.validationFailed" })
     }
     const clock = localClock(new Date(), timeZone)
-    const activeFromDate = clock.time >= sendTime ? nextCalendarDate(clock.date) : clock.date
+    const activeFromDate = clock.date
     const schedule = await AttendanceDailyEmailSchedule.findOneAndUpdate(
         { companyId, branchId },
         {
@@ -149,6 +150,9 @@ export async function saveAttendanceDailyEmailSchedule({ companyId, branchId, pa
                 allowedDayTypes,
                 activeFromDate,
                 configuredByAccountId: user.accountId,
+                lastBlockedDate: null,
+                lastBlockedAt: null,
+                lastBlockedReason: "",
                 lastError: "",
             },
             $setOnInsert: { companyId, branchId },
@@ -215,6 +219,9 @@ async function runSchedule(schedule, date, now) {
                         lastSentDate: date,
                         lastSkippedDate: date,
                         lastSkippedDayType: calendarDay.dayType,
+                        lastBlockedDate: null,
+                        lastBlockedAt: null,
+                        lastBlockedReason: "",
                         lastError: "",
                     },
                 },
@@ -222,6 +229,58 @@ async function runSchedule(schedule, date, now) {
             console.log(`[attendance-email] skipped ${date} (${calendarDay.dayType})`)
             return
         }
+
+        const payrollImport = await AttendancePayrollSchedule.findOne({
+            companyId: claimed.companyId,
+            branchId: claimed.branchId,
+            $or: [
+                {
+                    lastImportedDate: date,
+                    lastImportedRowCount: { $gt: 0 },
+                    lastSuccessAt: { $ne: null },
+                },
+                {
+                    successfulImports: {
+                        $elemMatch: {
+                            reportDate: date,
+                            rowCount: { $gt: 0 },
+                        },
+                    },
+                },
+            ],
+        })
+            .select("_id")
+            .lean()
+        const importReady = Boolean(payrollImport)
+
+        if (!importReady) {
+            const reason =
+                `Attendance report not sent: the successful Payroll import for ${date} is not ready.`
+            await AttendanceDailyEmailSchedule.updateOne(
+                { _id: claimed._id },
+                {
+                    $set: {
+                        lastBlockedDate: date,
+                        lastBlockedAt: now,
+                        lastBlockedReason: reason,
+                        lastError: "",
+                    },
+                },
+            )
+            console.warn(`[attendance-email] blocked ${date}: Payroll import not ready`)
+            return
+        }
+
+        await AttendanceDailyEmailSchedule.updateOne(
+            { _id: claimed._id },
+            {
+                $set: {
+                    lastBlockedDate: null,
+                    lastBlockedAt: null,
+                    lastBlockedReason: "",
+                },
+            },
+        )
 
         await sendAttendanceDailyEmail({
             date,
@@ -234,14 +293,32 @@ async function runSchedule(schedule, date, now) {
 
         await AttendanceDailyEmailSchedule.updateOne(
             { _id: claimed._id },
-            { $set: { lastSentDate: date, lastSentAt: new Date(), lastError: "" } },
+            {
+                $set: {
+                    lastSentDate: date,
+                    lastSentAt: new Date(),
+                    lastBlockedDate: null,
+                    lastBlockedAt: null,
+                    lastBlockedReason: "",
+                    lastError: "",
+                },
+            },
         )
         console.log(`[attendance-email] automatic report sent for ${date}`)
     } catch (error) {
         if (error?.code === "ATTENDANCE_DAILY_EMAIL_ALREADY_SENT") {
             await AttendanceDailyEmailSchedule.updateOne(
                 { _id: claimed._id },
-                { $set: { lastSentDate: date, lastSentAt: new Date(), lastError: "" } },
+                {
+                    $set: {
+                        lastSentDate: date,
+                        lastSentAt: new Date(),
+                        lastBlockedDate: null,
+                        lastBlockedAt: null,
+                        lastBlockedReason: "",
+                        lastError: "",
+                    },
+                },
             )
             return
         }

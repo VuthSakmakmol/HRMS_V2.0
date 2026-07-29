@@ -34,8 +34,14 @@ import {
 const toast = useToast()
 const workspace = useWorkspaceStore()
 const today = new Date()
-const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
-const filters = reactive({ month: currentMonth, reportDate: `${currentMonth}-01`, departmentId: "" })
+const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Phnom_Penh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+}).format(today)
+const currentMonth = currentDate.slice(0, 7)
+const filters = reactive({ month: currentMonth, reportDate: currentDate, departmentId: "" })
 const report = ref(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -47,7 +53,11 @@ const savingSchedule = ref(false)
 const payrollScheduleDialogVisible = ref(false)
 const requestingPayrollRun = ref(false)
 const cancellingPayrollRun = ref(false)
+const payrollCompletionVisible = ref(false)
+const payrollImportDate = ref(currentDate)
 let payrollStatusTimer = null
+let payrollSuccessCloseTimer = null
+let emailScheduleStatusTimer = null
 const emailStatus = ref({ sent: false })
 const emailSchedule = reactive({
     enabled: false,
@@ -60,13 +70,19 @@ const emailSchedule = reactive({
     lastError: "",
     lastSkippedDate: null,
     lastSkippedDayType: "",
+    lastBlockedDate: null,
+    lastBlockedAt: null,
+    lastBlockedReason: "",
 })
 const payrollSchedule = reactive({
     status: "IDLE",
+    requestedDate: null,
     lastRunAt: null,
     lastFinishedAt: null,
     lastSuccessAt: null,
     lastImportedFile: "",
+    lastImportedDate: null,
+    lastImportedRowCount: 0,
     lastError: "",
     runNowPending: false,
     cancelPending: false,
@@ -81,6 +97,11 @@ const error = ref("")
 const departments = ref([])
 const collapsedDepartments = ref(new Set())
 const progress = reactive({ percent: 0, phase: "", processedRows: 0, totalRows: 0 })
+const payrollRunActive = computed(() =>
+    payrollSchedule.runNowPending
+    || payrollSchedule.canCancel
+    || ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(payrollSchedule.status),
+)
 
 const departmentOptions = computed(() => [
     { id: "", name: "All Departments" },
@@ -113,7 +134,7 @@ async function refreshEmailStatus() {
     }
 }
 
-async function loadEmailSchedule() {
+async function loadEmailSchedule({ silent = false } = {}) {
     if (!workspace.ready) return
     try {
         const schedule = await fetchAttendanceDailyEmailSchedule({
@@ -122,7 +143,9 @@ async function loadEmailSchedule() {
         })
         Object.assign(emailSchedule, schedule)
     } catch (requestError) {
-        toast.add({ severity: "error", summary: "Schedule unavailable", detail: errorMessage(requestError), life: 5000 })
+        if (!silent) {
+            toast.add({ severity: "error", summary: "Schedule unavailable", detail: errorMessage(requestError), life: 5000 })
+        }
     }
 }
 
@@ -148,7 +171,7 @@ async function saveEmailSchedule() {
             severity: "success",
             summary: emailSchedule.enabled ? "Automatic email enabled" : "Automatic email disabled",
             detail: emailSchedule.enabled
-                ? `The daily report will send at ${emailSchedule.sendTime} Cambodia time.`
+                ? `At or after ${emailSchedule.sendTime} Cambodia time, the report sends only after the same date's Payroll import succeeds.`
                 : "The automatic daily email schedule is turned off.",
             life: 4500,
         })
@@ -162,10 +185,23 @@ async function saveEmailSchedule() {
 async function loadPayrollSchedule() {
     if (!workspace.ready) return
     try {
+        const wasActive = payrollRunActive.value
         Object.assign(payrollSchedule, await fetchAttendancePayrollSchedule({
             companyId: workspace.companyId,
             branchId: workspace.branchId,
         }))
+        if (wasActive && payrollSchedule.status === "SUCCESS") {
+            payrollSchedule.progressPercent = 100
+            payrollSchedule.progressPhase = "COMPLETED"
+            payrollSchedule.progressDetail = payrollSchedule.lastImportedRowCount
+                ? `${Number(payrollSchedule.lastImportedRowCount).toLocaleString()} attendance rows imported successfully.`
+                : "Attendance imported successfully."
+            payrollCompletionVisible.value = true
+            schedulePayrollSuccessClose()
+        }
+        if (wasActive && !payrollRunActive.value) {
+            await Promise.all([loadEmailSchedule(), refreshEmailStatus()])
+        }
     } catch (requestError) {
         toast.add({ severity: "error", summary: "Payroll bot unavailable", detail: errorMessage(requestError), life: 5000 })
     }
@@ -173,20 +209,28 @@ async function loadPayrollSchedule() {
 
 async function openPayrollScheduleDialog() {
     await loadPayrollSchedule()
+    payrollCompletionVisible.value = false
+    clearPayrollSuccessClose()
+    payrollImportDate.value = payrollRunActive.value && payrollSchedule.requestedDate
+        ? payrollSchedule.requestedDate
+        : currentDate
     payrollScheduleDialogVisible.value = true
 }
 
 async function runPayrollBotNow() {
     requestingPayrollRun.value = true
+    payrollCompletionVisible.value = false
+    clearPayrollSuccessClose()
     try {
         Object.assign(payrollSchedule, await runAttendancePayrollBotNow({
             companyId: workspace.companyId,
             branchId: workspace.branchId,
+            reportDate: payrollImportDate.value,
         }))
         toast.add({
             severity: "success",
             summary: "Payroll import requested",
-            detail: "The Payroll computer will start the bot shortly.",
+            detail: `The Payroll computer will import ${payrollImportDate.value} shortly.`,
             life: 4500,
         })
     } catch (requestError) {
@@ -223,6 +267,20 @@ function stopPayrollStatusPolling() {
     payrollStatusTimer = null
 }
 
+function clearPayrollSuccessClose() {
+    if (payrollSuccessCloseTimer) window.clearTimeout(payrollSuccessCloseTimer)
+    payrollSuccessCloseTimer = null
+}
+
+function schedulePayrollSuccessClose() {
+    clearPayrollSuccessClose()
+    payrollSuccessCloseTimer = window.setTimeout(() => {
+        payrollScheduleDialogVisible.value = false
+        payrollCompletionVisible.value = false
+        payrollSuccessCloseTimer = null
+    }, 1500)
+}
+
 function startPayrollStatusPolling() {
     stopPayrollStatusPolling()
     payrollStatusTimer = window.setInterval(() => {
@@ -230,6 +288,20 @@ function startPayrollStatusPolling() {
             loadPayrollSchedule()
         }
     }, 2000)
+}
+
+function stopEmailScheduleStatusPolling() {
+    if (emailScheduleStatusTimer) window.clearInterval(emailScheduleStatusTimer)
+    emailScheduleStatusTimer = null
+}
+
+function startEmailScheduleStatusPolling() {
+    stopEmailScheduleStatusPolling()
+    emailScheduleStatusTimer = window.setInterval(() => {
+        if (emailSchedule.enabled) {
+            loadEmailSchedule({ silent: true })
+        }
+    }, 30_000)
 }
 
 function openEmailReview() {
@@ -475,10 +547,21 @@ watch(() => workspace.revision, async () => {
 })
 watch(payrollScheduleDialogVisible, (visible) => {
     if (visible) startPayrollStatusPolling()
-    else stopPayrollStatusPolling()
+    else {
+        stopPayrollStatusPolling()
+        clearPayrollSuccessClose()
+        payrollCompletionVisible.value = false
+    }
 })
-onMounted(() => Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()]))
-onBeforeUnmount(stopPayrollStatusPolling)
+onMounted(() => {
+    startEmailScheduleStatusPolling()
+    return Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()])
+})
+onBeforeUnmount(() => {
+    stopPayrollStatusPolling()
+    clearPayrollSuccessClose()
+    stopEmailScheduleStatusPolling()
+})
 </script>
 
 <template>
@@ -497,7 +580,7 @@ onBeforeUnmount(stopPayrollStatusPolling)
                     @click="openScheduleDialog"
                 />
                 <PermissionButton
-                    :permission="ATTENDANCE_PERMISSIONS.RECORD_EXPORT"
+                    :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT"
                     label="Payroll Import"
                     icon="pi pi-play-circle"
                     severity="secondary"
@@ -527,6 +610,13 @@ onBeforeUnmount(stopPayrollStatusPolling)
         </EnterpriseListControls>
 
         <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+        <Message
+            v-if="emailSchedule.enabled && emailSchedule.lastBlockedDate === currentDate"
+            severity="warn"
+            :closable="false"
+        >
+            {{ emailSchedule.lastBlockedReason || "Today's attendance email is waiting for a successful Payroll import." }}
+        </Message>
         <div v-if="loading || exporting" class="progress-state">
             <div><strong>{{ exporting ? "Exporting Excel" : "Loading daily report" }}</strong><span>{{ progressText }}</span></div>
             <ProgressBar :value="progress.percent" />
@@ -624,16 +714,16 @@ onBeforeUnmount(stopPayrollStatusPolling)
             <div class="schedule-form">
                 <div class="schedule-switch-row">
                     <div>
-                        <strong>Send automatically every day</strong>
-                        <span>No Send button is required when this is enabled.</span>
+                        <strong>Send only after a confirmed Payroll import</strong>
+                        <span>The same attendance date must be imported successfully before the report can be sent.</span>
                     </div>
                     <ToggleSwitch v-model="emailSchedule.enabled" />
                 </div>
 
                 <label class="schedule-field">
-                    <span>Exact sending time</span>
+                    <span>Scheduled sending time</span>
                     <input v-model="emailSchedule.sendTime" type="time" step="60" :disabled="!emailSchedule.enabled" />
-                    <small>Cambodia time (Asia/Phnom_Penh)</small>
+                    <small>Cambodia time. The backend scheduler checks every 30 seconds.</small>
                 </label>
 
                 <fieldset class="day-type-fieldset" :disabled="!emailSchedule.enabled">
@@ -653,10 +743,14 @@ onBeforeUnmount(stopPayrollStatusPolling)
                 </fieldset>
 
                 <Message severity="info" :closable="false">
-                    The system sends today's full Attendance Daily Report with the Excel attachment. If today's selected time has already passed when you save, the first automatic email starts tomorrow. After activation, a temporary backend outage will not permanently miss a report. It will not create a duplicate if today's report was already sent manually.
+                    If the import finishes before this time, the report waits and sends at the scheduled time. If the time passes first, no old or empty report is sent; HRMS shows a warning and sends immediately after the correct import succeeds. Duplicate emails remain blocked.
                 </Message>
 
-                <dl v-if="emailSchedule.lastSentDate || emailSchedule.lastSkippedDate || emailSchedule.lastError" class="schedule-status">
+                <Message v-if="emailSchedule.lastBlockedReason" severity="warn" :closable="false">
+                    {{ emailSchedule.lastBlockedReason }}
+                </Message>
+
+                <dl v-if="emailSchedule.lastSentDate || emailSchedule.lastSkippedDate || emailSchedule.lastBlockedDate || emailSchedule.lastError" class="schedule-status">
                     <template v-if="emailSchedule.lastSentDate">
                         <dt>Last automatic date</dt>
                         <dd>{{ emailSchedule.lastSentDate }}</dd>
@@ -664,6 +758,10 @@ onBeforeUnmount(stopPayrollStatusPolling)
                     <template v-if="emailSchedule.lastSkippedDate">
                         <dt>Last skipped date</dt>
                         <dd>{{ emailSchedule.lastSkippedDate }} ({{ emailSchedule.lastSkippedDayType }})</dd>
+                    </template>
+                    <template v-if="emailSchedule.lastBlockedDate">
+                        <dt>Waiting import</dt>
+                        <dd>{{ emailSchedule.lastBlockedDate }}</dd>
                     </template>
                     <template v-if="emailSchedule.lastError">
                         <dt>Last error</dt>
@@ -680,42 +778,79 @@ onBeforeUnmount(stopPayrollStatusPolling)
         <Dialog v-model:visible="payrollScheduleDialogVisible" modal header="Payroll Attendance Import" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
             <div class="schedule-form">
                 <Message severity="info" :closable="false">
-                    Manual operation only. Click Start Payroll Import whenever you want to download today’s attendance from Payroll and import it into HRMS. No automatic time schedule will run.
+                    Select the attendance date, then start the import. Today is selected whenever a new import is opened. The Payroll bot must export this exact date; it cannot use an older or different file.
                 </Message>
 
+                <label class="schedule-field">
+                    <span>Attendance date to import</span>
+                    <EnterpriseCalendarDatePicker
+                        v-model="payrollImportDate"
+                        :company-id="workspace.companyId"
+                        :branch-id="workspace.branchId"
+                        :max-date="currentDate"
+                        :disabled="payrollRunActive"
+                        placeholder="Select attendance date"
+                        compact
+                    />
+                    <small>Dates and day types come from the internal Calendar setup.</small>
+                </label>
+
                 <div
-                    v-if="payrollSchedule.runNowPending || ['RUNNING', 'CANCEL_REQUESTED'].includes(payrollSchedule.status) || payrollSchedule.progressPercent"
+                    v-if="payrollRunActive || payrollCompletionVisible"
                     class="payroll-progress"
                 >
                     <div>
-                        <strong>{{ payrollSchedule.progressPhase ? payrollSchedule.progressPhase.replaceAll("_", " ") : "WAITING FOR PAYROLL COMPUTER" }}</strong>
-                        <span>{{ payrollSchedule.progressPercent || 0 }}%</span>
+                        <strong>{{ payrollCompletionVisible ? "COMPLETED" : (payrollSchedule.progressPhase ? payrollSchedule.progressPhase.replaceAll("_", " ") : "WAITING FOR PAYROLL COMPUTER") }}</strong>
+                        <span>{{ payrollCompletionVisible ? 100 : (payrollSchedule.progressPercent || 0) }}%</span>
                     </div>
-                    <ProgressBar :value="payrollSchedule.progressPercent || 0" />
+                    <ProgressBar :value="payrollCompletionVisible ? 100 : (payrollSchedule.progressPercent || 0)" />
                     <small v-if="payrollSchedule.progressDetail">{{ payrollSchedule.progressDetail }}</small>
                 </div>
 
                 <dl class="schedule-status">
-                    <dt>Status</dt>
-                    <dd>{{ payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status.replaceAll("_", " ") }}</dd>
-                    <template v-if="payrollSchedule.lastRunAt">
-                        <dt>Last run started</dt>
+                    <dt>Current status</dt>
+                    <dd>{{ payrollCompletionVisible ? "SUCCESS — 100%" : (payrollRunActive ? (payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status.replaceAll("_", " ")) : "Ready to start a new import") }}</dd>
+                    <template v-if="payrollRunActive && payrollSchedule.requestedDate">
+                        <dt>Requested date</dt>
+                        <dd>{{ payrollSchedule.requestedDate }}</dd>
+                    </template>
+                    <template v-if="payrollRunActive && payrollSchedule.lastRunAt">
+                        <dt>Run started</dt>
                         <dd>{{ new Date(payrollSchedule.lastRunAt).toLocaleString() }}</dd>
                     </template>
+                </dl>
+
+                <Message
+                    v-if="!payrollRunActive && payrollSchedule.status === 'SUCCESS' && payrollSchedule.lastImportedDate === payrollImportDate"
+                    severity="success"
+                    :closable="false"
+                >
+                    Attendance for {{ payrollSchedule.lastImportedDate }} was imported successfully. Starting again will create a fresh run for the selected date.
+                </Message>
+
+                <dl v-if="payrollSchedule.lastSuccessAt || payrollSchedule.lastError || payrollSchedule.lastCancelledAt" class="schedule-status previous-run-status">
                     <template v-if="payrollSchedule.lastSuccessAt">
-                        <dt>Last success</dt>
+                        <dt>Previous success</dt>
                         <dd>{{ new Date(payrollSchedule.lastSuccessAt).toLocaleString() }}</dd>
                     </template>
+                    <template v-if="payrollSchedule.lastImportedDate">
+                        <dt>Imported date</dt>
+                        <dd>{{ payrollSchedule.lastImportedDate }}</dd>
+                    </template>
                     <template v-if="payrollSchedule.lastImportedFile">
-                        <dt>Last imported file</dt>
+                        <dt>Imported file</dt>
                         <dd>{{ payrollSchedule.lastImportedFile }}</dd>
                     </template>
-                    <template v-if="payrollSchedule.lastCancelledAt">
-                        <dt>Last cancelled</dt>
+                    <template v-if="payrollSchedule.lastSuccessAt">
+                        <dt>Imported rows</dt>
+                        <dd>{{ Number(payrollSchedule.lastImportedRowCount || 0).toLocaleString() }}</dd>
+                    </template>
+                    <template v-if="payrollSchedule.lastCancelledAt && payrollSchedule.status === 'CANCELLED'">
+                        <dt>Previous cancelled</dt>
                         <dd>{{ new Date(payrollSchedule.lastCancelledAt).toLocaleString() }}</dd>
                     </template>
-                    <template v-if="payrollSchedule.lastError">
-                        <dt>Last error</dt>
+                    <template v-if="payrollSchedule.lastError && payrollSchedule.status === 'FAILED'">
+                        <dt>Previous error</dt>
                         <dd class="schedule-error">{{ payrollSchedule.lastError }}</dd>
                     </template>
                 </dl>
@@ -725,10 +860,11 @@ onBeforeUnmount(stopPayrollStatusPolling)
                 <PermissionButton
                     v-if="payrollSchedule.canCancel"
                     :permission="ATTENDANCE_PERMISSIONS.RECORD_IMPORT"
-                    label="Cancel Run"
+                    :label="payrollSchedule.cancelPending ? 'Stopping…' : 'Cancel Run'"
                     icon="pi pi-stop-circle"
                     severity="danger"
-                    :loading="cancellingPayrollRun"
+                    :loading="cancellingPayrollRun || payrollSchedule.cancelPending"
+                    :disabled="cancellingPayrollRun || payrollSchedule.cancelPending"
                     @click="cancelPayrollBotRun"
                 />
                 <PermissionButton
@@ -737,7 +873,7 @@ onBeforeUnmount(stopPayrollStatusPolling)
                     icon="pi pi-play"
                     severity="primary"
                     :loading="requestingPayrollRun"
-                    :disabled="payrollSchedule.canCancel || cancellingPayrollRun"
+                    :disabled="!payrollImportDate || payrollRunActive || payrollCompletionVisible || cancellingPayrollRun"
                     @click="runPayrollBotNow"
                 />
             </template>
@@ -865,6 +1001,11 @@ onBeforeUnmount(stopPayrollStatusPolling)
 .schedule-status dd {
     margin: 0;
     overflow-wrap: anywhere;
+}
+
+.previous-run-status {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--p-content-border-color);
 }
 
 .schedule-error {

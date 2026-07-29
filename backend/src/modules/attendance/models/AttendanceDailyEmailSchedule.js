@@ -21,6 +21,9 @@ const attendanceDailyEmailScheduleSchema = new Schema(
         lastSentAt: { type: Date, default: null },
         lastSkippedDate: { type: String, default: null },
         lastSkippedDayType: { type: String, default: "" },
+        lastBlockedDate: { type: String, default: null },
+        lastBlockedAt: { type: Date, default: null },
+        lastBlockedReason: { type: String, default: "", maxlength: 1000 },
         lastError: { type: String, default: "", maxlength: 1000 },
     },
     {
