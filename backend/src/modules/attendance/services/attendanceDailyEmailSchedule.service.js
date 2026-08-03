@@ -324,6 +324,26 @@ async function runSchedule(schedule, date, now) {
         }
 
         const message = String(error?.message || "Automatic attendance email failed").slice(0, 1000)
+        if (error?.code === "ATTENDANCE_REVIEW_REQUIRED") {
+            const needsReviewCount = Number(error?.details?.needsReviewCount || 0)
+            const unmatchedCount = Number(error?.details?.unmatchedCount || 0)
+            const reason =
+                `Attendance report not sent: ${needsReviewCount} record(s) need review and ${unmatchedCount} employee ID(s) are unmatched.`
+            await AttendanceDailyEmailSchedule.updateOne(
+                { _id: claimed._id },
+                {
+                    $set: {
+                        lastBlockedDate: date,
+                        lastBlockedAt: now,
+                        lastBlockedReason: reason,
+                        lastError: "",
+                    },
+                },
+            )
+            console.warn(`[attendance-email] blocked ${date}: verification is not ready`)
+            return
+        }
+
         await AttendanceDailyEmailSchedule.updateOne(
             { _id: claimed._id },
             { $set: { lastError: message } },

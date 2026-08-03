@@ -5,8 +5,17 @@ import {
     requirePermission,
 } from "../../access/middleware/auth.middleware.js"
 import { AppError } from "../../../shared/errors/AppError.js"
-import { verificationPayloadSchema } from "../schemas/attendanceVerification.schema.js"
+import {
+    verificationAcceptParamSchema,
+    verificationAcceptPayloadSchema,
+    verificationPayloadSchema,
+    verificationWorkspaceQuerySchema,
+} from "../schemas/attendanceVerification.schema.js"
 import { verifyAttendanceRange } from "../services/attendanceBatch.service.js"
+import {
+    acceptAttendanceVerificationRecord,
+    getAttendanceVerificationWorkspace,
+} from "../services/attendanceVerification.service.js"
 
 const router = Router()
 
@@ -27,6 +36,30 @@ function parseRequest(schema, value) {
 
 router.use(requireAuthentication)
 
+router.get(
+    "/workspace",
+    requirePermission("ATTENDANCE.VERIFICATION.VIEW"),
+    async (req, res, next) => {
+        try {
+            const query = parseRequest(
+                verificationWorkspaceQuerySchema,
+                req.query,
+            )
+            const workspace = await getAttendanceVerificationWorkspace({
+                query,
+                user: req.auth.user,
+            })
+
+            res.status(200).json({
+                success: true,
+                data: workspace,
+            })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
 router.post(
     "/run",
     requirePermission("ATTENDANCE.VERIFICATION.RUN"),
@@ -41,6 +74,35 @@ router.post(
             res.status(200).json({
                 success: true,
                 data: { summary },
+            })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/:attendanceId/accept",
+    requirePermission("ATTENDANCE.RECORD.UPDATE"),
+    async (req, res, next) => {
+        try {
+            const { attendanceId } = parseRequest(
+                verificationAcceptParamSchema,
+                req.params,
+            )
+            const { reason } = parseRequest(
+                verificationAcceptPayloadSchema,
+                req.body,
+            )
+            const record = await acceptAttendanceVerificationRecord({
+                attendanceId,
+                reason,
+                user: req.auth.user,
+            })
+
+            res.status(200).json({
+                success: true,
+                data: { record },
             })
         } catch (error) {
             next(error)

@@ -1,3 +1,7 @@
+import mongoose from "mongoose"
+
+import { AppError } from "../../../shared/errors/AppError.js"
+import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
 import AttendanceRecord from "../models/AttendanceRecord.js"
 import AttendanceRawScan from "../models/AttendanceRawScan.js"
 import Employee from "../../employee/models/Employee.js"
@@ -13,6 +17,68 @@ import {
     startOfBusinessDay,
 } from "../utils/attendanceDate.util.js"
 import { attendanceScopeFilter, assertAttendanceScope } from "../utils/attendanceScope.util.js"
+
+function employeeName(employee) {
+    return employee?.displayName ||
+        [employee?.englishFirstName, employee?.englishLastName]
+            .filter(Boolean)
+            .join(" ") ||
+        ""
+}
+
+function verificationRecordFilter(query, user) {
+    const filter = {
+        ...attendanceScopeFilter(user),
+        companyId: query.companyId,
+        branchId: query.branchId,
+        attendanceDate: {
+            $gte: startOfBusinessDay(query.dateFrom),
+            $lte: endOfBusinessDay(query.dateTo),
+        },
+    }
+
+    for (const field of ["departmentId", "positionId", "lineId"]) {
+        if (query[field]) filter[field] = query[field]
+    }
+    if (query.verificationStatus !== "ALL") {
+        filter.verificationStatus = query.verificationStatus
+    }
+
+    return filter
+}
+
+async function employeeSearchIds(query, user) {
+    if (!query.search) return null
+
+    const employees = await Employee.find({
+        ...attendanceScopeFilter(user),
+        companyId: query.companyId,
+        branchId: query.branchId,
+        $or: [
+            { employeeCode: { $regex: query.search, $options: "i" } },
+            { displayName: { $regex: query.search, $options: "i" } },
+            { englishFirstName: { $regex: query.search, $options: "i" } },
+            { englishLastName: { $regex: query.search, $options: "i" } },
+        ],
+    })
+        .select("_id")
+        .lean()
+
+    return employees.map((employee) => employee._id)
+}
+
+function mapVerificationRecord(record) {
+    return {
+        ...record,
+        id: record._id.toString(),
+        _id: undefined,
+        employeeName: employeeName(record.employeeId),
+        departmentName: record.departmentId?.name || "",
+        positionName: record.positionId?.title || record.positionId?.name || "",
+        lineName: record.lineId?.name || "",
+        shiftName: record.shiftId?.name || record.shiftId?.code || "",
+    }
+}
 
 function buildEmployeeFilter(payload, user) {
     const filter = {
@@ -135,22 +201,25 @@ export async function verifyAttendanceRange({ payload, user }) {
         scansByEmployee.set(scan.employeeCode, list)
     }
 
-    const protectedRecords = payload.overwriteCorrected
-        ? []
-        : await AttendanceRecord.find({
-              employeeId: { $in: employees.map((employee) => employee._id) },
-              attendanceDate: {
-                  $gte: startOfBusinessDay(payload.dateFrom),
-                  $lte: endOfBusinessDay(payload.dateTo),
-              },
-              verificationStatus: "CORRECTED",
-          })
-              .select("employeeId attendanceDate")
-              .lean()
-    const protectedKeys = new Set(
-        protectedRecords.map(
-            (record) => `${record.employeeId}:${record.attendanceDate.toISOString()}`,
-        ),
+    const protectedConditions = [{ source: "EXCEL_IMPORT" }]
+    if (!payload.overwriteCorrected) {
+        protectedConditions.push({ verificationStatus: "CORRECTED" })
+    }
+    const protectedRecords = await AttendanceRecord.find({
+        employeeId: { $in: employees.map((employee) => employee._id) },
+        attendanceDate: {
+            $gte: startOfBusinessDay(payload.dateFrom),
+            $lte: endOfBusinessDay(payload.dateTo),
+        },
+        $or: protectedConditions,
+    })
+        .select("employeeId attendanceDate source verificationStatus")
+        .lean()
+    const protectedRecordMap = new Map(
+        protectedRecords.map((record) => [
+            `${record.employeeId}:${record.attendanceDate.toISOString()}`,
+            record,
+        ]),
     )
 
     const policyCache = new Map()
@@ -161,6 +230,7 @@ export async function verifyAttendanceRange({ payload, user }) {
         processedCount: 0,
         createdOrUpdatedCount: 0,
         protectedCorrectedCount: 0,
+        protectedImportedCount: 0,
         presentCount: 0,
         absentCount: 0,
         restDayCount: 0,
@@ -186,8 +256,13 @@ export async function verifyAttendanceRange({ payload, user }) {
             }
 
             const protectedKey = `${employee._id}:${attendanceDate.toISOString()}`
-            if (protectedKeys.has(protectedKey)) {
-                summary.protectedCorrectedCount += 1
+            const protectedRecord = protectedRecordMap.get(protectedKey)
+            if (protectedRecord) {
+                if (protectedRecord.source === "EXCEL_IMPORT") {
+                    summary.protectedImportedCount += 1
+                } else {
+                    summary.protectedCorrectedCount += 1
+                }
                 continue
             }
 
@@ -266,4 +341,222 @@ export async function verifyAttendanceRange({ payload, user }) {
 
     invalidateAttendanceCaches()
     return summary
+}
+
+export async function getAttendanceVerificationWorkspace({ query, user }) {
+    assertAttendanceScope(user, query.companyId, query.branchId)
+
+    const tableFilter = verificationRecordFilter(query, user)
+    const searchIds = await employeeSearchIds(query, user)
+    if (searchIds) {
+        tableFilter.employeeId = { $in: searchIds }
+    }
+
+    const baseRecordFilter = verificationRecordFilter(
+        { ...query, verificationStatus: "ALL" },
+        user,
+    )
+    const employeeFilter = buildEmployeeFilter(query, user)
+    const scopedEmployees = await Employee.find(employeeFilter)
+        .select("_id shiftId")
+        .lean()
+    const assignedShiftIds = [
+        ...new Set(
+            scopedEmployees
+                .map((employee) => String(employee.shiftId || ""))
+                .filter(Boolean),
+        ),
+    ]
+    const activeShifts = assignedShiftIds.length
+        ? await Shift.find({
+              _id: { $in: assignedShiftIds },
+              status: "ACTIVE",
+          })
+              .select("_id")
+              .lean()
+        : []
+    const activeShiftIds = new Set(
+        activeShifts.map((shift) => String(shift._id)),
+    )
+    const missingShiftCount = scopedEmployees.filter(
+        (employee) =>
+            !employee.shiftId || !activeShiftIds.has(String(employee.shiftId)),
+    ).length
+
+    const importIssueFilter = {
+        ...attendanceScopeFilter(user),
+        companyId: query.companyId,
+        branchId: query.branchId,
+        status: "NO_EMPLOYEE_MATCH",
+        attendanceDate: {
+            $gte: startOfBusinessDay(query.dateFrom),
+            $lte: endOfBusinessDay(query.dateTo),
+        },
+    }
+    const rawScanFilter = {
+        ...attendanceScopeFilter(user),
+        companyId: query.companyId,
+        branchId: query.branchId,
+        scannedAt: {
+            $gte: startOfBusinessDay(query.dateFrom),
+            $lte: endOfBusinessDay(query.dateTo),
+        },
+    }
+    const skip = (query.page - 1) * query.limit
+
+    const [
+        items,
+        filteredTotal,
+        totalRecords,
+        verifiedCount,
+        correctedCount,
+        needsReviewCount,
+        unmatchedCount,
+        rawScanCount,
+        latestRecord,
+    ] = await Promise.all([
+        AttendanceRecord.find(tableFilter)
+            .populate(
+                "employeeId",
+                "employeeCode displayName englishFirstName englishLastName",
+            )
+            .populate("departmentId", "code name")
+            .populate("positionId", "code name title")
+            .populate("lineId", "code name")
+            .populate("shiftId", "code name startTime endTime")
+            .sort({ attendanceDate: -1, employeeCode: 1 })
+            .skip(skip)
+            .limit(query.limit)
+            .lean(),
+        AttendanceRecord.countDocuments(tableFilter),
+        AttendanceRecord.countDocuments(baseRecordFilter),
+        AttendanceRecord.countDocuments({
+            ...baseRecordFilter,
+            verificationStatus: "VERIFIED",
+        }),
+        AttendanceRecord.countDocuments({
+            ...baseRecordFilter,
+            verificationStatus: "CORRECTED",
+        }),
+        AttendanceRecord.countDocuments({
+            ...baseRecordFilter,
+            verificationStatus: "NEEDS_REVIEW",
+        }),
+        AttendanceImportIssue.countDocuments(importIssueFilter),
+        AttendanceRawScan.countDocuments(rawScanFilter),
+        AttendanceRecord.findOne(baseRecordFilter)
+            .sort({ updatedAt: -1 })
+            .select("updatedAt")
+            .lean(),
+    ])
+
+    let readiness = "READY"
+    if (totalRecords === 0) {
+        readiness = rawScanCount > 0 ? "NOT_VERIFIED" : "NO_DATA"
+    } else if (
+        needsReviewCount > 0 ||
+        unmatchedCount > 0 ||
+        missingShiftCount > 0
+    ) {
+        readiness = "ACTION_REQUIRED"
+    }
+
+    return {
+        summary: {
+            readiness,
+            employeeCount: scopedEmployees.length,
+            rawScanCount,
+            totalRecords,
+            verifiedCount,
+            correctedCount,
+            needsReviewCount,
+            unmatchedCount,
+            missingShiftCount,
+            latestUpdatedAt: latestRecord?.updatedAt || null,
+        },
+        items: items.map(mapVerificationRecord),
+        pagination: {
+            page: query.page,
+            limit: query.limit,
+            total: filteredTotal,
+            totalPages: Math.max(1, Math.ceil(filteredTotal / query.limit)),
+        },
+    }
+}
+
+export async function acceptAttendanceVerificationRecord({
+    attendanceId,
+    reason,
+    user,
+}) {
+    if (!mongoose.isValidObjectId(attendanceId)) {
+        throw new AppError({
+            statusCode: 422,
+            code: "VALIDATION_FAILED",
+            messageKey: "errors.validationFailed",
+        })
+    }
+
+    const record = await AttendanceRecord.findOne({
+        _id: attendanceId,
+        ...attendanceScopeFilter(user),
+    })
+    if (!record) {
+        throw new AppError({
+            statusCode: 404,
+            code: "ATTENDANCE_RECORD_NOT_FOUND",
+            messageKey: "errors.attendance.recordNotFound",
+        })
+    }
+    if (["PAYROLL_LOCKED", "FINALIZED"].includes(record.lockStatus)) {
+        throw new AppError({
+            statusCode: 409,
+            code: "ATTENDANCE_RECORD_LOCKED",
+            messageKey: "errors.attendance.recordLocked",
+        })
+    }
+    if (record.verificationStatus !== "NEEDS_REVIEW") {
+        throw new AppError({
+            statusCode: 409,
+            code: "ATTENDANCE_REVIEW_ALREADY_RESOLVED",
+            messageKey: "errors.attendance.reviewAlreadyResolved",
+        })
+    }
+
+    const previousVerificationStatus = record.verificationStatus
+    record.verificationStatus = "CORRECTED"
+    record.lockStatus = "HR_VERIFIED"
+    record.note = reason
+    record.correction = {
+        correctedByAccountId: user.accountId,
+        correctedAt: new Date(),
+        reason,
+        previousValues: {
+            firstInAt: record.firstInAt,
+            lastOutAt: record.lastOutAt,
+            status: record.status,
+            workedMinutes: record.workedMinutes,
+            lateMinutes: record.lateMinutes,
+            earlyLeaveMinutes: record.earlyLeaveMinutes,
+            issueCodes: record.issueCodes,
+            verificationStatus: previousVerificationStatus,
+        },
+    }
+    record.updatedByAccountId = user.accountId
+    await record.save()
+
+    invalidateAttendanceCaches()
+
+    const populated = await AttendanceRecord.findById(record._id)
+        .populate(
+            "employeeId",
+            "employeeCode displayName englishFirstName englishLastName",
+        )
+        .populate("departmentId", "code name")
+        .populate("positionId", "code name title")
+        .populate("lineId", "code name")
+        .populate("shiftId", "code name startTime endTime")
+        .lean()
+
+    return mapVerificationRecord(populated)
 }

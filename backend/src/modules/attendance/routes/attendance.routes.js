@@ -29,10 +29,14 @@ import {
 import {
     buildAttendanceImportTemplate,
     buildAttendanceExportWorkbook,
+    buildAttendanceImportIssueWorkbook,
     importAttendanceRows,
     parseAttendanceWorkbook,
 } from "../services/attendanceExcel.service.js"
-import { listAttendanceImportIssues } from "../services/attendanceImportIssue.service.js"
+import {
+    getAttendanceImportIssueExportRows,
+    listAttendanceImportIssues,
+} from "../services/attendanceImportIssue.service.js"
 import {
     buildAttendanceDailyReport,
     buildAttendanceDailyReportWorkbook,
@@ -385,6 +389,37 @@ router.get(
             const result = await listAttendanceRecords({ query, user: req.auth.user })
 
             res.status(200).json({ success: true, data: result })
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.get(
+    "/import-issues/export",
+    requirePermission("ATTENDANCE.RECORD.EXPORT"),
+    async (req, res, next) => {
+        try {
+            const query = parseRequest(
+                attendanceImportIssueListQuerySchema,
+                req.query,
+            )
+            const issues = await getAttendanceImportIssueExportRows({
+                query,
+                user: req.auth.user,
+            })
+            const workbook = await buildAttendanceImportIssueWorkbook(issues)
+            const buffer = await workbook.xlsx.writeBuffer()
+
+            res.setHeader(
+                "Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            res.setHeader(
+                "Content-Disposition",
+                'attachment; filename="attendance-unmatched-records.xlsx"',
+            )
+            res.status(200).send(Buffer.from(buffer))
         } catch (error) {
             next(error)
         }

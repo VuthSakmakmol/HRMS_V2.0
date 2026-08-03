@@ -1816,6 +1816,8 @@ export default {
             shiftNotFound: "The employee does not have an active shift.",
             recordNotFound: "Attendance record was not found.",
             recordLocked: "This attendance record is locked by payroll and cannot be changed.",
+            reviewAlreadyResolved: "This attendance review item has already been resolved.",
+            reviewRequired: "Resolve attendance records needing review and unmatched employee IDs before sending the daily report.",
             correctionReasonRequired: "A correction reason is required.",
             employeeChangeNotAllowed: "The employee cannot be changed on an existing attendance record.",
             dateChangeNotAllowed: "The date cannot be changed on an existing attendance record.",

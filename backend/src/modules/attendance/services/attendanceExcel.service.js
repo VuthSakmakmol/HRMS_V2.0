@@ -261,6 +261,69 @@ export async function buildAttendanceExportWorkbook(records = []) {
     return workbook
 }
 
+export async function buildAttendanceImportIssueWorkbook(issues = []) {
+    const workbook = new ExcelJS.Workbook()
+    const sheet = workbook.addWorksheet("Unmatched Attendance")
+
+    sheet.columns = [
+        { header: "Record Date", key: "attendanceDate", width: 16 },
+        { header: "Employee No", key: "employeeCode", width: 18 },
+        { header: "Time1", key: "firstInAt", width: 12 },
+        { header: "Time2", key: "lastOutAt", width: 12 },
+        { header: "Excel Row", key: "sourceRow", width: 12 },
+        { header: "Status", key: "status", width: 22 },
+        { header: "Import Batch", key: "importBatchId", width: 28 },
+        { header: "Created At", key: "createdAt", width: 21 },
+    ]
+
+    for (const issue of issues) {
+        sheet.addRow({
+            attendanceDate: issue.attendanceDate,
+            employeeCode: issue.employeeCode,
+            firstInAt: issue.firstInAt,
+            lastOutAt: issue.lastOutAt,
+            sourceRow: issue.sourceRow,
+            status: issue.status,
+            importBatchId: issue.importBatchId,
+            createdAt: issue.createdAt,
+        })
+    }
+
+    const header = sheet.getRow(1)
+    header.font = { bold: true, color: { argb: "FFFFFFFF" } }
+    header.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFB45309" },
+    }
+    header.alignment = { vertical: "middle", horizontal: "center" }
+    header.height = 24
+
+    sheet.views = [{ state: "frozen", ySplit: 1 }]
+    sheet.autoFilter = { from: "A1", to: "H1" }
+    sheet.getColumn("attendanceDate").numFmt = "dd/mm/yyyy"
+    sheet.getColumn("firstInAt").numFmt = "hh:mm"
+    sheet.getColumn("lastOutAt").numFmt = "hh:mm"
+    sheet.getColumn("createdAt").numFmt = "dd/mm/yyyy hh:mm"
+
+    sheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+            row.alignment = { vertical: "middle" }
+        }
+    })
+
+    const note = workbook.addWorksheet("Instructions")
+    note.columns = [{ width: 110 }]
+    note.addRow([
+        "These rows could not be matched to an active employee in the selected company and branch. Check the Employee No in the employee master or source payroll file, correct the source, and import the attendance again.",
+    ])
+    note.getCell("A1").alignment = { wrapText: true, vertical: "top" }
+    note.getCell("A1").font = { bold: true }
+    note.getRow(1).height = 54
+
+    return workbook
+}
+
 export async function parseAttendanceWorkbook(buffer) {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(buffer)

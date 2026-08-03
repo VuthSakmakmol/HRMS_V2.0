@@ -64,13 +64,39 @@ function assertUnlocked(record) {
     }
 }
 
-export async function upsertAttendanceRecord({ payload, user, source = "MANUAL", session = null, invalidateCache = true }) {
+export async function upsertAttendanceRecord({
+    payload,
+    user,
+    source = "MANUAL",
+    manualCorrection = source === "MANUAL",
+    session = null,
+    invalidateCache = true,
+}) {
     const { employee, shift } = await resolveEmployeeAndShift(payload.employeeCode, user, payload)
     assertAttendanceScope(user, employee.companyId, employee.branchId)
     const workDate = toBusinessDateKey(payload.attendanceDate)
     const attendanceDate = startOfBusinessDay(workDate)
     const existing = await AttendanceRecord.findOne({ employeeId: employee._id, attendanceDate }).session(session).lean()
     assertUnlocked(existing)
+    const isManualCorrection = manualCorrection
+    const hasConfirmedHrCorrection =
+        existing?.lockStatus === "HR_VERIFIED" ||
+        (
+            existing?.verificationStatus === "CORRECTED" &&
+            existing?.correction?.reason &&
+            existing.correction.reason !== "Manual correction"
+        )
+    if (
+        !isManualCorrection &&
+        existing &&
+        hasConfirmedHrCorrection
+    ) {
+        return {
+            ...existing,
+            id: existing._id.toString(),
+            _id: undefined,
+        }
+    }
     const policy = await resolveAttendancePolicy({
         companyId: employee.companyId,
         branchId: employee.branchId,
@@ -86,43 +112,59 @@ export async function upsertAttendanceRecord({ payload, user, source = "MANUAL",
             lastOutAt: payload.lastOutAt ? new Date(payload.lastOutAt) : null,
         },
     })
+    const values = {
+        employeeCode: employee.employeeCode,
+        companyId: employee.companyId,
+        branchId: employee.branchId,
+        departmentId: employee.departmentId,
+        positionId: employee.positionId,
+        lineId: employee.lineId,
+        shiftId: employee.shiftId,
+        source,
+        leaveCode: payload.leaveCode || null,
+        note: payload.note || "",
+        policySnapshot: policySnapshot(policy),
+        calculationVersion: "ATTENDANCE_ENGINE_V2",
+        updatedByAccountId: user.accountId,
+        ...calculated,
+        verificationStatus: isManualCorrection
+            ? "CORRECTED"
+            : calculated.verificationStatus,
+        lockStatus: isManualCorrection
+            ? "HR_VERIFIED"
+            : existing?.lockStatus || "OPEN",
+    }
+
+    if (isManualCorrection) {
+        values.correction = {
+            correctedByAccountId: user.accountId,
+            correctedAt: new Date(),
+            reason: payload.note || "Manual correction",
+            previousValues: existing
+                ? {
+                      firstInAt: existing.firstInAt,
+                      lastOutAt: existing.lastOutAt,
+                      status: existing.status,
+                      workedMinutes: existing.workedMinutes,
+                      lateMinutes: existing.lateMinutes,
+                      earlyLeaveMinutes: existing.earlyLeaveMinutes,
+                      leaveCode: existing.leaveCode || null,
+                  }
+                : null,
+        }
+    } else {
+        values.correction = {
+            correctedByAccountId: null,
+            correctedAt: null,
+            reason: "",
+            previousValues: null,
+        }
+    }
+
     const record = await AttendanceRecord.findOneAndUpdate(
         { employeeId: employee._id, attendanceDate },
         {
-            $set: {
-                employeeCode: employee.employeeCode,
-                companyId: employee.companyId,
-                branchId: employee.branchId,
-                departmentId: employee.departmentId,
-                positionId: employee.positionId,
-                lineId: employee.lineId,
-                shiftId: employee.shiftId,
-                source,
-                leaveCode: payload.leaveCode || null,
-                note: payload.note || "",
-                verificationStatus: "CORRECTED",
-                policySnapshot: policySnapshot(policy),
-                calculationVersion: "ATTENDANCE_ENGINE_V2",
-                correction: {
-                    correctedByAccountId: user.accountId,
-                    correctedAt: new Date(),
-                    reason: payload.note || "Manual correction",
-                    previousValues: existing
-                        ? {
-                              firstInAt: existing.firstInAt,
-                              lastOutAt: existing.lastOutAt,
-                              status: existing.status,
-                              workedMinutes: existing.workedMinutes,
-                              lateMinutes: existing.lateMinutes,
-                              earlyLeaveMinutes: existing.earlyLeaveMinutes,
-                              leaveCode: existing.leaveCode || null,
-                          }
-                        : null,
-                },
-                updatedByAccountId: user.accountId,
-                ...calculated,
-                verificationStatus: "CORRECTED",
-            },
+            $set: values,
             $setOnInsert: {
                 employeeId: employee._id,
                 attendanceDate,
@@ -157,7 +199,12 @@ export async function updateAttendanceRecord({ attendanceId, payload, user }) {
     if (toBusinessDateKey(payload.attendanceDate) !== originalDate) {
         throw new AppError({ statusCode: 409, code: "ATTENDANCE_DATE_CHANGE_NOT_ALLOWED", messageKey: "errors.attendance.dateChangeNotAllowed" })
     }
-    return upsertAttendanceRecord({ payload, user, source: existing.source })
+    return upsertAttendanceRecord({
+        payload,
+        user,
+        source: existing.source,
+        manualCorrection: true,
+    })
 }
 
 export async function listAttendanceRecords({ query, user }) {

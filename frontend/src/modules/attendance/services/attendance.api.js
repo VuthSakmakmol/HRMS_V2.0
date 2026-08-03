@@ -108,6 +108,19 @@ export async function fetchAttendanceImportIssues(params = {}) {
     return response.data.data
 }
 
+export async function exportAttendanceImportIssues(params = {}) {
+    const response = await apiClient.get(
+        `${ATTENDANCE_ENDPOINT}/import-issues/export`,
+        {
+            params: withoutBlankParams(params),
+            responseType: "blob",
+            timeout: 0,
+        },
+    )
+
+    downloadBlob(response.data, "attendance-unmatched-records.xlsx")
+}
+
 export async function exportAttendanceRecords(params = {}) {
     const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/export`, {
         params: withoutBlankParams(params),
@@ -275,4 +288,23 @@ export async function runAttendanceVerification(payload) {
         { timeout: 0 },
     )
     return response.data.data.summary
+}
+
+export async function fetchAttendanceVerificationWorkspace(params = {}) {
+    const response = await apiClient.get(
+        `${VERIFICATION_ENDPOINT}/workspace`,
+        { params: withoutBlankParams(params) },
+    )
+    return response.data.data
+}
+
+export async function acceptAttendanceVerificationRecord(
+    attendanceId,
+    reason,
+) {
+    const response = await apiClient.post(
+        `${VERIFICATION_ENDPOINT}/${attendanceId}/accept`,
+        { reason },
+    )
+    return response.data.data.record
 }

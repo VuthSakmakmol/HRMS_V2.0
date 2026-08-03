@@ -57,6 +57,14 @@ export const attendanceImportIssueListQuerySchema = z.object({
     search: z.string().trim().max(120).default(""),
     companyId: optionalObjectIdSchema,
     branchId: optionalObjectIdSchema,
+    dateFrom: dateSchema.optional(),
+    dateTo: dateSchema.optional(),
     status: z.enum(["NO_EMPLOYEE_MATCH", "RESOLVED", "ARCHIVED", "ALL"])
         .default("NO_EMPLOYEE_MATCH"),
-})
+}).refine(
+    (value) => !value.dateFrom || !value.dateTo || value.dateFrom <= value.dateTo,
+    {
+        path: ["dateTo"],
+        message: "Date to must be on or after date from.",
+    },
+)

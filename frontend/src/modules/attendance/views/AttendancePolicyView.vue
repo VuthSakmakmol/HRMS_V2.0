@@ -1,17 +1,346 @@
 <script setup>
-import Button from "primevue/button";import InputText from "primevue/inputtext";import Select from "primevue/select";import Tag from "primevue/tag"
-import {computed,onMounted,reactive,ref,watch} from "vue";import {useToast} from "primevue/usetoast"
-import {useAuthStore} from "@/app/stores/auth.store.js";import {useWorkspaceStore} from "@/app/stores/workspace.store.js"
-import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue";import EnterpriseConfirmDialog from "@/shared/components/enterprise/EnterpriseConfirmDialog.vue";import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue";import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue";import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue";import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue";import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseListControls.vue";import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue";import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue"
-import AttendancePolicyForm from "../components/AttendancePolicyForm.vue";import {ATTENDANCE_PERMISSIONS} from "../config/attendance.config.js";import {archiveAttendancePolicy,createAttendancePolicy,fetchAttendancePolicies,updateAttendancePolicy} from "../services/attendance.api.js"
-const toast=useToast(),auth=useAuthStore(),workspace=useWorkspaceStore();const items=ref([]),loading=ref(false),saving=ref(false),archiving=ref(false),pagination=reactive({page:1,limit:10,total:0,totalPages:1}),query=reactive({page:1,limit:10,search:"",status:"ALL"}),visible=ref(false),archiveVisible=ref(false),selectedId=ref(""),candidate=ref(null)
-const form=reactive(empty());const columns=[{field:"code",header:"Code",frozen:true,width:"9rem",minWidth:"9rem"},{field:"name",header:"Policy",width:"15rem",minWidth:"15rem"},{field:"effectiveFrom",header:"Effective From",width:"10rem",minWidth:"10rem"},{field:"effectiveTo",header:"Effective To",width:"10rem",minWidth:"10rem"},{field:"graceInMinutes",header:"Grace In",width:"8rem",minWidth:"8rem"},{field:"graceOutMinutes",header:"Grace Out",width:"8rem",minWidth:"8rem"},{field:"minimumWorkedMinutes",header:"Minimum Work",width:"9rem",minWidth:"9rem"},{field:"lateRoundMethod",header:"Late Rounding",width:"10rem",minWidth:"10rem"},{field:"earlyLeaveRoundMethod",header:"Early Rounding",width:"10rem",minWidth:"10rem"},{field:"status",header:"Status",width:"8rem",minWidth:"8rem"}];const statuses=[{label:"All",value:"ALL"},{label:"Active",value:"ACTIVE"},{label:"Inactive",value:"INACTIVE"},{label:"Archived",value:"ARCHIVED"}]
-const companyName=computed(()=>workspace.selectedCompany?.displayName||workspace.selectedCompany?.code||"—"),branchName=computed(()=>workspace.selectedBranch?.name||workspace.selectedBranch?.code||"—"),activeFilters=computed(()=>Number(Boolean(query.search))+Number(query.status!=="ALL"))
-function empty(){return{companyId:"",branchId:"",code:"",name:"",graceInMinutes:0,graceOutMinutes:0,minimumWorkedMinutes:0,lateRoundUnitMinutes:1,lateRoundMethod:"CEIL",earlyLeaveRoundUnitMinutes:1,earlyLeaveRoundMethod:"CEIL",autoGenerateAbsent:true,treatSundayAsRestDay:true,status:"ACTIVE",effectiveFrom:"",effectiveTo:""}}
-async function load(overrides={}){if(!workspace.ready)return;Object.assign(query,overrides);loading.value=true;try{const result=await fetchAttendancePolicies({...query,companyId:workspace.companyId,branchId:workspace.branchId});items.value=result.items||[];Object.assign(pagination,result.pagination||{})}catch(e){toast.add({severity:"error",summary:"Unable to load policies",detail:e.message,life:4000})}finally{loading.value=false}}
-function create(){selectedId.value="";Object.assign(form,empty(),{companyId:workspace.companyId,branchId:workspace.branchId});visible.value=true}function edit(row){selectedId.value=row.id;Object.assign(form,empty(),row,{companyId:workspace.companyId,branchId:workspace.branchId,effectiveFrom:String(row.effectiveFrom||"").slice(0,10),effectiveTo:String(row.effectiveTo||"").slice(0,10)});visible.value=true}
-async function save(){saving.value=true;try{const payload={...form,companyId:workspace.companyId,branchId:workspace.branchId,effectiveFrom:form.effectiveFrom||null,effectiveTo:form.effectiveTo||null};selectedId.value?await updateAttendancePolicy(selectedId.value,payload):await createAttendancePolicy(payload);visible.value=false;toast.add({severity:"success",summary:"Policy saved",life:2500});await load()}finally{saving.value=false}}
-async function archive(){archiving.value=true;try{await archiveAttendancePolicy(candidate.value.id);archiveVisible.value=false;await load()}finally{archiving.value=false}}function actions(row){return[{label:"Edit",icon:"pi pi-pencil",visible:auth.hasPermission(ATTENDANCE_PERMISSIONS.POLICY_UPDATE)&&row.status!=="ARCHIVED",command:()=>edit(row)},{label:"Archive",icon:"pi pi-archive",visible:auth.hasPermission(ATTENDANCE_PERMISSIONS.POLICY_ARCHIVE)&&row.status!=="ARCHIVED",command:()=>{candidate.value=row;archiveVisible.value=true}}]}function date(v){return v?String(v).slice(0,10):"—"}
-watch(()=>workspace.revision,()=>load({page:1}));onMounted(()=>load())
+import Button from "primevue/button";
+import InputText from "primevue/inputtext";
+import Select from "primevue/select";
+import Tag from "primevue/tag";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useToast } from "primevue/usetoast";
+import { useAuthStore } from "@/app/stores/auth.store.js";
+import { useWorkspaceStore } from "@/app/stores/workspace.store.js";
+import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue";
+import EnterpriseConfirmDialog from "@/shared/components/enterprise/EnterpriseConfirmDialog.vue";
+import EnterpriseDialog from "@/shared/components/enterprise/EnterpriseDialog.vue";
+import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue";
+import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue";
+import EnterpriseFormFooter from "@/shared/components/enterprise/EnterpriseFormFooter.vue";
+import EnterpriseListControls from "@/shared/components/enterprise/EnterpriseListControls.vue";
+import EnterpriseListPage from "@/shared/components/enterprise/EnterpriseListPage.vue";
+import PermissionButton from "@/shared/components/enterprise/PermissionButton.vue";
+import AttendancePolicyForm from "../components/AttendancePolicyForm.vue";
+import { ATTENDANCE_PERMISSIONS } from "../config/attendance.config.js";
+import {
+  archiveAttendancePolicy,
+  createAttendancePolicy,
+  fetchAttendancePolicies,
+  updateAttendancePolicy,
+} from "../services/attendance.api.js";
+const toast = useToast(),
+  auth = useAuthStore(),
+  workspace = useWorkspaceStore();
+const items = ref([]),
+  loading = ref(false),
+  saving = ref(false),
+  archiving = ref(false),
+  pagination = reactive({ page: 1, limit: 10, total: 0, totalPages: 1 }),
+  query = reactive({ page: 1, limit: 10, search: "", status: "ALL" }),
+  visible = ref(false),
+  archiveVisible = ref(false),
+  selectedId = ref(""),
+  candidate = ref(null);
+const form = reactive(empty());
+const columns = [
+  {
+    field: "code",
+    header: "Code",
+    frozen: true,
+    width: "9rem",
+    minWidth: "9rem",
+  },
+  { field: "name", header: "Policy", width: "15rem", minWidth: "15rem" },
+  {
+    field: "effectiveFrom",
+    header: "Effective From",
+    width: "10rem",
+    minWidth: "10rem",
+  },
+  {
+    field: "effectiveTo",
+    header: "Effective To",
+    width: "10rem",
+    minWidth: "10rem",
+  },
+  {
+    field: "graceInMinutes",
+    header: "Grace In",
+    width: "8rem",
+    minWidth: "8rem",
+  },
+  {
+    field: "graceOutMinutes",
+    header: "Grace Out",
+    width: "8rem",
+    minWidth: "8rem",
+  },
+  {
+    field: "minimumWorkedMinutes",
+    header: "Minimum Work",
+    width: "9rem",
+    minWidth: "9rem",
+  },
+  {
+    field: "lateRoundMethod",
+    header: "Late Rounding",
+    width: "10rem",
+    minWidth: "10rem",
+  },
+  {
+    field: "earlyLeaveRoundMethod",
+    header: "Early Rounding",
+    width: "10rem",
+    minWidth: "10rem",
+  },
+  { field: "status", header: "Status", width: "8rem", minWidth: "8rem" },
+];
+const statuses = [
+  { label: "All", value: "ALL" },
+  { label: "Active", value: "ACTIVE" },
+  { label: "Inactive", value: "INACTIVE" },
+  { label: "Archived", value: "ARCHIVED" },
+];
+const companyName = computed(
+    () =>
+      workspace.selectedCompany?.displayName ||
+      workspace.selectedCompany?.code ||
+      "—",
+  ),
+  branchName = computed(
+    () =>
+      workspace.selectedBranch?.name || workspace.selectedBranch?.code || "—",
+  ),
+  activeFilters = computed(
+    () => Number(Boolean(query.search)) + Number(query.status !== "ALL"),
+  );
+function empty() {
+  return {
+    companyId: "",
+    branchId: "",
+    code: "",
+    name: "",
+    graceInMinutes: 0,
+    graceOutMinutes: 0,
+    minimumWorkedMinutes: 0,
+    lateRoundUnitMinutes: 1,
+    lateRoundMethod: "CEIL",
+    earlyLeaveRoundUnitMinutes: 1,
+    earlyLeaveRoundMethod: "CEIL",
+    autoGenerateAbsent: true,
+    treatSundayAsRestDay: true,
+    status: "ACTIVE",
+    effectiveFrom: "",
+    effectiveTo: "",
+  };
+}
+async function load(overrides = {}) {
+  if (!workspace.ready) return;
+  Object.assign(query, overrides);
+  loading.value = true;
+  try {
+    const result = await fetchAttendancePolicies({
+      ...query,
+      companyId: workspace.companyId,
+      branchId: workspace.branchId,
+    });
+    items.value = result.items || [];
+    Object.assign(pagination, result.pagination || {});
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: "Unable to load policies",
+      detail: e.message,
+      life: 4000,
+    });
+  } finally {
+    loading.value = false;
+  }
+}
+function create() {
+  selectedId.value = "";
+  Object.assign(form, empty(), {
+    companyId: workspace.companyId,
+    branchId: workspace.branchId,
+  });
+  visible.value = true;
+}
+function edit(row) {
+  selectedId.value = row.id;
+  Object.assign(form, empty(), row, {
+    companyId: workspace.companyId,
+    branchId: workspace.branchId,
+    effectiveFrom: String(row.effectiveFrom || "").slice(0, 10),
+    effectiveTo: String(row.effectiveTo || "").slice(0, 10),
+  });
+  visible.value = true;
+}
+async function save() {
+  saving.value = true;
+  try {
+    const payload = {
+      ...form,
+      companyId: workspace.companyId,
+      branchId: workspace.branchId,
+      effectiveFrom: form.effectiveFrom || null,
+      effectiveTo: form.effectiveTo || null,
+    };
+    selectedId.value
+      ? await updateAttendancePolicy(selectedId.value, payload)
+      : await createAttendancePolicy(payload);
+    visible.value = false;
+    toast.add({ severity: "success", summary: "Policy saved", life: 2500 });
+    await load();
+  } finally {
+    saving.value = false;
+  }
+}
+async function archive() {
+  archiving.value = true;
+  try {
+    await archiveAttendancePolicy(candidate.value.id);
+    archiveVisible.value = false;
+    await load();
+  } finally {
+    archiving.value = false;
+  }
+}
+function actions(row) {
+  return [
+    {
+      label: "Edit",
+      icon: "pi pi-pencil",
+      visible:
+        auth.hasPermission(ATTENDANCE_PERMISSIONS.POLICY_UPDATE) &&
+        row.status !== "ARCHIVED",
+      command: () => edit(row),
+    },
+    {
+      label: "Archive",
+      icon: "pi pi-archive",
+      visible:
+        auth.hasPermission(ATTENDANCE_PERMISSIONS.POLICY_ARCHIVE) &&
+        row.status !== "ARCHIVED",
+      command: () => {
+        candidate.value = row;
+        archiveVisible.value = true;
+      },
+    },
+  ];
+}
+function date(v) {
+  return v ? String(v).slice(0, 10) : "—";
+}
+watch(
+  () => workspace.revision,
+  () => load({ page: 1 }),
+);
+onMounted(() => load());
 </script>
-<template><EnterpriseListPage :rows="items" :columns="columns" :loading="loading" :pagination="pagination" row-key="id" empty-title="No attendance policy" empty-description="Create one active policy for this branch." @retry="load" @page-change="load({page:$event.page,limit:$event.limit})"><template #controls><EnterpriseListControls filter-label="Filters" hide-filter-label="Hide Filters" :active-filter-count="activeFilters"><template #start><Button label="Refresh" icon="pi pi-refresh" severity="secondary" text :loading="loading" @click="load"/></template><template #actions><PermissionButton :permission="ATTENDANCE_PERMISSIONS.POLICY_CREATE" label="New Policy" icon="pi pi-plus" @click="create"/></template><template #filters><EnterpriseFilterBar :loading="loading"><EnterpriseFilterField class="policy-search" label="Search" search><InputText v-model="query.search" placeholder="Policy code or name" @keyup.enter="load({page:1})"/></EnterpriseFilterField><EnterpriseFilterField label="Status"><Select v-model="query.status" :options="statuses" option-label="label" option-value="value"/></EnterpriseFilterField><template #actions><Button label="Clear" severity="secondary" outlined @click="query.search='';query.status='ALL';load({page:1})"/><Button label="Apply" icon="pi pi-check" @click="load({page:1})"/></template></EnterpriseFilterBar></template></EnterpriseListControls></template><template #cell-effectiveFrom="{row}">{{date(row.effectiveFrom)}}</template><template #cell-effectiveTo="{row}">{{date(row.effectiveTo)}}</template><template #cell-status="{row}"><Tag :value="row.status" :severity="row.status==='ACTIVE'?'success':row.status==='INACTIVE'?'warn':'danger'"/></template><template #actions="{row}"><EnterpriseActionMenu :items="actions(row)"/></template></EnterpriseListPage><EnterpriseDialog :visible="visible" :title="selectedId?'Edit Attendance Policy':'New Attendance Policy'" width="52rem" :busy="saving" @update:visible="visible=$event"><AttendancePolicyForm v-model="form" :company-name="companyName" :branch-name="branchName" :company-id="workspace.companyId" :branch-id="workspace.branchId" :editing="Boolean(selectedId)" :disabled="saving"/><template #footer><EnterpriseFormFooter :saving="saving" :disabled="!form.code||!form.name" @cancel="visible=false" @save="save"/></template></EnterpriseDialog><EnterpriseConfirmDialog v-model:visible="archiveVisible" title="Archive Attendance Policy" :message="`Archive ${candidate?.name||'this policy'}?`" confirm-label="Archive" :busy="archiving" @confirm="archive"/></template><style scoped>.policy-search{min-width:18rem}.policy-search :deep(.p-inputtext){width:100%}</style>
+<template>
+  <EnterpriseListPage
+    :rows="items"
+    :columns="columns"
+    :loading="loading"
+    :pagination="pagination"
+    row-key="id"
+    empty-title="No attendance policy"
+    empty-description="Create one active policy for this branch."
+    @retry="load"
+    @page-change="load({ page: $event.page, limit: $event.limit })"
+    ><template #controls
+      ><EnterpriseListControls
+        filter-label="Filters"
+        hide-filter-label="Hide Filters"
+        :active-filter-count="activeFilters"
+        ><template #start
+          ><Button
+            label="Refresh"
+            icon="pi pi-refresh"
+            severity="secondary"
+            text
+            :loading="loading"
+            @click="load" /></template
+        ><template #actions
+          ><PermissionButton
+            :permission="ATTENDANCE_PERMISSIONS.POLICY_CREATE"
+            label="New Policy"
+            icon="pi pi-plus"
+            @click="create" /></template
+        ><template #filters
+          ><EnterpriseFilterBar :loading="loading"
+            ><EnterpriseFilterField class="policy-search" label="Search" search
+              ><InputText
+                v-model="query.search"
+                placeholder="Policy code or name"
+                @keyup.enter="load({ page: 1 })" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Status"
+              ><Select
+                v-model="query.status"
+                :options="statuses"
+                option-label="label"
+                option-value="value" /></EnterpriseFilterField
+            ><template #actions
+              ><Button
+                label="Clear"
+                severity="secondary"
+                outlined
+                @click="
+                  query.search = '';
+                  query.status = 'ALL';
+                  load({ page: 1 });
+                " /><Button
+                label="Apply"
+                icon="pi pi-check"
+                @click="
+                  load({ page: 1 })
+                " /></template></EnterpriseFilterBar></template></EnterpriseListControls></template
+    ><template #cell-effectiveFrom="{ row }">{{
+      date(row.effectiveFrom)
+    }}</template
+    ><template #cell-effectiveTo="{ row }">{{ date(row.effectiveTo) }}</template
+    ><template #cell-status="{ row }"
+      ><Tag
+        :value="row.status"
+        :severity="
+          row.status === 'ACTIVE'
+            ? 'success'
+            : row.status === 'INACTIVE'
+              ? 'warn'
+              : 'danger'
+        " /></template
+    ><template #actions="{ row }"
+      ><EnterpriseActionMenu
+        :items="actions(row)" /></template></EnterpriseListPage
+  ><EnterpriseDialog
+    :visible="visible"
+    :title="selectedId ? 'Edit Attendance Policy' : 'New Attendance Policy'"
+    width="52rem"
+    :busy="saving"
+    @update:visible="visible = $event"
+    ><AttendancePolicyForm
+      v-model="form"
+      :company-name="companyName"
+      :branch-name="branchName"
+      :company-id="workspace.companyId"
+      :branch-id="workspace.branchId"
+      :editing="Boolean(selectedId)"
+      :disabled="saving" /><template #footer
+      ><EnterpriseFormFooter
+        :saving="saving"
+        :disabled="!form.code || !form.name"
+        @cancel="visible = false"
+        @save="save" /></template></EnterpriseDialog
+  ><EnterpriseConfirmDialog
+    v-model:visible="archiveVisible"
+    title="Archive Attendance Policy"
+    :message="`Archive ${candidate?.name || 'this policy'}?`"
+    confirm-label="Archive"
+    :busy="archiving"
+    @confirm="archive"
+  />
+</template>
+<style scoped>
+.policy-search {
+  min-width: 18rem;
+}
+.policy-search :deep(.p-inputtext) {
+  width: 100%;
+}
+</style>

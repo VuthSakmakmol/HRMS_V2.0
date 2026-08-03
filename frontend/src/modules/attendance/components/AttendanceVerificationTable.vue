@@ -1,7 +1,8 @@
 <script setup>
-import Column from "primevue/column"
-import DataTable from "primevue/datatable"
 import Tag from "primevue/tag"
+
+import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue"
+import EnterpriseTable from "@/shared/components/enterprise/EnterpriseTable.vue"
 
 const props = defineProps({
     items: {
@@ -12,53 +13,212 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    canCorrect: {
+        type: Boolean,
+        default: false,
+    },
+    canAccept: {
+        type: Boolean,
+        default: false,
+    },
 })
 
-function statusSeverity(status) {
-    if (status === "PRESENT") {
-        return "success"
-    }
+const emit = defineEmits(["correct", "accept"])
 
+const columns = [
+    {
+        field: "attendanceDate",
+        header: "Date",
+        frozen: true,
+        width: "8rem",
+        minWidth: "8rem",
+    },
+    {
+        field: "employeeCode",
+        header: "Employee ID",
+        width: "9rem",
+        minWidth: "9rem",
+    },
+    {
+        field: "employeeName",
+        header: "Employee",
+        width: "14rem",
+        minWidth: "14rem",
+    },
+    {
+        field: "departmentName",
+        header: "Department",
+        width: "12rem",
+        minWidth: "12rem",
+    },
+    {
+        field: "firstInAt",
+        header: "First In",
+        width: "8rem",
+        minWidth: "8rem",
+    },
+    {
+        field: "lastOutAt",
+        header: "Last Out",
+        width: "8rem",
+        minWidth: "8rem",
+    },
+    {
+        field: "status",
+        header: "Status",
+        width: "11rem",
+        minWidth: "11rem",
+    },
+    {
+        field: "verificationStatus",
+        header: "Verification",
+        width: "11rem",
+        minWidth: "11rem",
+    },
+    {
+        field: "issueCodes",
+        header: "Detected Issues",
+        width: "18rem",
+        minWidth: "18rem",
+    },
+    {
+        field: "source",
+        header: "Source",
+        width: "10rem",
+        minWidth: "10rem",
+    },
+]
+
+function formatDate(value) {
+    if (!value) return "—"
+    return new Intl.DateTimeFormat("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "Asia/Phnom_Penh",
+    }).format(new Date(value))
+}
+
+function formatTime(value) {
+    if (!value) return "—"
+    return new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Phnom_Penh",
+    }).format(new Date(value))
+}
+
+function label(value) {
+    return String(value || "—").replaceAll("_", " ")
+}
+
+function statusSeverity(status) {
+    if (status === "PRESENT") return "success"
     if (["LATE", "EARLY_LEAVE", "LATE_AND_EARLY_LEAVE"].includes(status)) {
         return "warn"
     }
-
     if (["MISSING_IN", "MISSING_OUT", "ABSENT"].includes(status)) {
         return "danger"
     }
-
     return "info"
+}
+
+function verificationSeverity(status) {
+    if (status === "VERIFIED") return "success"
+    if (status === "NEEDS_REVIEW") return "warn"
+    if (status === "CORRECTED") return "info"
+    return "secondary"
+}
+
+function issueText(row) {
+    return (row.issueCodes || []).map(label).join(", ") || "—"
+}
+
+function actions(row) {
+    const unlocked = !["PAYROLL_LOCKED", "FINALIZED"].includes(row.lockStatus)
+    return [
+        {
+            label: "Correct times",
+            icon: "pi pi-pencil",
+            visible: props.canCorrect && unlocked,
+            command: () => emit("correct", row),
+        },
+        {
+            label: "Accept as reviewed",
+            icon: "pi pi-check-circle",
+            visible:
+                props.canAccept &&
+                unlocked &&
+                row.verificationStatus === "NEEDS_REVIEW",
+            command: () => emit("accept", row),
+        },
+    ]
 }
 </script>
 
 <template>
-    <div class="hrms-table-wrap">
-        <DataTable
-            :value="props.items"
-            :loading="props.loading"
-            scrollable
-            striped-rows
-            class="hrms-standard-table hrms-standard-table--horizontal"
-            data-key="id"
-        >
-            <template #empty>
-                <div class="hrms-empty-state">No attendance records found.</div>
-            </template>
+    <EnterpriseTable
+        :rows="items"
+        :columns="columns"
+        :loading="loading"
+        row-key="id"
+        scroll-height="31rem"
+        striped-rows
+    >
+        <template #cell-attendanceDate="{ row }">
+            {{ formatDate(row.attendanceDate) }}
+        </template>
 
-            <Column field="employeeCode" header="Employee ID" style="min-width: 8rem" />
-            <Column field="employeeName" header="Employee" style="min-width: 12rem" />
-            <Column field="attendanceDate" header="Date" style="min-width: 7rem" />
-            <Column field="firstInAt" header="First In" style="min-width: 7rem" />
-            <Column field="lastOutAt" header="Last Out" style="min-width: 7rem" />
-            <Column field="status" header="Status" style="min-width: 8rem">
-                <template #body="{ data }">
-                    <Tag
-                        class="attendance-table-status"
-                        :value="data.status"
-                        :severity="statusSeverity(data.status)"
-                    />
-                </template>
-            </Column>
-        </DataTable>
-    </div>
+        <template #cell-firstInAt="{ row }">
+            {{ formatTime(row.firstInAt) }}
+        </template>
+
+        <template #cell-lastOutAt="{ row }">
+            {{ formatTime(row.lastOutAt) }}
+        </template>
+
+        <template #cell-status="{ row }">
+            <Tag
+                :value="label(row.status)"
+                :severity="statusSeverity(row.status)"
+                class="attendance-table-status"
+            />
+        </template>
+
+        <template #cell-verificationStatus="{ row }">
+            <Tag
+                :value="label(row.verificationStatus)"
+                :severity="verificationSeverity(row.verificationStatus)"
+                class="attendance-table-status"
+            />
+        </template>
+
+        <template #cell-issueCodes="{ row }">
+            <span class="attendance-issue-text" :title="issueText(row)">
+                {{ issueText(row) }}
+            </span>
+        </template>
+
+        <template #cell-source="{ row }">
+            {{ label(row.source) }}
+        </template>
+
+        <template #actions="{ row }">
+            <EnterpriseActionMenu
+                :items="actions(row)"
+                aria-label="Attendance verification actions"
+            />
+        </template>
+    </EnterpriseTable>
 </template>
+
+<style scoped>
+.attendance-issue-text {
+    display: block;
+    overflow: hidden;
+    color: var(--hrms-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+</style>
