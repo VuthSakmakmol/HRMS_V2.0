@@ -133,44 +133,6 @@ async function requireExactAttendanceDate({
     return exactDate
 }
 
-async function requireReviewedAttendanceDate({
-    companyId,
-    branchId,
-    reportDate,
-}) {
-    const dateRange = {
-        $gte: startOfBusinessDay(reportDate),
-        $lte: endOfBusinessDay(reportDate),
-    }
-    const [needsReviewCount, unmatchedCount] = await Promise.all([
-        AttendanceRecord.countDocuments({
-            companyId,
-            branchId,
-            attendanceDate: dateRange,
-            verificationStatus: "NEEDS_REVIEW",
-        }),
-        AttendanceImportIssue.countDocuments({
-            companyId,
-            branchId,
-            attendanceDate: dateRange,
-            status: "NO_EMPLOYEE_MATCH",
-        }),
-    ])
-
-    if (needsReviewCount > 0 || unmatchedCount > 0) {
-        throw new AppError({
-            statusCode: 422,
-            code: "ATTENDANCE_REVIEW_REQUIRED",
-            messageKey: "errors.attendance.reviewRequired",
-            details: {
-                reportDate,
-                needsReviewCount,
-                unmatchedCount,
-            },
-        })
-    }
-}
-
 async function loadAttendanceTarget({ companyId, branchId, date }) {
     const [year, month] = date.split("-").map(Number)
     const targets = await HrDashboardTarget.find({
@@ -279,12 +241,6 @@ export async function sendAttendanceDailyEmail({
         branchId,
         requestedDate: date,
     })
-    await requireReviewedAttendanceDate({
-        companyId,
-        branchId,
-        reportDate,
-    })
-
     const existing = await AttendanceDailyEmailLog.findOne({
         companyId,
         branchId,
@@ -333,10 +289,7 @@ export async function sendAttendanceDailyEmail({
     const summary = {
         totalEmployees,
         faceScans,
-        absent: Math.max(
-            totalEmployees - faceScans - annualLeave - maternityLeave - sickLeave - unpaidLeave,
-            0,
-        ),
+        absent: report.summary.absent[dayIndex] || 0,
         annualLeave,
         maternityLeave,
         sickLeave,

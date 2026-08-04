@@ -1,6 +1,7 @@
 export const EMPLOYMENT_STATUS_OPTIONS = Object.freeze([
     { label: "All employment statuses", value: "ALL" },
     { label: "Working", value: "WORKING" },
+    { label: "Maternity Leave", value: "MATERNITY_LEAVE" },
     { label: "Resigned", value: "RESIGNED" },
     { label: "Terminated", value: "TERMINATED" },
     { label: "Abandoned", value: "ABANDONED" },

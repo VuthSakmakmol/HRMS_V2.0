@@ -7,6 +7,7 @@ import ProgressBar from "primevue/progressbar"
 import Select from "primevue/select"
 import ToggleSwitch from "primevue/toggleswitch"
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue"
+import { useI18n } from "vue-i18n"
 import { useToast } from "primevue/usetoast"
 
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
@@ -32,6 +33,7 @@ import {
 } from "../services/attendance.api.js"
 
 const toast = useToast()
+const { t } = useI18n()
 const workspace = useWorkspaceStore()
 const today = new Date()
 const currentDate = new Intl.DateTimeFormat("en-CA", {
@@ -91,17 +93,48 @@ const payrollSchedule = reactive({
     progressPercent: 0,
     progressPhase: "",
     progressDetail: "",
+    progressProcessedRows: 0,
+    progressTotalRows: 0,
     progressUpdatedAt: null,
+    agentOnline: false,
+    agentLastSeenAt: null,
+    agentMachineName: "",
+    agentVersion: "",
 })
 const error = ref("")
 const departments = ref([])
 const collapsedDepartments = ref(new Set())
+const showExactCounts = ref(false)
 const progress = reactive({ percent: 0, phase: "", processedRows: 0, totalRows: 0 })
 const payrollRunActive = computed(() =>
     payrollSchedule.runNowPending
     || payrollSchedule.canCancel
     || ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(payrollSchedule.status),
 )
+const payrollAgentReady = computed(() => payrollSchedule.agentOnline === true)
+const payrollProcessedEmployees = computed(() => (
+    payrollCompletionVisible.value
+        ? Number(payrollSchedule.progressProcessedRows || payrollSchedule.lastImportedRowCount || 0)
+        : Number(payrollSchedule.progressProcessedRows || 0)
+))
+const payrollTotalEmployees = computed(() => (
+    payrollCompletionVisible.value
+        ? Number(payrollSchedule.progressTotalRows || payrollSchedule.lastImportedRowCount || 0)
+        : Number(payrollSchedule.progressTotalRows || 0)
+))
+const payrollEmployeeProgressText = computed(() => {
+    if (!payrollTotalEmployees.value) return ""
+    return `${payrollProcessedEmployees.value.toLocaleString()} / ${payrollTotalEmployees.value.toLocaleString()} employees`
+})
+const payrollCurrentStatus = computed(() => {
+    if (payrollCompletionVisible.value) return "SUCCESS — 100%"
+    if (payrollRunActive.value) {
+        return payrollSchedule.runNowPending
+            ? "Starting on Payroll computer"
+            : payrollSchedule.status.replaceAll("_", " ")
+    }
+    return payrollAgentReady.value ? "Ready to start" : "Bot offline"
+})
 
 const departmentOptions = computed(() => [
     { id: "", name: "All Departments" },
@@ -194,7 +227,7 @@ async function loadPayrollSchedule() {
             payrollSchedule.progressPercent = 100
             payrollSchedule.progressPhase = "COMPLETED"
             payrollSchedule.progressDetail = payrollSchedule.lastImportedRowCount
-                ? `${Number(payrollSchedule.lastImportedRowCount).toLocaleString()} attendance rows imported successfully.`
+                ? `${Number(payrollSchedule.lastImportedRowCount).toLocaleString()} employees imported successfully.`
                 : "Attendance imported successfully."
             payrollCompletionVisible.value = true
             schedulePayrollSuccessClose()
@@ -203,6 +236,7 @@ async function loadPayrollSchedule() {
             await Promise.all([loadEmailSchedule(), refreshEmailStatus()])
         }
     } catch (requestError) {
+        payrollSchedule.agentOnline = false
         toast.add({ severity: "error", summary: "Payroll bot unavailable", detail: errorMessage(requestError), life: 5000 })
     }
 }
@@ -218,6 +252,17 @@ async function openPayrollScheduleDialog() {
 }
 
 async function runPayrollBotNow() {
+    await loadPayrollSchedule()
+    if (!payrollAgentReady.value) {
+        toast.add({
+            severity: "error",
+            summary: "Payroll bot is offline",
+            detail: "Run SETUP_THIS_COMPUTER once on the Payroll computer, then keep that computer signed in.",
+            life: 6500,
+        })
+        return
+    }
+
     requestingPayrollRun.value = true
     payrollCompletionVisible.value = false
     clearPayrollSuccessClose()
@@ -229,8 +274,8 @@ async function runPayrollBotNow() {
         }))
         toast.add({
             severity: "success",
-            summary: "Payroll import requested",
-            detail: `The Payroll computer will import ${payrollImportDate.value} shortly.`,
+            summary: "Payroll import started",
+            detail: `The Payroll computer is starting ${payrollImportDate.value} now.`,
             life: 4500,
         })
     } catch (requestError) {
@@ -274,10 +319,23 @@ function clearPayrollSuccessClose() {
 
 function schedulePayrollSuccessClose() {
     clearPayrollSuccessClose()
-    payrollSuccessCloseTimer = window.setTimeout(() => {
+
+    const importedDate = payrollSchedule.lastImportedDate
+        || payrollSchedule.requestedDate
+        || payrollImportDate.value
+
+    payrollSuccessCloseTimer = window.setTimeout(async () => {
+        payrollSuccessCloseTimer = null
         payrollScheduleDialogVisible.value = false
         payrollCompletionVisible.value = false
-        payrollSuccessCloseTimer = null
+
+        if (importedDate) {
+            payrollImportDate.value = importedDate
+            filters.reportDate = importedDate
+            syncReportMonth(importedDate)
+        }
+
+        await load()
     }, 1500)
 }
 
@@ -287,7 +345,7 @@ function startPayrollStatusPolling() {
         if (payrollScheduleDialogVisible.value) {
             loadPayrollSchedule()
         }
-    }, 2000)
+    }, 1000)
 }
 
 function stopEmailScheduleStatusPolling() {
@@ -449,6 +507,14 @@ function percent(value) {
     return `${Number(value || 0).toFixed(1)}%`
 }
 
+function exactCount(value) {
+    return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })
+}
+
+function rateOrCount(rate, count) {
+    return showExactCounts.value ? exactCount(count) : percent(rate)
+}
+
 const summaryRows = computed(() => report.value ? [
     { label: "TOTAL EMPLOYEE", values: report.value.summary.totalEmployees, average: report.value.summary.averages.totalEmployees },
     { label: "FACE SCAN", values: report.value.summary.faceScans, average: report.value.summary.averages.faceScans },
@@ -465,10 +531,10 @@ const sewerAbsentRows = computed(() => {
 
     return [
         { label: "TOTAL SEWER", values: sewer.totalSewer, average: sewer.averages.totalSewer, percent: false },
-        { label: "- MATERNITY LEAVE", values: sewer.maternityLeaveRate, average: sewer.averages.maternityLeaveRate, percent: true },
-        { label: "- ANNUAL LEAVE / UNPAID", values: sewer.annualUnpaidLeaveRate, average: sewer.averages.annualUnpaidLeaveRate, percent: true },
-        { label: "- SICK LEAVE", values: sewer.sickLeaveRate, average: sewer.averages.sickLeaveRate, percent: true },
-        { label: "- ABSENT WITHOUT INFORM", values: sewer.absentWithoutInformRate, average: sewer.averages.absentWithoutInformRate, percent: true },
+        { label: "- MATERNITY LEAVE", values: sewer.maternityLeaveRate, counts: sewer.maternityLeaveCount, average: sewer.averages.maternityLeaveRate, averageCount: sewer.averages.maternityLeaveCount, percent: true },
+        { label: "- ANNUAL LEAVE / UNPAID", values: sewer.annualUnpaidLeaveRate, counts: sewer.annualUnpaidLeaveCount, average: sewer.averages.annualUnpaidLeaveRate, averageCount: sewer.averages.annualUnpaidLeaveCount, percent: true },
+        { label: "- SICK LEAVE", values: sewer.sickLeaveRate, counts: sewer.sickLeaveCount, average: sewer.averages.sickLeaveRate, averageCount: sewer.averages.sickLeaveCount, percent: true },
+        { label: "- ABSENT WITHOUT INFORM", values: sewer.absentWithoutInformRate, counts: sewer.absentWithoutInformCount, average: sewer.averages.absentWithoutInformRate, averageCount: sewer.averages.absentWithoutInformCount, percent: true },
         { label: "SEWER COME", values: sewer.sewerCome, average: sewer.averages.sewerCome, percent: false },
     ]
 })
@@ -626,6 +692,14 @@ onBeforeUnmount(() => {
             <div class="report-heading">
                 <div><strong>Attendance Daily Report</strong><span>{{ report.month }}</span></div>
                 <div class="report-heading-actions">
+                    <div class="metric-view-control" :title="t('attendance.dailyReport.displayModeHelp')">
+                        <span :class="{ active: !showExactCounts }">{{ t("attendance.dailyReport.percentageView") }}</span>
+                        <ToggleSwitch
+                            v-model="showExactCounts"
+                            :aria-label="t('attendance.dailyReport.displayMode')"
+                        />
+                        <span :class="{ active: showExactCounts }">{{ t("attendance.dailyReport.exactCountView") }}</span>
+                    </div>
                     <div class="legend"><span>{{ attendanceTargetText }}</span></div>
                 </div>
             </div>
@@ -634,7 +708,7 @@ onBeforeUnmount(() => {
                     <thead><tr><th class="label-cell">Daily Summary</th><th v-for="day in report.days" :key="day.key" :class="{ 'day-off': !day.working }" :title="day.name || day.dayType">{{ day.day }}</th><th>Avg</th></tr></thead>
                     <tbody>
                         <tr v-for="row in summaryRows" :key="row.label"><th class="label-cell">{{ row.label }}</th><td v-for="(value,index) in row.values" :key="index" :class="{ 'day-off': !report.days[index].working }">{{ report.days[index].working ? number(value) : "" }}</td><td>{{ number(row.average) }}</td></tr>
-                        <tr class="absent-total"><th class="label-cell">ABSENT RATE</th><td v-for="(value,index) in report.summary.absentRate" :key="index" :class="percentageClass(report.days[index].working ? value : null)">{{ report.days[index].working ? percent(value) : "" }}</td><td :class="percentageClass(report.summary.averages.absentRate)">{{ percent(report.summary.averages.absentRate) }}</td></tr>
+                        <tr class="absent-total"><th class="label-cell">{{ showExactCounts ? "ABSENT" : "ABSENT RATE" }}</th><td v-for="(value,index) in report.summary.absentRate" :key="index" :class="percentageClass(report.days[index].working ? value : null)">{{ report.days[index].working ? rateOrCount(value, report.summary.absent[index]) : "" }}</td><td :class="percentageClass(report.summary.averages.absentRate)">{{ rateOrCount(report.summary.averages.absentRate, report.summary.averages.absent) }}</td></tr>
                         <tr class="section-row"><th class="label-cell">FORGET FINGER SCAN</th><td :colspan="report.days.length + 1" /></tr>
                         <tr v-for="row in visibleGroupRows" :key="row.key" :class="{ 'department-row': row.level === 0, 'position-row': row.level === 1 }">
                             <th class="label-cell" :class="{ 'department-toggle-cell': row.level === 0 && isDepartmentExpandable(row) }" @click="toggleDepartment(row)">
@@ -644,8 +718,8 @@ onBeforeUnmount(() => {
                                 </button>
                                 <span v-else>{{ row.label }}</span>
                             </th>
-                            <td v-for="(value,index) in row.values" :key="index" :class="percentageClass(value)">{{ value === null ? "" : percent(value) }}</td>
-                            <td :class="percentageClass(row.average)">{{ percent(row.average) }}</td>
+                            <td v-for="(value,index) in row.values" :key="index" :class="percentageClass(value)">{{ value === null ? "" : rateOrCount(value, row.counts[index]) }}</td>
+                            <td :class="percentageClass(row.average)">{{ rateOrCount(row.average, row.averageCount) }}</td>
                         </tr>
                         <tr class="section-row sewer-section"><th class="label-cell">SEWER ABSENT RATE</th><td :colspan="report.days.length + 1" /></tr>
                         <tr v-for="row in sewerAbsentRows" :key="`sewer-${row.label}`">
@@ -655,23 +729,23 @@ onBeforeUnmount(() => {
                                 :key="index"
                                 :class="row.percent ? percentageClass(value) : { 'day-off': !report.days[index].working }"
                             >
-                                {{ value === null ? "" : row.percent ? percent(value) : number(value) }}
+                                {{ value === null ? "" : row.percent ? rateOrCount(value, row.counts[index]) : number(value) }}
                             </td>
                             <td :class="row.percent ? percentageClass(row.average) : ''">
-                                {{ row.percent ? percent(row.average) : number(row.average) }}
+                                {{ row.percent ? rateOrCount(row.average, row.averageCount) : number(row.average) }}
                             </td>
                         </tr>
                         <tr class="sewer-absent-total">
-                            <th class="label-cell">TOTAL ABSENT RATE</th>
+                            <th class="label-cell">{{ showExactCounts ? "TOTAL ABSENT" : "TOTAL ABSENT RATE" }}</th>
                             <td
                                 v-for="(value, index) in report.sewerAbsentRate.totalAbsentRate"
                                 :key="index"
                                 :class="percentageClass(value)"
                             >
-                                {{ value === null ? "" : percent(value) }}
+                                {{ value === null ? "" : rateOrCount(value, report.sewerAbsentRate.totalAbsentCount[index]) }}
                             </td>
                             <td :class="percentageClass(report.sewerAbsentRate.averages.totalAbsentRate)">
-                                {{ percent(report.sewerAbsentRate.averages.totalAbsentRate) }}
+                                {{ rateOrCount(report.sewerAbsentRate.averages.totalAbsentRate, report.sewerAbsentRate.averages.totalAbsentCount) }}
                             </td>
                         </tr>
                     </tbody>
@@ -778,7 +852,19 @@ onBeforeUnmount(() => {
         <Dialog v-model:visible="payrollScheduleDialogVisible" modal header="Payroll Attendance Import" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
             <div class="schedule-form">
                 <Message severity="info" :closable="false">
-                    Select the attendance date, then start the import. Today is selected whenever a new import is opened. The Payroll bot must export this exact date; it cannot use an older or different file.
+                    Select the attendance date and click Start Payroll Import. The bot begins immediately and must export this exact date.
+                </Message>
+
+                <Message
+                    :severity="payrollAgentReady ? 'success' : 'warn'"
+                    :closable="false"
+                >
+                    <template v-if="payrollAgentReady">
+                        Bot ready on {{ payrollSchedule.agentMachineName || "Payroll computer" }}<template v-if="payrollSchedule.agentVersion"> · version {{ payrollSchedule.agentVersion }}</template>. No terminal is required.
+                    </template>
+                    <template v-else>
+                        Bot offline. Run SETUP_THIS_COMPUTER once on the Payroll computer. After that, it starts automatically with Windows.
+                    </template>
                 </Message>
 
                 <label class="schedule-field">
@@ -804,12 +890,20 @@ onBeforeUnmount(() => {
                         <span>{{ payrollCompletionVisible ? 100 : (payrollSchedule.progressPercent || 0) }}%</span>
                     </div>
                     <ProgressBar :value="payrollCompletionVisible ? 100 : (payrollSchedule.progressPercent || 0)" />
+                    <div v-if="payrollEmployeeProgressText" class="payroll-progress-count">
+                        <span>Employees processed</span>
+                        <strong>{{ payrollEmployeeProgressText }}</strong>
+                    </div>
                     <small v-if="payrollSchedule.progressDetail">{{ payrollSchedule.progressDetail }}</small>
                 </div>
 
                 <dl class="schedule-status">
                     <dt>Current status</dt>
-                    <dd>{{ payrollCompletionVisible ? "SUCCESS — 100%" : (payrollRunActive ? (payrollSchedule.runNowPending ? "Waiting for Payroll computer" : payrollSchedule.status.replaceAll("_", " ")) : "Ready to start a new import") }}</dd>
+                    <dd>{{ payrollCurrentStatus }}</dd>
+                    <template v-if="payrollSchedule.agentLastSeenAt">
+                        <dt>Bot last seen</dt>
+                        <dd>{{ new Date(payrollSchedule.agentLastSeenAt).toLocaleString() }}</dd>
+                    </template>
                     <template v-if="payrollRunActive && payrollSchedule.requestedDate">
                         <dt>Requested date</dt>
                         <dd>{{ payrollSchedule.requestedDate }}</dd>
@@ -873,7 +967,7 @@ onBeforeUnmount(() => {
                     icon="pi pi-play"
                     severity="primary"
                     :loading="requestingPayrollRun"
-                    :disabled="!payrollImportDate || payrollRunActive || payrollCompletionVisible || cancellingPayrollRun"
+                    :disabled="!payrollAgentReady || !payrollImportDate || payrollRunActive || payrollCompletionVisible || cancellingPayrollRun"
                     @click="runPayrollBotNow"
                 />
             </template>
@@ -993,6 +1087,20 @@ onBeforeUnmount(() => {
     color: var(--p-text-muted-color);
 }
 
+.payroll-progress-count {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--p-text-muted-color);
+    font-size: 0.82rem;
+}
+
+.payroll-progress-count strong {
+    color: var(--p-text-color);
+    font-variant-numeric: tabular-nums;
+}
+
 .schedule-status dt {
     color: var(--p-text-muted-color);
     font-weight: 600;
@@ -1100,7 +1208,38 @@ onBeforeUnmount(() => {
 .report-heading-actions {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.55rem;
+}
+
+.metric-view-control {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 0.35rem !important;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid var(--p-content-border-color);
+    border-radius: 999px;
+    background: var(--p-content-background);
+    white-space: nowrap;
+}
+
+.metric-view-control span {
+    color: var(--p-text-muted-color) !important;
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+
+.metric-view-control span.active {
+    color: var(--p-primary-color) !important;
+}
+
+.metric-view-control :deep(.p-toggleswitch) {
+    width: 1.85rem;
+    height: 1.05rem;
+}
+
+.metric-view-control :deep(.p-toggleswitch-handle) {
+    width: 0.75rem;
+    height: 0.75rem;
 }
 
 .legend span {
@@ -1263,7 +1402,12 @@ onBeforeUnmount(() => {
     }
 
     .report-heading-actions {
+        width: 100%;
         flex-wrap: wrap;
+    }
+
+    .metric-view-control {
+        margin-left: auto;
     }
 
     .label-cell {

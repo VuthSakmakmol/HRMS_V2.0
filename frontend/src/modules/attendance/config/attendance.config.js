@@ -8,7 +8,6 @@ export const ATTENDANCE_PERMISSIONS = Object.freeze({
   POLICY_UPDATE: "ATTENDANCE.POLICY.UPDATE",
   POLICY_ARCHIVE: "ATTENDANCE.POLICY.ARCHIVE",
   SCAN_IMPORT: "ATTENDANCE.SCAN.IMPORT",
-  VERIFICATION_RUN: "ATTENDANCE.VERIFICATION.RUN",
 });
 
 export const attendanceColumns = [
@@ -52,12 +51,6 @@ export const attendanceColumns = [
     minWidth: "8rem",
   },
   { field: "status", header: "Status", width: "11rem", minWidth: "11rem" },
-  {
-    field: "verificationStatus",
-    header: "Verification",
-    width: "10rem",
-    minWidth: "10rem",
-  },
   { field: "source", header: "Source", width: "9rem", minWidth: "9rem" },
 ];
 
@@ -73,13 +66,6 @@ export const attendanceStatusOptions = [
   "REST_DAY",
   "HOLIDAY",
 ].map((value) => ({ label: value.replaceAll("_", " "), value }));
-export const verificationOptions = [
-  "ALL",
-  "VERIFIED",
-  "NEEDS_REVIEW",
-  "CORRECTED",
-].map((value) => ({ label: value.replaceAll("_", " "), value }));
-
 export const rawScanColumns = [
   {
     field: "employeeCode",

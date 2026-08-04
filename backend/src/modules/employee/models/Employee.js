@@ -136,7 +136,7 @@ const employeeSchema = new Schema(
         joinDate: { type: Date, required: true },
         employmentStatus: {
             type: String,
-            enum: ["WORKING", "RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"],
+            enum: ["WORKING", "MATERNITY_LEAVE", "RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"],
             default: "WORKING",
             required: true,
         },

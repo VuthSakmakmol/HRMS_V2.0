@@ -207,6 +207,8 @@ function normalizeEmploymentStatus(value) {
     const map = {
         WORKING: "WORKING",
         ACTIVE: "WORKING",
+        MATERNITY_LEAVE: "MATERNITY_LEAVE",
+        MATERNITY: "MATERNITY_LEAVE",
         RESIGN: "RESIGNED",
         RESIGNED: "RESIGNED",
         TERMINATE: "TERMINATED",
@@ -393,7 +395,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         { rule: "Address columns", description: "Only Birth Address and Permanent Address are supported. Living, emergency contact, and family address columns are no longer imported." },
         { rule: "Age", description: "Do not import age. Backend calculates age from dateOfBirth." },
         { rule: "Team/Section", description: "Team and Section are ignored because the project structure is Department => Position => Line." },
-        { rule: "Status", description: "Use WORKING, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED. Old values Working, Resign, Terminate, Abandon, Pass Away, Retirement are accepted." },
+        { rule: "Status", description: "Use WORKING, MATERNITY_LEAVE, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED. Old values Working, Maternity, Resign, Terminate, Abandon, Pass Away, and Retirement are accepted." },
         { rule: "Login account", description: "Set createAccount to YES to create login. Login ID = employeeCode. Initial password = employeeCode + phoneNumber. If the column is missing, YES is used." },
     ])
     instructions.getRow(1).font = { bold: true }
@@ -520,7 +522,7 @@ export async function parseEmployeeImportWorkbook(buffer) {
             normalized.spouseName = ""
             normalized.spouseContactNumber = ""
         }
-        if (normalized.employmentStatus !== "WORKING" && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required when employmentStatus is not WORKING" }))
+        if (["RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"].includes(normalized.employmentStatus) && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required for an exit employment status" }))
 
         rows.push(normalized)
     })

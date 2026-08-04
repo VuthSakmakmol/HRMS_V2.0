@@ -26,7 +26,6 @@ import hrDashboardRoutes from "./modules/hrDashboard/routes/hrDashboard.routes.j
 import attendanceAgentRoutes from "./modules/attendance/routes/attendanceAgent.routes.js"
 import attendancePolicyRoutes from "./modules/attendance/routes/attendancePolicy.routes.js"
 import attendanceScanRoutes from "./modules/attendance/routes/attendanceScan.routes.js"
-import attendanceVerificationRoutes from "./modules/attendance/routes/attendanceVerification.routes.js"
 import attendanceRoutes from "./modules/attendance/routes/attendance.routes.js"
 
 import recruitmentChannelRoutes from "./modules/recruitmentChannel/routes/recruitmentChannel.routes.js"
@@ -147,10 +146,6 @@ app.use(
 app.use("/api/v1/attendance/agent", attendanceAgentRoutes)
 app.use("/api/v1/attendance/policies", attendancePolicyRoutes)
 app.use("/api/v1/attendance/scans", attendanceScanRoutes)
-app.use(
-    "/api/v1/attendance/verification",
-    attendanceVerificationRoutes,
-)
 app.use("/api/v1/attendance", attendanceRoutes)
 
 /*

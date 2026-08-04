@@ -220,7 +220,6 @@ export async function cancelAttendancePayrollBotRun(payload) {
 
 const POLICY_ENDPOINT = "/attendance/policies"
 const SCAN_ENDPOINT = "/attendance/scans"
-const VERIFICATION_ENDPOINT = "/attendance/verification"
 
 
 export async function fetchAttendancePolicies(params = {}) {
@@ -279,32 +278,4 @@ export async function importRawScans(file, { onUploadProgress, onProgress, signa
         },
     )
     return waitForImportJob(SCAN_ENDPOINT, response.data.data.job.jobId, { onProgress, signal })
-}
-
-export async function runAttendanceVerification(payload) {
-    const response = await apiClient.post(
-        `${VERIFICATION_ENDPOINT}/run`,
-        payload,
-        { timeout: 0 },
-    )
-    return response.data.data.summary
-}
-
-export async function fetchAttendanceVerificationWorkspace(params = {}) {
-    const response = await apiClient.get(
-        `${VERIFICATION_ENDPOINT}/workspace`,
-        { params: withoutBlankParams(params) },
-    )
-    return response.data.data
-}
-
-export async function acceptAttendanceVerificationRecord(
-    attendanceId,
-    reason,
-) {
-    const response = await apiClient.post(
-        `${VERIFICATION_ENDPOINT}/${attendanceId}/accept`,
-        { reason },
-    )
-    return response.data.data.record
 }

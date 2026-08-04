@@ -199,12 +199,6 @@ const navGroups = computed(() => {
                     to: { name: "attendance-raw-scans" },
                     permissionCode: "ATTENDANCE.SCAN.VIEW",
                 },
-                {
-                    labelKey: "nav.attendanceVerification",
-                    icon: "pi pi-check-circle",
-                    to: { name: "attendance-verification" },
-                    permissionCode: "ATTENDANCE.VERIFICATION.VIEW",
-                },
             ],
         },
 

@@ -12,6 +12,7 @@ import {
     claimDuePayrollRun,
     finishPayrollRun,
     getPayrollRunStatus,
+    recordPayrollAgentHeartbeat,
     updatePayrollRunProgress,
 } from "../services/attendancePayrollSchedule.service.js"
 
@@ -30,6 +31,29 @@ router.get("/health", (req, res) => {
     })
 })
 
+router.get("/payroll-schedule/heartbeat", async (req, res, next) => {
+    try {
+        const parsed = attendancePayrollScheduleQuerySchema.safeParse(req.query)
+        if (!parsed.success) {
+            throw new AppError({
+                statusCode: 422,
+                code: "ATTENDANCE_PAYROLL_HEARTBEAT_VALIDATION_FAILED",
+                messageKey: "errors.validationFailed",
+                fields: parsed.error.flatten().fieldErrors,
+            })
+        }
+
+        const schedule = await recordPayrollAgentHeartbeat({
+            ...parsed.data,
+            agentMachineName: req.attendanceAgent.machineName,
+            agentVersion: req.attendanceAgent.version,
+        })
+        res.status(200).json({ success: true, data: { schedule } })
+    } catch (error) {
+        next(error)
+    }
+})
+
 router.get("/payroll-schedule/claim", async (req, res, next) => {
     try {
         const parsed =
@@ -44,7 +68,11 @@ router.get("/payroll-schedule/claim", async (req, res, next) => {
             })
         }
 
-        const result = await claimDuePayrollRun(parsed.data)
+        const result = await claimDuePayrollRun({
+            ...parsed.data,
+            agentMachineName: req.attendanceAgent.machineName,
+            agentVersion: req.attendanceAgent.version,
+        })
 
         res.status(200).json({
             success: true,

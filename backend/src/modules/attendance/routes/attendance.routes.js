@@ -18,6 +18,7 @@ import {
     attendanceIdParamSchema,
     attendanceListQuerySchema,
     attendanceImportIssueListQuerySchema,
+    attendanceEmployeeStatusSyncSchema,
     attendanceUpsertSchema,
 } from "../schemas/attendance.schema.js"
 import {
@@ -49,6 +50,7 @@ import {
     getAttendanceDailyEmailSchedule,
     saveAttendanceDailyEmailSchedule,
 } from "../services/attendanceDailyEmailSchedule.service.js"
+import { syncEmployeeStatusesFromPayroll } from "../services/attendanceEmployeeStatusSync.service.js"
 import {
     attendancePayrollScheduleQuerySchema,
     attendancePayrollRunRequestSchema,
@@ -535,6 +537,30 @@ router.get(
             res.setHeader("Pragma", "no-cache")
             res.setHeader("Expires", "0")
             res.status(200).send(Buffer.from(buffer))
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/employee-status-sync",
+    requirePermission("ATTENDANCE.RECORD.IMPORT"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(
+                attendanceEmployeeStatusSyncSchema,
+                req.body,
+            )
+            const summary = await syncEmployeeStatusesFromPayroll({
+                payload,
+                user: req.auth.user,
+            })
+
+            res.status(200).json({
+                success: summary.errorCount === 0,
+                data: { summary },
+            })
         } catch (error) {
             next(error)
         }

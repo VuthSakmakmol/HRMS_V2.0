@@ -212,17 +212,6 @@ const router = createRouter({
                 },
 
                 {
-                    path: "attendance/verification",
-                    name: "attendance-verification",
-                    component: () =>
-                        import("@/modules/attendance/views/AttendanceVerificationView.vue"),
-                    meta: {
-                        titleKey: "nav.attendanceVerification",
-                        permissionCode: "ATTENDANCE.VERIFICATION.VIEW",
-                    },
-                },
-
-                {
                     path: "reports/hr-dashboard",
                     name: "reports-hr-dashboard",
                     component: () => import("@/modules/hrDashboard/views/HRDashboardView.vue"),

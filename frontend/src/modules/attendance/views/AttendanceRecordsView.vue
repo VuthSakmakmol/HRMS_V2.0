@@ -12,6 +12,7 @@ import {
   watch,
 } from "vue";
 import { useToast } from "primevue/usetoast";
+import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js";
 import { useAuthStore } from "@/app/stores/auth.store.js";
 import { lookupDepartments } from "@/modules/organization/department/api/department.api.js";
@@ -29,11 +30,11 @@ import {
   ATTENDANCE_PERMISSIONS,
   attendanceColumns,
   attendanceStatusOptions,
-  verificationOptions,
 } from "../config/attendance.config.js";
 import { useAttendanceStore } from "../stores/attendance.store.js";
 
 const toast = useToast(),
+  { t } = useI18n(),
   workspace = useWorkspaceStore(),
   auth = useAuthStore(),
   store = useAttendanceStore();
@@ -49,7 +50,7 @@ const query = reactive({
   dateFrom: firstDay,
   dateTo: today,
   status: "ALL",
-  verificationStatus: "ALL",
+  leaveCode: "ALL",
   departmentId: "",
 });
 const departments = ref([]),
@@ -88,13 +89,21 @@ const departmentOptions = computed(() => [
   { id: "", name: "All Departments" },
   ...departments.value,
 ]);
+const vacationOptions = computed(() => [
+  { label: t("attendance.vacationFilter.all"), value: "ALL" },
+  { label: t("attendance.vacationFilter.blank"), value: "BLANK" },
+  { label: t("attendance.annualLeave"), value: "AL" },
+  { label: t("attendance.maternityLeave"), value: "ML" },
+  { label: t("attendance.sickLeave"), value: "SL" },
+  { label: t("attendance.unpaidLeave"), value: "UL" },
+]);
 const activeFilterCount = computed(
   () =>
     [
       query.search,
       query.departmentId,
       query.status !== "ALL",
-      query.verificationStatus !== "ALL",
+      query.leaveCode !== "ALL",
       query.dateFrom !== firstDay,
       query.dateTo !== today,
     ].filter(Boolean).length,
@@ -147,7 +156,7 @@ function clearFilters() {
     dateFrom: firstDay,
     dateTo: today,
     status: "ALL",
-    verificationStatus: "ALL",
+    leaveCode: "ALL",
     departmentId: "",
   });
   load({}, true);
@@ -289,7 +298,7 @@ onBeforeUnmount(() => clearTimeout(timer));
     :pagination="store.pagination"
     row-key="id"
     empty-title="No attendance records"
-    empty-description="Import scans or run verification for this period."
+    empty-description="Import attendance records for this period."
     @retry="load({}, true)"
     @page-change="load({ page: $event.page, limit: $event.limit })"
   >
@@ -388,10 +397,10 @@ onBeforeUnmount(() => clearTimeout(timer));
                 :options="attendanceStatusOptions"
                 option-label="label"
                 option-value="value" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Verification"
+            ><EnterpriseFilterField :label="t('attendance.vacation')"
               ><Select
-                v-model="query.verificationStatus"
-                :options="verificationOptions"
+                v-model="query.leaveCode"
+                :options="vacationOptions"
                 option-label="label"
                 option-value="value" /></EnterpriseFilterField
             ><template #actions
@@ -429,12 +438,6 @@ onBeforeUnmount(() => clearTimeout(timer));
       ><Tag
         :value="row.status.replaceAll('_', ' ')"
         :severity="severity(row.status)" /></template
-    ><template #cell-verificationStatus="{ row }"
-      ><Tag
-        :value="row.verificationStatus.replaceAll('_', ' ')"
-        :severity="
-          row.verificationStatus === 'NEEDS_REVIEW' ? 'warn' : 'secondary'
-        " /></template
     ><template #actions="{ row }"
       ><EnterpriseActionMenu
         :items="actions(row)"

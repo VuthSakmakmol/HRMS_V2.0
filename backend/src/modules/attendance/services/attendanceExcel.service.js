@@ -228,7 +228,6 @@ export async function buildAttendanceExportWorkbook(records = []) {
         { header: "Late Minutes", key: "lateMinutes", width: 14 },
         { header: "Early Leave Minutes", key: "earlyLeaveMinutes", width: 18 },
         { header: "Status", key: "status", width: 20 },
-        { header: "Verification", key: "verificationStatus", width: 18 },
         { header: "Source", key: "source", width: 16 },
         { header: "Issues", key: "issues", width: 30 },
         { header: "Note", key: "note", width: 36 },
@@ -249,7 +248,6 @@ export async function buildAttendanceExportWorkbook(records = []) {
             lateMinutes: record.lateMinutes,
             earlyLeaveMinutes: record.earlyLeaveMinutes,
             status: record.status,
-            verificationStatus: record.verificationStatus,
             source: record.source,
             issues: (record.issueCodes || []).join(", "),
             note: record.note || "",
@@ -257,7 +255,7 @@ export async function buildAttendanceExportWorkbook(records = []) {
     }
     sheet.getRow(1).font = { bold: true }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
-    sheet.autoFilter = { from: "A1", to: "R1" }
+    sheet.autoFilter = { from: "A1", to: "Q1" }
     return workbook
 }
 

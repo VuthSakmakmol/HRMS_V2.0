@@ -1844,11 +1844,12 @@ function summarizeEmployeesForGeneralData({ employees, selectedDate }) {
     const activeEmployees = employees.filter((employee) =>
         employeeWasActiveOn(employee, selectedDate),
     )
+    const workingStatuses = new Set(["WORKING", "MATERNITY_LEAVE"])
     const workingEmployees = activeEmployees.filter(
-        (employee) => employee.employmentStatus === "WORKING",
+        (employee) => workingStatuses.has(employee.employmentStatus),
     )
     const inactiveEmployees = activeEmployees.filter(
-        (employee) => employee.employmentStatus !== "WORKING",
+        (employee) => !workingStatuses.has(employee.employmentStatus),
     )
 
     return {

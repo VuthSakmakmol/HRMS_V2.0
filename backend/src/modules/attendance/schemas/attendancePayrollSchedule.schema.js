@@ -50,4 +50,6 @@ export const attendancePayrollRunProgressSchema =
         percent: z.number().int().min(0).max(100),
         phase: z.string().trim().min(1).max(80),
         detail: z.string().trim().max(500).default(""),
+        processedRows: z.number().int().min(0).default(0),
+        totalRows: z.number().int().min(0).default(0),
     })

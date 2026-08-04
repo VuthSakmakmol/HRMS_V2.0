@@ -49,6 +49,16 @@ export function requireAttendanceAgent(req, res, next) {
         )
             .trim()
             .slice(0, 120),
+        machineName: String(
+            req.headers["x-attendance-agent-machine"] || "",
+        )
+            .trim()
+            .slice(0, 120),
+        version: String(
+            req.headers["x-attendance-agent-version"] || "",
+        )
+            .trim()
+            .slice(0, 40),
     }
 
     return next()

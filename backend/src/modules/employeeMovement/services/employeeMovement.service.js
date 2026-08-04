@@ -488,13 +488,21 @@ export async function createAutomaticMovementForEmployeeCreate({ employee, user 
     return movement
 }
 
-export async function createAutomaticMovementForEmployeeUpdate({ before, after, user }) {
+export async function createAutomaticMovementForEmployeeUpdate({
+    before,
+    after,
+    user,
+    source = "EMPLOYEE_PROFILE",
+    effectiveDate: requestedEffectiveDate = null,
+    reason = "",
+}) {
     if (!before?._id || !after?._id || !hasMovementRelevantChange(before, after)) return null
 
     const movementType = detectMovementType(before, after) || "OTHER"
-    const effectiveDate = ["RESIGN", "TERMINATE", "ABANDON", "PASSED_AWAY", "RETIRE"].includes(movementType)
-        ? after.resignDate || new Date()
-        : new Date()
+    const effectiveDate = requestedEffectiveDate
+        || (["RESIGN", "TERMINATE", "ABANDON", "PASSED_AWAY", "RETIRE"].includes(movementType)
+            ? after.resignDate || new Date()
+            : new Date())
 
     const movement = await EmployeeMovement.create({
         employeeId: after._id,
@@ -502,8 +510,8 @@ export async function createAutomaticMovementForEmployeeUpdate({ before, after, 
         effectiveDate,
         from: buildSnapshotFromEmployee(before),
         to: buildSnapshotFromEmployee(after),
-        reason: after.remark || after.resignReason || "Updated from employee profile.",
-        source: "EMPLOYEE_PROFILE",
+        reason: reason || after.remark || after.resignReason || "Updated from employee profile.",
+        source,
         status: "ACTIVE",
         createdByAccountId: user?.accountId || null,
         updatedByAccountId: user?.accountId || null,

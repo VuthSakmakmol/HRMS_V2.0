@@ -140,7 +140,7 @@ export async function getManpowerPlanningGrid({ query, user }) {
     const employeeFilter = {
         ...baseFilter,
         recordStatus: "ACTIVE",
-        employmentStatus: "WORKING",
+        employmentStatus: { $in: ["WORKING", "MATERNITY_LEAVE"] },
     }
 
     if (query.employeeTypeId) {

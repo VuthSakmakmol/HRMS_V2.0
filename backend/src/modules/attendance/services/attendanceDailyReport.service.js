@@ -18,6 +18,9 @@ import {
 } from "../utils/attendanceDate.util.js";
 
 const LEAVE_CODES = ["ML", "AL", "UL", "SL"];
+const FACE_SCAN_EMPLOYMENT_STATUS = "WORKING";
+const MATERNITY_LEAVE_EMPLOYMENT_STATUS = "MATERNITY_LEAVE";
+const SEWER_POSITION_TITLES = new Set(["SEWER", "SEWER-JUMPER"]);
 const CODE_ALIASES = {
   MATERNITY: "ML",
   MATERNITY_LEAVE: "ML",
@@ -83,6 +86,53 @@ function average(values, workingIndexes) {
     : 0;
 }
 
+function activeOnDay(employee, dayStart, dayEnd) {
+  return (
+    employee.joinDate <= dayEnd &&
+    (!employee.resignDate || employee.resignDate >= dayStart)
+  );
+}
+
+function employeeId(value) {
+  return String(value.employeeId || value._id || "");
+}
+
+function uniqueEmployeeCount(rows) {
+  return new Set(rows.map(employeeId).filter(Boolean)).size;
+}
+
+function hasAnyFaceScan(record) {
+  return Boolean(record.firstInAt || record.lastOutAt);
+}
+
+function normalizedPositionTitle(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[_\s]+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function attendancePresence(expectedEmployees, rows) {
+  const expectedEmployeeIds = new Set(
+    expectedEmployees.map(employeeId).filter(Boolean),
+  );
+  const scannedEmployeeIds = new Set(
+    rows
+      .filter(hasAnyFaceScan)
+      .map(employeeId)
+      .filter((id) => id && expectedEmployeeIds.has(id)),
+  );
+
+  // A WORKING employee is present when at least one scan exists. They are
+  // absent only when both scans are blank (or no scan row was received).
+  // Leave/vacation codes remain report history and never override this rule.
+  return {
+    faceScans: scannedEmployeeIds.size,
+    absent: Math.max(expectedEmployeeIds.size - scannedEmployeeIds.size, 0),
+  };
+}
+
 export async function buildAttendanceDailyReport({
   query,
   user,
@@ -140,7 +190,7 @@ export async function buildAttendanceDailyReport({
         $or: [{ resignDate: null }, { resignDate: { $gte: start } }],
       })
         .select(
-          "_id joinDate resignDate departmentId positionId employeeTypeId employeeTypeChildId",
+          "_id joinDate resignDate employmentStatus departmentId positionId employeeTypeId employeeTypeChildId",
         )
         .lean(),
     ),
@@ -191,6 +241,13 @@ export async function buildAttendanceDailyReport({
     totalRows: 5,
   });
 
+  // Payroll keeps non-working employees as blank attendance rows for history.
+  // Only WORKING employees belong to the expected face-scan population and
+  // attendance-rate denominators. The stored attendance records are untouched.
+  const workingEmployees = employees.filter(
+    (employee) => employee.employmentStatus === FACE_SCAN_EMPLOYMENT_STATUS,
+  );
+
   const targetKey = (value) =>
     `${String(value.employeeTypeId || "")}|${String(value.employeeTypeChildId || "")}`;
   const overallTarget = attendanceTargetRecords.find(
@@ -208,7 +265,7 @@ export async function buildAttendanceDailyReport({
     }
   }
   const employeeTypeCounts = new Map();
-  for (const employee of employees) {
+  for (const employee of workingEmployees) {
     const key = targetKey(employee);
     if (employee.employeeTypeId) {
       employeeTypeCounts.set(key, (employeeTypeCounts.get(key) || 0) + 1);
@@ -264,10 +321,15 @@ export async function buildAttendanceDailyReport({
   const recordsByDay = new Map(reportDays.map((day) => [day.key, []]));
   for (const record of records)
     recordsByDay.get(dateKey(record.attendanceDate))?.push(record);
+  const reportedWorkingIndexes = reportDays
+    .map((day, index) =>
+      day.working && (recordsByDay.get(day.key) || []).length ? index : -1,
+    )
+    .filter((index) => index >= 0);
 
   const employeesByDepartment = new Map();
   const employeesByPosition = new Map();
-  for (const employee of employees) {
+  for (const employee of workingEmployees) {
     const departmentKey = String(employee.departmentId || "");
     const positionKey = String(employee.positionId || "");
     if (!employeesByDepartment.has(departmentKey))
@@ -281,28 +343,35 @@ export async function buildAttendanceDailyReport({
   const daily = reportDays.map((day) => {
     const dayStart = startOfBusinessDay(day.key);
     const dayEnd = endOfBusinessDay(day.key);
-    const activeEmployees = employees.filter(
-      (employee) =>
-        employee.joinDate <= dayEnd &&
-        (!employee.resignDate || employee.resignDate >= dayStart),
+    const activeEmployees = workingEmployees.filter((employee) =>
+      activeOnDay(employee, dayStart, dayEnd),
     );
-    const rows = recordsByDay.get(day.key) || [];
+    const activeEmployeeIds = new Set(
+      activeEmployees.map((employee) => String(employee._id)),
+    );
+    const dayRecords = recordsByDay.get(day.key) || [];
+    const hasAttendanceData = dayRecords.length > 0;
+    const rows = dayRecords.filter((row) =>
+      activeEmployeeIds.has(String(row.employeeId || "")),
+    );
+    const presence = hasAttendanceData
+      ? attendancePresence(activeEmployees, rows)
+      : { faceScans: 0, absent: 0 };
     const leave = Object.fromEntries(
       LEAVE_CODES.map((code) => [
         code,
-        rows.filter((row) => normalizedCode(row) === code).length,
+        uniqueEmployeeCount(
+          rows.filter((row) => normalizedCode(row) === code),
+        ),
       ]),
     );
-    const absent = rows.filter(
-      (row) => row.status === "ABSENT" || normalizedCode(row),
-    ).length;
     return {
       totalEmployees: activeEmployees.length,
-      faceScans: rows.filter((row) => row.firstInAt || row.lastOutAt).length,
-      absent,
+      faceScans: presence.faceScans,
+      absent: presence.absent,
       leave,
-      absentRate: activeEmployees.length
-        ? (absent / activeEmployees.length) * 100
+      absentRate: hasAttendanceData && activeEmployees.length
+        ? (presence.absent / activeEmployees.length) * 100
         : 0,
     };
   });
@@ -328,6 +397,15 @@ export async function buildAttendanceDailyReport({
   const sewingDepartmentIds = new Set(
     departments.filter(isSewingDepartment).map((item) => String(item._id)),
   );
+  const sewerPositionIds = new Set(
+    positions
+      .filter(
+        (item) =>
+          sewingDepartmentIds.has(String(item.departmentId || "")) &&
+          SEWER_POSITION_TITLES.has(normalizedPositionTitle(item.title)),
+      )
+      .map((item) => String(item._id)),
+  );
 
   const sewerDaily = reportDays.map((day) => {
     if (!day.working) {
@@ -344,18 +422,45 @@ export async function buildAttendanceDailyReport({
 
     const dayStart = startOfBusinessDay(day.key);
     const dayEnd = endOfBusinessDay(day.key);
-    const activeSewerEmployees = employees.filter(
+    const activeSewerEmployees = workingEmployees.filter(
       (employee) =>
         sewingDepartmentIds.has(String(employee.departmentId || "")) &&
-        employee.joinDate <= dayEnd &&
-        (!employee.resignDate || employee.resignDate >= dayStart),
+        sewerPositionIds.has(String(employee.positionId || "")) &&
+        activeOnDay(employee, dayStart, dayEnd),
+    );
+    const activeMaternitySewerEmployees = employees.filter(
+      (employee) =>
+        employee.employmentStatus === MATERNITY_LEAVE_EMPLOYMENT_STATUS &&
+        sewingDepartmentIds.has(String(employee.departmentId || "")) &&
+        sewerPositionIds.has(String(employee.positionId || "")) &&
+        activeOnDay(employee, dayStart, dayEnd),
     );
     const sewerEmployeeIds = new Set(
       activeSewerEmployees.map((employee) => String(employee._id)),
     );
-    const sewerRecords = (recordsByDay.get(day.key) || []).filter((record) =>
+    const maternitySewerEmployeeIds = new Set(
+      activeMaternitySewerEmployees.map((employee) => String(employee._id)),
+    );
+    const dayRecords = recordsByDay.get(day.key) || [];
+    const sewerRecords = dayRecords.filter((record) =>
       sewerEmployeeIds.has(String(record.employeeId)),
     );
+    if (!dayRecords.length) {
+      return {
+        totalSewer: activeSewerEmployees.length,
+        maternityLeaveCount: 0,
+        maternityLeaveRate: 0,
+        annualUnpaidLeaveCount: 0,
+        annualUnpaidLeaveRate: 0,
+        sickLeaveCount: 0,
+        sickLeaveRate: 0,
+        absentWithoutInformCount: 0,
+        absentWithoutInformRate: 0,
+        sewerCome: 0,
+        totalAbsentCount: 0,
+        totalAbsentRate: 0,
+      };
+    }
     const scannedEmployeeIds = new Set(
       sewerRecords
         .filter((record) => record.firstInAt || record.lastOutAt)
@@ -371,6 +476,16 @@ export async function buildAttendanceDailyReport({
         ),
       ]),
     );
+    // Payroll moves maternity employees out of WORKING while keeping their
+    // attendance row blank for history. They must remain excluded from the
+    // face-scan denominator, but still appear in the Sewer Maternity Leave
+    // breakdown when an attendance row was imported for this date.
+    for (const record of dayRecords) {
+      const recordEmployeeId = String(record.employeeId || "");
+      if (maternitySewerEmployeeIds.has(recordEmployeeId)) {
+        leaveEmployeeIds.ML.add(recordEmployeeId);
+      }
+    }
     const informedAbsentIds = new Set([
       ...leaveEmployeeIds.ML,
       ...leaveEmployeeIds.AL,
@@ -393,19 +508,28 @@ export async function buildAttendanceDailyReport({
 
     return {
       totalSewer,
+      maternityLeaveCount: leaveEmployeeIds.ML.size,
       maternityLeaveRate: rate(leaveEmployeeIds.ML.size),
+      annualUnpaidLeaveCount: new Set([
+        ...leaveEmployeeIds.AL,
+        ...leaveEmployeeIds.UL,
+      ]).size,
       annualUnpaidLeaveRate: rate(
         new Set([...leaveEmployeeIds.AL, ...leaveEmployeeIds.UL]).size,
       ),
+      sickLeaveCount: leaveEmployeeIds.SL.size,
       sickLeaveRate: rate(leaveEmployeeIds.SL.size),
+      absentWithoutInformCount: absentWithoutInform,
       absentWithoutInformRate: rate(absentWithoutInform),
       sewerCome,
+      totalAbsentCount: missingScan,
       totalAbsentRate: rate(missingScan),
     };
   });
 
   const sewerMetric = (field) => sewerDaily.map((item) => item[field]);
-  const sewerAverage = (field) => average(sewerMetric(field), workingIndexes);
+  const sewerAverage = (field) =>
+    average(sewerMetric(field), reportedWorkingIndexes);
   const groupDefinitions = [
     ...departments.map((item) => ({
       key: `D:${item._id}`,
@@ -438,18 +562,32 @@ export async function buildAttendanceDailyReport({
     const groupEmployees = group.positionId
       ? employeesByPosition.get(group.positionId) || []
       : employeesByDepartment.get(group.departmentId) || [];
-    const employeeIds = new Set(
-      groupEmployees.map((employee) => String(employee._id)),
-    );
     const values = reportDays.map((day) => {
       if (!day.working) return null;
-      const groupRecords = (recordsByDay.get(day.key) || []).filter((record) =>
-        employeeIds.has(String(record.employeeId)),
+      if (!(recordsByDay.get(day.key) || []).length) {
+        return { count: 0, rate: 0 };
+      }
+      const dayStart = startOfBusinessDay(day.key);
+      const dayEnd = endOfBusinessDay(day.key);
+      const activeGroupEmployees = groupEmployees.filter((employee) =>
+        activeOnDay(employee, dayStart, dayEnd),
       );
-      const absent = groupRecords.filter(
-        (record) => record.status === "ABSENT" || normalizedCode(record),
-      ).length;
-      return groupEmployees.length ? (absent / groupEmployees.length) * 100 : 0;
+      const activeGroupEmployeeIds = new Set(
+        activeGroupEmployees.map((employee) => String(employee._id)),
+      );
+      const groupRecords = (recordsByDay.get(day.key) || []).filter((record) =>
+        activeGroupEmployeeIds.has(String(record.employeeId)),
+      );
+      const { absent } = attendancePresence(
+        activeGroupEmployees,
+        groupRecords,
+      );
+      return {
+        count: absent,
+        rate: activeGroupEmployees.length
+          ? (absent / activeGroupEmployees.length) * 100
+          : 0,
+      };
     });
     onProgress({
       phase: "CALCULATING_DEPARTMENTS",
@@ -461,7 +599,15 @@ export async function buildAttendanceDailyReport({
       processedRows: groupIndex + 1,
       totalRows: groupDefinitions.length,
     });
-    const row = { ...group, values, average: average(values, workingIndexes) };
+    const counts = values.map((value) => value?.count ?? null);
+    const rates = values.map((value) => value?.rate ?? null);
+    const row = {
+      ...group,
+      values: rates,
+      counts,
+      average: average(rates, reportedWorkingIndexes),
+      averageCount: average(counts, reportedWorkingIndexes),
+    };
     if (
       row.values.some((value) => value !== 0 && value !== null) ||
       row.level === 0
@@ -479,7 +625,7 @@ export async function buildAttendanceDailyReport({
           method: "OVERALL",
           month: Number(overallTarget.month),
           coveredEmployees,
-          totalEmployees: employees.length,
+          totalEmployees: workingEmployees.length,
           sources: targetSources,
         }
       : null,
@@ -493,6 +639,7 @@ export async function buildAttendanceDailyReport({
           daily.map((item) => item.leave[code]),
         ]),
       ),
+      absent: daily.map((item) => item.absent),
       absentRate: daily.map((item) => item.absentRate),
       averages: {
         totalEmployees: average(
@@ -501,38 +648,52 @@ export async function buildAttendanceDailyReport({
         ),
         faceScans: average(
           daily.map((item) => item.faceScans),
-          workingIndexes,
+          reportedWorkingIndexes,
         ),
         leaves: Object.fromEntries(
           LEAVE_CODES.map((code) => [
             code,
             average(
               daily.map((item) => item.leave[code]),
-              workingIndexes,
+              reportedWorkingIndexes,
             ),
           ]),
         ),
+        absent: average(
+          daily.map((item) => item.absent),
+          reportedWorkingIndexes,
+        ),
         absentRate: average(
           daily.map((item) => item.absentRate),
-          workingIndexes,
+          reportedWorkingIndexes,
         ),
       },
     },
     sewerAbsentRate: {
       totalSewer: sewerMetric("totalSewer"),
+      maternityLeaveCount: sewerMetric("maternityLeaveCount"),
       maternityLeaveRate: sewerMetric("maternityLeaveRate"),
+      annualUnpaidLeaveCount: sewerMetric("annualUnpaidLeaveCount"),
       annualUnpaidLeaveRate: sewerMetric("annualUnpaidLeaveRate"),
+      sickLeaveCount: sewerMetric("sickLeaveCount"),
       sickLeaveRate: sewerMetric("sickLeaveRate"),
+      absentWithoutInformCount: sewerMetric("absentWithoutInformCount"),
       absentWithoutInformRate: sewerMetric("absentWithoutInformRate"),
       sewerCome: sewerMetric("sewerCome"),
+      totalAbsentCount: sewerMetric("totalAbsentCount"),
       totalAbsentRate: sewerMetric("totalAbsentRate"),
       averages: {
         totalSewer: sewerAverage("totalSewer"),
+        maternityLeaveCount: sewerAverage("maternityLeaveCount"),
         maternityLeaveRate: sewerAverage("maternityLeaveRate"),
+        annualUnpaidLeaveCount: sewerAverage("annualUnpaidLeaveCount"),
         annualUnpaidLeaveRate: sewerAverage("annualUnpaidLeaveRate"),
+        sickLeaveCount: sewerAverage("sickLeaveCount"),
         sickLeaveRate: sewerAverage("sickLeaveRate"),
+        absentWithoutInformCount: sewerAverage("absentWithoutInformCount"),
         absentWithoutInformRate: sewerAverage("absentWithoutInformRate"),
         sewerCome: sewerAverage("sewerCome"),
+        totalAbsentCount: sewerAverage("totalAbsentCount"),
         totalAbsentRate: sewerAverage("totalAbsentRate"),
       },
     },

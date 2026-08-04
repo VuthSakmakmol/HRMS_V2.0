@@ -5,6 +5,8 @@ import AttendancePayrollSchedule from "../models/AttendancePayrollSchedule.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const CLAIM_TIMEOUT_MS = 30 * 60 * 1000
+const AGENT_ONLINE_WINDOW_MS = 15 * 1000
+const AGENT_HEARTBEAT_WRITE_MS = 5 * 1000
 const DEFAULT_TIME_ZONE = "Asia/Phnom_Penh"
 
 function currentDateInTimeZone(timeZone = DEFAULT_TIME_ZONE) {
@@ -41,9 +43,22 @@ function publicSchedule(schedule) {
             progressPercent: 0,
             progressPhase: "",
             progressDetail: "",
+            progressProcessedRows: 0,
+            progressTotalRows: 0,
             progressUpdatedAt: null,
+            agentOnline: false,
+            agentLastSeenAt: null,
+            agentMachineName: "",
+            agentVersion: "",
         }
     }
+    const agentLastSeenAt = schedule.agentLastSeenAt
+        ? new Date(schedule.agentLastSeenAt)
+        : null
+    const agentOnline = Boolean(
+        agentLastSeenAt
+        && Date.now() - agentLastSeenAt.getTime() <= AGENT_ONLINE_WINDOW_MS,
+    )
     return {
         id: String(schedule._id),
         companyId: String(schedule.companyId),
@@ -76,7 +91,13 @@ function publicSchedule(schedule) {
         progressPercent: schedule.progressPercent || 0,
         progressPhase: schedule.progressPhase || "",
         progressDetail: schedule.progressDetail || "",
+        progressProcessedRows: schedule.progressProcessedRows || 0,
+        progressTotalRows: schedule.progressTotalRows || 0,
         progressUpdatedAt: schedule.progressUpdatedAt || null,
+        agentOnline,
+        agentLastSeenAt,
+        agentMachineName: schedule.agentMachineName || "",
+        agentVersion: schedule.agentVersion || "",
     }
 }
 
@@ -86,6 +107,36 @@ export async function getPayrollSchedule({ companyId, branchId, user }) {
         companyId,
         branchId,
     }).lean()
+    return publicSchedule(schedule)
+}
+
+export async function recordPayrollAgentHeartbeat({
+    companyId,
+    branchId,
+    agentMachineName = "",
+    agentVersion = "",
+}) {
+    const now = new Date()
+    const schedule = await AttendancePayrollSchedule.findOneAndUpdate(
+        { companyId, branchId },
+        {
+            $set: {
+                agentLastSeenAt: now,
+                agentMachineName,
+                agentVersion,
+            },
+            $setOnInsert: {
+                status: "IDLE",
+                enabled: false,
+                timeZone: DEFAULT_TIME_ZONE,
+            },
+        },
+        {
+            upsert: true,
+            runValidators: true,
+            returnDocument: "after",
+        },
+    ).lean()
     return publicSchedule(schedule)
 }
 
@@ -159,6 +210,8 @@ export async function requestPayrollRunNow({
                 progressPhase: "QUEUED",
                 progressDetail:
                     `Waiting for the Payroll computer to import ${reportDate}.`,
+                progressProcessedRows: 0,
+                progressTotalRows: 0,
                 progressUpdatedAt: requestedAt,
                 updatedByAccountId: user.accountId,
             },
@@ -179,6 +232,8 @@ export async function updatePayrollRunProgress({
     percent,
     phase,
     detail,
+    processedRows,
+    totalRows,
 }) {
     const schedule = await AttendancePayrollSchedule.findOneAndUpdate(
         {
@@ -192,6 +247,8 @@ export async function updatePayrollRunProgress({
                 progressPercent: percent,
                 progressPhase: phase,
                 progressDetail: detail || "",
+                progressProcessedRows: processedRows,
+                progressTotalRows: totalRows,
                 progressUpdatedAt: new Date(),
             },
         },
@@ -235,14 +292,55 @@ export async function requestPayrollRunCancellation({
     return publicSchedule(schedule.toObject())
 }
 
-export async function claimDuePayrollRun({ companyId, branchId }) {
-    const schedule = await AttendancePayrollSchedule.findOne({
-        companyId,
-        branchId,
-    })
-    if (!schedule) return { shouldRun: false }
-
+export async function claimDuePayrollRun({
+    companyId,
+    branchId,
+    agentMachineName = "",
+    agentVersion = "",
+}) {
     const now = new Date()
+    let schedule = await AttendancePayrollSchedule.findOne({ companyId, branchId })
+
+    if (!schedule) {
+        schedule = await AttendancePayrollSchedule.findOneAndUpdate(
+            { companyId, branchId },
+            {
+                $setOnInsert: {
+                    status: "IDLE",
+                    enabled: false,
+                    timeZone: DEFAULT_TIME_ZONE,
+                    agentLastSeenAt: now,
+                    agentMachineName,
+                    agentVersion,
+                },
+            },
+            {
+                upsert: true,
+                runValidators: true,
+                returnDocument: "after",
+            },
+        )
+    }
+
+    const lastHeartbeat = schedule.agentLastSeenAt
+        ? schedule.agentLastSeenAt.getTime()
+        : 0
+    if (now.getTime() - lastHeartbeat >= AGENT_HEARTBEAT_WRITE_MS) {
+        await AttendancePayrollSchedule.updateOne(
+            { _id: schedule._id },
+            {
+                $set: {
+                    agentLastSeenAt: now,
+                    agentMachineName,
+                    agentVersion,
+                },
+            },
+        )
+        schedule.agentLastSeenAt = now
+        schedule.agentMachineName = agentMachineName
+        schedule.agentVersion = agentVersion
+    }
+
     const runNowDue = Boolean(
         schedule.runNowRequestedAt
         && (!schedule.lastFinishedAt
@@ -280,6 +378,8 @@ export async function claimDuePayrollRun({ companyId, branchId }) {
                 progressPercent: 1,
                 progressPhase: "STARTING",
                 progressDetail: "Payroll computer claimed the run.",
+                progressProcessedRows: 0,
+                progressTotalRows: 0,
                 progressUpdatedAt: now,
             },
         },
@@ -342,6 +442,10 @@ export async function finishPayrollRun({
     const normalizedError = dateMismatch
         ? `Payroll returned ${reportDate || "no date"}, but HRMS requested ${scheduleBeforeFinish.requestedDate}.`
         : error
+    const completedTotalRows = Math.max(
+        Number(scheduleBeforeFinish.progressTotalRows || 0),
+        Number(rowCount || 0),
+    )
 
     const update = {
         status: normalizedOutcome,
@@ -355,10 +459,12 @@ export async function finishPayrollRun({
         progressPercent: normalizedOutcome === "SUCCESS" ? 100 : 0,
         progressPhase: normalizedOutcome,
         progressDetail: normalizedOutcome === "SUCCESS"
-            ? `Attendance for ${reportDate} imported. Payroll and generated windows closed.`
+            ? `${Number(rowCount || 0).toLocaleString()} employees imported successfully. Payroll and generated windows closed.`
             : normalizedOutcome === "CANCELLED"
                 ? "Payroll attendance import cancelled."
                 : normalizedError || "Payroll attendance import failed.",
+        progressProcessedRows: normalizedOutcome === "SUCCESS" ? completedTotalRows : 0,
+        progressTotalRows: normalizedOutcome === "SUCCESS" ? completedTotalRows : 0,
         progressUpdatedAt: now,
     }
     if (normalizedOutcome === "SUCCESS") {

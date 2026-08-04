@@ -137,11 +137,6 @@ export const PERMISSION_REGISTRY = Object.freeze([
         "IMPORT",
     ]),
 
-    ...permissionGroup("ATTENDANCE.VERIFICATION", [
-        "VIEW",
-        "RUN",
-    ]),
-
     ...permissionGroup("LEAVE.REQUEST", [
         "VIEW",
         "CREATE",

@@ -89,7 +89,6 @@ export default {
         attendanceDailyReport: "Attendance Daily Report",
         attendancePolicies: "Attendance Policies",
         attendanceRawScans: "Raw Scan Import",
-        attendanceVerification: "Attendance Verification",
         hrDashboard: "HR Dashboard",
         recruitmentChannels: "Recruitment Channels",
         hrDashboardTargets: "Dashboard Targets",
@@ -108,6 +107,10 @@ export default {
             unpaidLeave: "Unpaid Leave",
             sickLeave: "Sick Leave",
             absentRate: "Absent Rate",
+            displayMode: "Attendance value display mode",
+            displayModeHelp: "Switch between percentages and exact employee counts.",
+            percentageView: "Percentage",
+            exactCountView: "Real Count",
             byOrganization: "Forget Finger Scan",
             average: "Avg",
             noData: "No attendance data matched this month and scope.",
@@ -123,6 +126,10 @@ export default {
         importTitle: "Import attendance",
         importDescription: "Record Date and Employee No are required. Times use HHmm. Vacation supports Annual, Maternity, Sick, and Unpaid Leave. Blank Vacation with no scan becomes Absent.",
         vacation: "Vacation",
+        vacationFilter: {
+            all: "All vacations",
+            blank: "Blank / No Vacation"
+        },
         annualLeave: "Annual Leave",
         maternityLeave: "Maternity Leave",
         sickLeave: "Sick Leave",
@@ -174,7 +181,7 @@ export default {
         },
         scan: {
             title: "Raw Attendance Scans",
-            description: "Import original machine scans before attendance verification.",
+            description: "Import original machine scans for automatic attendance calculation.",
             template: "Download Scan Template",
             import: "Import Raw Scans",
             scannedAt: "Scanned At",
@@ -182,22 +189,10 @@ export default {
             device: "Device",
             batch: "Import Batch"
         },
-        verification: {
-            title: "Attendance Verification",
-            description: "Resolve raw scans into final daily attendance records.",
-            run: "Run Verification",
-            running: "Verification is running. Please keep this page open.",
-            completed: "Attendance verification completed.",
-            overwriteCorrected: "Overwrite manually corrected records",
-            employees: "Employees",
-            processed: "Processed",
-            review: "Needs Review",
-            skipped: "Skipped"
-        },
         attendanceDashboard: {
             eyebrow: "Attendance Analytics",
             title: "Attendance Dashboard",
-            description: "Daily attendance analytics by employee, department, line, shift, and verification status. Uses verified attendance records and the internal calendar source of truth.",
+            description: "Daily attendance analytics by employee, department, line, and shift using automatic attendance calculation and the internal calendar source of truth.",
             loadFailed: "Unable to load attendance dashboard",
             lookupLoadFailed: "Unable to load dashboard filters",
             filters: {
@@ -1297,7 +1292,7 @@ export default {
                 minimumAge: "The employee must be at least 18 years old.",
                 emailInvalid: "Enter a valid email address.",
                 phoneInvalid: "Use numbers only; do not include spaces, +, or hyphens.",
-                resignDateRequired: "Resign date is required when employment status is not WORKING.",
+                resignDateRequired: "Resign date is required for an exit employment status.",
                 hasErrors: "The import finished with validation errors.",
                 employeeCodeRequired: "Employee ID is required.",
                 joinDateRequired: "Join date is required.",
@@ -1816,8 +1811,6 @@ export default {
             shiftNotFound: "The employee does not have an active shift.",
             recordNotFound: "Attendance record was not found.",
             recordLocked: "This attendance record is locked by payroll and cannot be changed.",
-            reviewAlreadyResolved: "This attendance review item has already been resolved.",
-            reviewRequired: "Resolve attendance records needing review and unmatched employee IDs before sending the daily report.",
             correctionReasonRequired: "A correction reason is required.",
             employeeChangeNotAllowed: "The employee cannot be changed on an existing attendance record.",
             dateChangeNotAllowed: "The date cannot be changed on an existing attendance record.",
@@ -1833,6 +1826,15 @@ export default {
         }
     },
     employee: {
+        employmentStatuses: {
+            working: "Working",
+            maternityLeave: "Maternity Leave",
+            resigned: "Resigned",
+            terminated: "Terminated",
+            abandoned: "Abandoned",
+            passedAway: "Passed Away",
+            retired: "Retired"
+        },
         profile: {
             recruitmentChannel: "Recruitment Channel",
             selectRecruitmentChannel: "Select recruitment channel",

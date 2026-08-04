@@ -72,7 +72,12 @@ const attendancePayrollScheduleSchema = new mongoose.Schema(
         progressPercent: { type: Number, min: 0, max: 100, default: 0 },
         progressPhase: { type: String, trim: true, default: "" },
         progressDetail: { type: String, trim: true, default: "" },
+        progressProcessedRows: { type: Number, min: 0, default: 0 },
+        progressTotalRows: { type: Number, min: 0, default: 0 },
         progressUpdatedAt: { type: Date, default: null },
+        agentLastSeenAt: { type: Date, default: null, index: true },
+        agentMachineName: { type: String, trim: true, maxlength: 120, default: "" },
+        agentVersion: { type: String, trim: true, maxlength: 40, default: "" },
         updatedByAccountId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Account",

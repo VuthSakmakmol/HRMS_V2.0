@@ -64,6 +64,25 @@ function assertUnlocked(record) {
     }
 }
 
+function applyLeaveCodeFilter(filter, leaveCode) {
+    if (!leaveCode || leaveCode === "ALL") return
+
+    if (leaveCode === "BLANK") {
+        filter.$and = [
+            ...(filter.$and || []),
+            {
+                $or: [
+                    { leaveCode: null },
+                    { leaveCode: "" },
+                ],
+            },
+        ]
+        return
+    }
+
+    filter.leaveCode = leaveCode
+}
+
 export async function upsertAttendanceRecord({
     payload,
     user,
@@ -222,6 +241,7 @@ export async function listAttendanceRecords({ query, user }) {
         if (query[field]) filter[field] = query[field]
     }
     if (query.status !== "ALL") filter.status = query.status
+    applyLeaveCodeFilter(filter, query.leaveCode)
     if (query.verificationStatus && query.verificationStatus !== "ALL") {
         filter.verificationStatus = query.verificationStatus
     }
@@ -268,6 +288,7 @@ export async function getAttendanceExportRecords({ query, user }) {
         if (query[field]) filter[field] = query[field]
     }
     if (query.status !== "ALL") filter.status = query.status
+    applyLeaveCodeFilter(filter, query.leaveCode)
     if (query.verificationStatus && query.verificationStatus !== "ALL") filter.verificationStatus = query.verificationStatus
     if (query.issueCode) filter.issueCodes = query.issueCode
     if (query.search) {

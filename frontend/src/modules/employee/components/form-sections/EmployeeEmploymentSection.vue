@@ -16,10 +16,20 @@ const props = defineProps({
     disabled: { type: Boolean, default: false },
 })
 
+const EXIT_EMPLOYMENT_STATUSES = new Set([
+    "RESIGNED",
+    "TERMINATED",
+    "ABANDONED",
+    "PASSED_AWAY",
+    "RETIRED",
+])
+
+const isExitStatus = (status) => EXIT_EMPLOYMENT_STATUSES.has(status)
+
 watch(
     () => props.form.employmentStatus,
     (status) => {
-        if (status === "WORKING") {
+        if (!isExitStatus(status)) {
             props.form.resignDate = ""
             props.form.exitReasonId = null
             props.form.resignReason = ""
@@ -63,7 +73,7 @@ watch(
             />
         </label>
 
-        <label v-if="form.employmentStatus !== 'WORKING'" class="enterprise-form-field">
+        <label v-if="isExitStatus(form.employmentStatus)" class="enterprise-form-field">
             <span>Resign Date *</span>
             <EnterpriseCalendarDatePicker
                 v-model="form.resignDate"
@@ -75,7 +85,7 @@ watch(
             />
         </label>
 
-        <template v-if="form.employmentStatus !== 'WORKING' && form.resignDate">
+        <template v-if="isExitStatus(form.employmentStatus) && form.resignDate">
             <label class="enterprise-form-field">
                 <span>Exit Reason</span>
                 <Select

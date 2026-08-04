@@ -122,6 +122,7 @@ const machineSkillsSchema = z.object({
 
 const employmentStatuses = [
     "WORKING",
+    "MATERNITY_LEAVE",
     "RESIGNED",
     "TERMINATED",
     "ABANDONED",
