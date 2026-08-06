@@ -44,7 +44,8 @@ const currentDate = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
 }).format(today)
 const currentMonth = currentDate.slice(0, 7)
-const filters = reactive({ month: currentMonth, reportDate: currentDate, departmentId: "", shiftId: "" })
+const ALL_SHIFTS = "ALL"
+const filters = reactive({ month: currentMonth, reportDate: currentDate, departmentId: "", shiftId: ALL_SHIFTS })
 const report = ref(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -144,19 +145,30 @@ const departmentOptions = computed(() => [
 ])
 
 const shiftOptions = computed(() => [
-    { id: "", name: "All Shifts" },
+    { id: ALL_SHIFTS, name: "All Shifts" },
     ...shifts.value.map((shift) => ({
-        id: shift._id || shift.id,
+        id: String(shift._id || shift.id),
         name: `${shift.code ? `${shift.code} — ` : ""}${shift.name}`,
     })),
 ])
+
+const selectedShiftOption = computed({
+    get() {
+        return shiftOptions.value.find(
+            (option) => String(option.id) === String(filters.shiftId || ALL_SHIFTS),
+        ) || shiftOptions.value[0]
+    },
+    set(option) {
+        filters.shiftId = option?.id ? String(option.id) : ALL_SHIFTS
+    },
+})
 
 function params() {
     return {
         month: filters.month,
         reportDate: filters.reportDate,
         departmentId: filters.departmentId,
-        shiftId: filters.shiftId,
+        shiftId: filters.shiftId === ALL_SHIFTS ? undefined : filters.shiftId,
         companyId: workspace.companyId,
         branchId: workspace.branchId,
     }
@@ -627,7 +639,7 @@ watch(() => filters.reportDate, (value) => {
 
 watch(() => workspace.revision, async () => {
     filters.departmentId = ""
-    filters.shiftId = ""
+    filters.shiftId = ALL_SHIFTS
     await Promise.all([loadDepartments(), loadShifts(), load(), loadEmailSchedule(), loadPayrollSchedule()])
 })
 watch(payrollScheduleDialogVisible, (visible) => {
@@ -713,15 +725,22 @@ onBeforeUnmount(() => {
                 <div class="report-title-group">
                     <div><strong>Attendance Daily Report</strong><span>{{ report.month }}</span></div>
                     <Select
-                        v-model="filters.shiftId"
+                        v-model="selectedShiftOption"
                         class="compact-shift-select"
                         :options="shiftOptions"
                         option-label="name"
-                        option-value="id"
                         :filter="shiftOptions.length > 8"
                         aria-label="Shift"
                         @change="load"
-                    />
+                    >
+                        <template #value="{ value, placeholder }">
+                            <span v-if="value" class="shift-selected-label">{{ value.name }}</span>
+                            <span v-else class="shift-selected-label">{{ placeholder || "All Shifts" }}</span>
+                        </template>
+                        <template #option="{ option }">
+                            <span>{{ option.name }}</span>
+                        </template>
+                    </Select>
                 </div>
                 <div class="report-heading-actions">
                     <div class="metric-view-control" :title="t('attendance.dailyReport.displayModeHelp')">
@@ -1479,6 +1498,16 @@ onBeforeUnmount(() => {
 .compact-shift-select :deep(.p-select-label) {
     padding-block: 0.35rem;
     font-size: 0.78rem;
+}
+
+.shift-selected-label {
+    display: block;
+    overflow: hidden;
+    color: var(--p-form-field-color) !important;
+    font-size: 0.78rem;
+    line-height: 1.25rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .compact-shift-select :deep(.p-select-dropdown) {
