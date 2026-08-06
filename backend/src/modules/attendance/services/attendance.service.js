@@ -24,9 +24,13 @@ function policySnapshot(policy) {
         policyId: policy._id,
         name: policy.name,
         code: policy.code,
+        earlyCheckInMinutes: policy.earlyCheckInMinutes,
         graceInMinutes: policy.graceInMinutes,
         graceOutMinutes: policy.graceOutMinutes,
         minimumWorkedMinutes: policy.minimumWorkedMinutes,
+        missingOutTimeoutMinutes: policy.missingOutTimeoutMinutes,
+        maximumShiftDurationMinutes: policy.maximumShiftDurationMinutes,
+        mergeOvernightScans: policy.mergeOvernightScans,
         lateRoundUnitMinutes: policy.lateRoundUnitMinutes,
         lateRoundMethod: policy.lateRoundMethod,
         earlyLeaveRoundUnitMinutes: policy.earlyLeaveRoundUnitMinutes,
@@ -47,11 +51,40 @@ async function resolveEmployeeAndShift(employeeCode, user, workspace = {}) {
     if (!employee) {
         throw new AppError({ statusCode: 404, code: "ATTENDANCE_EMPLOYEE_NOT_FOUND", messageKey: "errors.attendance.employeeNotFound" })
     }
-    const shift = await Shift.findOne({ _id: employee.shiftId, status: "ACTIVE" }).lean()
+    const shift = await Shift.findOne({ _id: employee.shiftId, status: "ACTIVE" }).populate("attendancePolicyId").lean()
     if (!shift) {
         throw new AppError({ statusCode: 422, code: "ATTENDANCE_SHIFT_NOT_FOUND", messageKey: "errors.attendance.shiftNotFound" })
     }
     return { employee, shift }
+}
+
+
+function addBusinessDays(dateValue, days) {
+    const date = new Date(dateValue)
+    date.setDate(date.getDate() + days)
+    return date
+}
+
+function normalizeShiftAwarePayload(payload, shift) {
+    let workDate = toBusinessDateKey(payload.attendanceDate)
+    let firstInAt = payload.firstInAt ? new Date(payload.firstInAt) : null
+    let lastOutAt = payload.lastOutAt ? new Date(payload.lastOutAt) : null
+
+    if (shift.isOvernight) {
+        // An OUT-only scan dated on the next calendar day belongs to the
+        // previous overnight shift work date.
+        if (!firstInAt && lastOutAt) {
+            workDate = toBusinessDateKey(addBusinessDays(payload.attendanceDate, -1))
+        }
+
+        // When the source file stores both times against the work date,
+        // ensure the OUT timestamp is placed on the following day.
+        if (firstInAt && lastOutAt && lastOutAt <= firstInAt) {
+            lastOutAt = addBusinessDays(lastOutAt, 1)
+        }
+    }
+
+    return { workDate, firstInAt, lastOutAt }
 }
 
 function assertUnlocked(record) {
@@ -137,7 +170,9 @@ export async function upsertAttendanceRecord({
 }) {
     const { employee, shift } = await resolveEmployeeAndShift(payload.employeeCode, user, payload)
     assertAttendanceScope(user, employee.companyId, employee.branchId)
-    const workDate = toBusinessDateKey(payload.attendanceDate)
+
+    const normalized = normalizeShiftAwarePayload(payload, shift)
+    const workDate = normalized.workDate
     const attendanceDate = startOfBusinessDay(workDate)
     const existing = await AttendanceRecord.findOne({ employeeId: employee._id, attendanceDate }).session(session).lean()
     assertUnlocked(existing)
@@ -160,7 +195,7 @@ export async function upsertAttendanceRecord({
             _id: undefined,
         }
     }
-    const policy = await resolveAttendancePolicy({
+    const policy = shift.attendancePolicyId || await resolveAttendancePolicy({
         companyId: employee.companyId,
         branchId: employee.branchId,
         workDate: attendanceDate,
@@ -171,8 +206,10 @@ export async function upsertAttendanceRecord({
         policy,
         dayType: existing?.dayType || "WORKING_DAY",
         correctedTimes: {
-            firstInAt: payload.firstInAt ? new Date(payload.firstInAt) : null,
-            lastOutAt: payload.lastOutAt ? new Date(payload.lastOutAt) : null,
+            // Preserve the other side of an overnight pair when scans arrive
+            // in separate source rows on two calendar days.
+            firstInAt: normalized.firstInAt || existing?.firstInAt || null,
+            lastOutAt: normalized.lastOutAt || existing?.lastOutAt || null,
         },
     })
     const values = {

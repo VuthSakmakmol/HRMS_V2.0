@@ -12,6 +12,7 @@ import EnterpriseTable from "@/shared/components/enterprise/EnterpriseTable.vue"
 import {
   exportAttendanceImportIssues,
   fetchAttendanceImportIssues,
+  syncAttendanceImportIssues,
 } from "../services/attendance.api.js";
 
 const props = defineProps({
@@ -28,6 +29,8 @@ const auth = useAuthStore();
 
 const loading = ref(false);
 const exporting = ref(false);
+const syncing = ref(false);
+const syncMessage = ref("");
 const error = ref("");
 const items = ref([]);
 const query = reactive({ page: 1, limit: 10, search: "" });
@@ -45,6 +48,9 @@ const columns = [
 const canLoad = computed(() => Boolean(props.companyId && props.branchId));
 const canExport = computed(() =>
   auth.hasPermission("ATTENDANCE.RECORD.EXPORT"),
+);
+const canSync = computed(() =>
+  auth.hasPermission("ATTENDANCE.RECORD.UPDATE"),
 );
 
 function date(value) {
@@ -91,6 +97,29 @@ async function load(overrides = {}) {
       "Unable to load unmatched attendance.";
   } finally {
     loading.value = false;
+  }
+}
+
+async function syncRows() {
+  if (!canSync.value || syncing.value || !canLoad.value) return;
+
+  syncing.value = true;
+  error.value = "";
+  syncMessage.value = "";
+  try {
+    const summary = await syncAttendanceImportIssues({
+      companyId: props.companyId,
+      branchId: props.branchId,
+    });
+    syncMessage.value = `${summary.checkedCount || 0} checked, ${summary.matchedCount || 0} matched, ${summary.stillUnmatchedCount || 0} still unmatched${summary.failedCount ? `, ${summary.failedCount} failed` : ""}.`;
+    await load({ page: 1 });
+  } catch (requestError) {
+    error.value =
+      requestError?.response?.data?.error?.message ||
+      requestError?.message ||
+      "Unable to sync unmatched attendance.";
+  } finally {
+    syncing.value = false;
   }
 }
 
@@ -158,6 +187,15 @@ watch(
           @click="load()"
         />
         <Button
+          v-if="canSync"
+          label="Sync Unmatched"
+          icon="pi pi-sync"
+          severity="info"
+          outlined
+          :loading="syncing"
+          @click="syncRows"
+        />
+        <Button
           v-if="canExport"
           label="Export Excel"
           icon="pi pi-file-excel"
@@ -166,6 +204,10 @@ watch(
           :loading="exporting"
           @click="exportRows"
         />
+      </div>
+
+      <div v-if="syncMessage" class="unmatched-success">
+        {{ syncMessage }}
       </div>
 
       <div v-if="error" class="unmatched-error">
@@ -234,6 +276,12 @@ watch(
 .search-box :deep(.p-inputtext) {
   width: 100%;
   padding-left: 2rem;
+}
+.unmatched-success {
+  padding: 0.75rem;
+  border: 1px solid var(--p-green-200);
+  border-radius: 0.5rem;
+  background: var(--p-green-50);
 }
 .unmatched-error {
   display: flex;

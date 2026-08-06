@@ -79,10 +79,9 @@ export const shiftCreateSchema = z
         shortName: optionalTextSchema(80),
         startTime: timeSchema,
         endTime: timeSchema,
+        attendancePolicyId: objectIdSchema,
         breakStartTime: optionalTimeSchema.optional(),
         breakEndTime: optionalTimeSchema.optional(),
-        graceInMinutes: z.coerce.number().int().min(0).max(240).optional(),
-        graceOutMinutes: z.coerce.number().int().min(0).max(240).optional(),
         description: optionalTextSchema(500),
         status: z.enum(SHIFT_MUTATION_STATUSES).optional(),
     })
@@ -114,10 +113,9 @@ export const shiftUpdateSchema = z
         shortName: optionalTextSchema(80),
         startTime: timeSchema.optional(),
         endTime: timeSchema.optional(),
+        attendancePolicyId: objectIdSchema.optional(),
         breakStartTime: optionalTimeSchema.optional(),
         breakEndTime: optionalTimeSchema.optional(),
-        graceInMinutes: z.coerce.number().int().min(0).max(240).optional(),
-        graceOutMinutes: z.coerce.number().int().min(0).max(240).optional(),
         description: optionalTextSchema(500),
         status: z.enum(SHIFT_MUTATION_STATUSES).optional(),
     })

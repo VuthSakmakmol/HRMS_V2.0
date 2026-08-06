@@ -18,6 +18,7 @@ import {
     attendanceIdParamSchema,
     attendanceListQuerySchema,
     attendanceImportIssueListQuerySchema,
+    attendanceUnmatchedSyncSchema,
     attendanceEmployeeStatusSyncSchema,
     attendanceUpsertSchema,
 } from "../schemas/attendance.schema.js"
@@ -51,6 +52,7 @@ import {
     saveAttendanceDailyEmailSchedule,
 } from "../services/attendanceDailyEmailSchedule.service.js"
 import { syncEmployeeStatusesFromPayroll } from "../services/attendanceEmployeeStatusSync.service.js"
+import { syncUnmatchedAttendance } from "../services/attendanceUnmatchedSync.service.js"
 import {
     attendancePayrollScheduleQuerySchema,
     attendancePayrollRunRequestSchema,
@@ -422,6 +424,27 @@ router.get(
                 'attachment; filename="attendance-unmatched-records.xlsx"',
             )
             res.status(200).send(Buffer.from(buffer))
+        } catch (error) {
+            next(error)
+        }
+    },
+)
+
+router.post(
+    "/import-issues/sync",
+    requirePermission("ATTENDANCE.RECORD.UPDATE"),
+    async (req, res, next) => {
+        try {
+            const payload = parseRequest(attendanceUnmatchedSyncSchema, {
+                companyId: req.body.companyId || req.headers["x-workspace-company-id"],
+                branchId: req.body.branchId || req.headers["x-workspace-branch-id"],
+            })
+            const summary = await syncUnmatchedAttendance({
+                ...payload,
+                user: req.auth.user,
+            })
+
+            res.status(200).json({ success: true, data: { summary } })
         } catch (error) {
             next(error)
         }

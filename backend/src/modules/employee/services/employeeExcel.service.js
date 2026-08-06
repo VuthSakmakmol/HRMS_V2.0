@@ -18,6 +18,7 @@ import EmployeeType from "../../employeeType/models/EmployeeType.js"
 import Employee from "../models/Employee.js"
 import { listEmployees } from "./employee.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
+import { syncUnmatchedAttendance } from "../../attendance/services/attendanceUnmatchedSync.service.js"
 
 const TEMPLATE_HEADERS = [
     "employeeCode",
@@ -702,6 +703,8 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         return summary
     }
 
+    const savedEmployeeCodes = new Set()
+
     for (const [index, row] of rows.entries()) {
         const birthAddress = await resolveLocation({ provinceName: row.birthProvince, districtName: row.birthDistrict, communeName: row.birthCommune, villageName: row.birthVillage })
         const permanentAddress = await resolveLocation({ provinceName: row.permanentProvince, districtName: row.permanentDistrict, communeName: row.permanentCommune, villageName: row.permanentVillage })
@@ -791,6 +794,8 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
             continue
         }
 
+        savedEmployeeCodes.add(normalizeCode(employee.employeeCode))
+
         try {
             const accountResult = await provisionEmployeeAccount({
                 employee,
@@ -818,6 +823,24 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
             processedRows: index + 1,
             totalRows: rows.length,
         })
+    }
+
+    if (savedEmployeeCodes.size > 0) {
+        try {
+            const attendanceSync = await syncUnmatchedAttendance({
+                companyId: fallbackCompany._id,
+                branchId: fallbackBranch._id,
+                employeeCodes: [...savedEmployeeCodes],
+                user,
+            })
+            summary.attendanceMatched = attendanceSync.matchedCount
+            summary.attendanceStillUnmatched = attendanceSync.stillUnmatchedCount
+            summary.attendanceSyncFailed = attendanceSync.failedCount
+        } catch {
+            summary.attendanceMatched = 0
+            summary.attendanceStillUnmatched = 0
+            summary.attendanceSyncFailed = savedEmployeeCodes.size
+        }
     }
 
     clearCacheByPrefix("employee:list:")

@@ -105,21 +105,7 @@ const shiftSchema = new Schema(
             max: 1440,
         },
 
-        graceInMinutes: {
-            type: Number,
-            required: true,
-            min: 0,
-            max: 240,
-            default: 0,
-        },
-
-        graceOutMinutes: {
-            type: Number,
-            required: true,
-            min: 0,
-            max: 240,
-            default: 0,
-        },
+        attendancePolicyId: { type: Schema.Types.ObjectId, ref: "AttendancePolicy", required: true },
 
         isOvernight: {
             type: Boolean,

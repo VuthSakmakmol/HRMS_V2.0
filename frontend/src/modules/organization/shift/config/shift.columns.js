@@ -9,6 +9,7 @@ export function createShiftColumns(t) {
         { field: "break", header: t("organization.shift.breakTime"), minWidth: "9rem" },
         { field: "workingMinutes", header: t("organization.shift.workingHours"), minWidth: "8rem" },
         { field: "grace", header: t("organization.shift.graceMinutes"), minWidth: "8rem" },
+        { field: "scanWindow", header: t("organization.shift.scanWindow"), minWidth: "10rem" },
         { field: "status", header: t("common.status"), minWidth: "7rem" },
         { field: "updatedAt", header: t("common.updatedAt"), minWidth: "10rem" },
     ]

@@ -21,6 +21,8 @@ const TEMPLATE_HEADERS = [
     "breakEndTime",
     "graceInMinutes",
     "graceOutMinutes",
+    "preShiftWindowMinutes",
+    "postShiftWindowMinutes",
     "status",
     "description",
 ]
@@ -206,6 +208,8 @@ function buildWorkbookBase(title) {
         { header: "breakEndTime", key: "breakEndTime", width: 18 },
         { header: "graceInMinutes", key: "graceInMinutes", width: 18 },
         { header: "graceOutMinutes", key: "graceOutMinutes", width: 18 },
+        { header: "preShiftWindowMinutes", key: "preShiftWindowMinutes", width: 24 },
+        { header: "postShiftWindowMinutes", key: "postShiftWindowMinutes", width: 24 },
         { header: "status", key: "status", width: 14 },
         { header: "description", key: "description", width: 42 },
     ]
@@ -257,6 +261,8 @@ export async function buildShiftImportTemplateWorkbook() {
         breakEndTime: "13:00",
         graceInMinutes: 5,
         graceOutMinutes: 0,
+        preShiftWindowMinutes: 240,
+        postShiftWindowMinutes: 240,
         status: "ACTIVE",
         description: "Normal day shift",
     })
@@ -273,6 +279,8 @@ export async function buildShiftImportTemplateWorkbook() {
         breakEndTime: "01:00",
         graceInMinutes: 5,
         graceOutMinutes: 0,
+        preShiftWindowMinutes: 240,
+        postShiftWindowMinutes: 240,
         status: "ACTIVE",
         description: "Night shift crossing midnight",
     })
@@ -376,6 +384,8 @@ export async function buildShiftExportWorkbook({ shifts }) {
             breakEndTime: shift.breakEndTime || "",
             graceInMinutes: shift.graceInMinutes ?? 0,
             graceOutMinutes: shift.graceOutMinutes ?? 0,
+            preShiftWindowMinutes: shift.preShiftWindowMinutes ?? 240,
+            postShiftWindowMinutes: shift.postShiftWindowMinutes ?? 240,
             status: shift.status || "",
             description: shift.description || "",
         })
@@ -431,6 +441,8 @@ export async function parseShiftImportWorkbook(buffer) {
             breakEndTime: normalizeTime(raw.breakEndTime),
             graceInMinutes: normalizeInteger(raw.graceInMinutes, 0),
             graceOutMinutes: normalizeInteger(raw.graceOutMinutes, 0),
+            preShiftWindowMinutes: normalizeInteger(raw.preShiftWindowMinutes, 240),
+            postShiftWindowMinutes: normalizeInteger(raw.postShiftWindowMinutes, 240),
             status: normalizeStatus(raw.status),
             description: normalizeText(raw.description),
         }

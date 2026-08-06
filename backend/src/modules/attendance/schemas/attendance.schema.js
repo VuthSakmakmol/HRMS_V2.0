@@ -79,6 +79,11 @@ export const attendanceImportIssueListQuerySchema = z.object({
     },
 )
 
+export const attendanceUnmatchedSyncSchema = z.object({
+    companyId: objectIdSchema,
+    branchId: objectIdSchema,
+})
+
 export const attendanceEmployeeStatusSyncSchema = z.object({
     companyId: objectIdSchema,
     branchId: objectIdSchema,

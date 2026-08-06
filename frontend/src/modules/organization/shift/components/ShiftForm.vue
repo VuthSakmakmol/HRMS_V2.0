@@ -1,5 +1,4 @@
 <script setup>
-import InputNumber from "primevue/inputnumber"
 import InputText from "primevue/inputtext"
 import Select from "primevue/select"
 import Textarea from "primevue/textarea"
@@ -30,6 +29,10 @@ const props = defineProps({
     editing: {
         type: Boolean,
         default: false,
+    },
+    policyOptions: {
+        type: Array,
+        default: () => [],
     },
 })
 
@@ -285,59 +288,28 @@ function normalizeCode() {
 
         <section class="shift-form__section">
             <div class="shift-form__heading">
-                <h3>
-                    {{ t("organization.shift.attendanceRules") }}
-                </h3>
+                <h3>{{ t("organization.shift.attendanceRules") }}</h3>
             </div>
 
             <div class="shift-form__grid">
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.graceInMinutes") }}
-                    </span>
-
-                    <InputNumber
-                        v-model="form.graceInMinutes"
+                <label class="enterprise-form-field enterprise-form-field--full">
+                    <span>{{ t("organization.shift.attendancePolicy") }} *</span>
+                    <Select
+                        v-model="form.attendancePolicyId"
+                        :options="policyOptions"
+                        option-label="label"
+                        option-value="value"
                         :disabled="disabled"
-                        :min="0"
-                        :max="240"
-                        :use-grouping="false"
-                        show-buttons
-                        button-layout="horizontal"
-                        @input="emit('clear-error', 'graceInMinutes')"
+                        filter
+                        show-clear
+                        @change="emit('clear-error', 'attendancePolicyId')"
                     />
-
-                    <small v-if="message('graceInMinutes')">
-                        {{ message("graceInMinutes") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.graceOutMinutes") }}
-                    </span>
-
-                    <InputNumber
-                        v-model="form.graceOutMinutes"
-                        :disabled="disabled"
-                        :min="0"
-                        :max="240"
-                        :use-grouping="false"
-                        show-buttons
-                        button-layout="horizontal"
-                        @input="emit('clear-error', 'graceOutMinutes')"
-                    />
-
-                    <small v-if="message('graceOutMinutes')">
-                        {{ message("graceOutMinutes") }}
-                    </small>
+                    <small v-if="message('attendancePolicyId')">{{ message("attendancePolicyId") }}</small>
+                    <small v-else>{{ t("organization.shift.attendancePolicyHint") }}</small>
                 </label>
 
                 <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>
-                        {{ t("organization.shift.descriptionLabel") }}
-                    </span>
-
+                    <span>{{ t("organization.shift.descriptionLabel") }}</span>
                     <Textarea
                         v-model="form.description"
                         :disabled="disabled"
@@ -346,10 +318,7 @@ function normalizeCode() {
                         auto-resize
                         @input="emit('clear-error', 'description')"
                     />
-
-                    <small v-if="message('description')">
-                        {{ message("description") }}
-                    </small>
+                    <small v-if="message('description')">{{ message("description") }}</small>
                 </label>
             </div>
         </section>

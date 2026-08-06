@@ -29,6 +29,7 @@ import {
     createAutomaticMovementForEmployeeUpdate,
 } from "../../employeeMovement/services/employeeMovement.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
+import { syncUnmatchedAttendanceForEmployee } from "../../attendance/services/attendanceUnmatchedSync.service.js"
 
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -868,6 +869,7 @@ export async function createEmployee({ payload, user }) {
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")
         clearCacheByPrefix("hr-dashboard:")
+        await syncUnmatchedAttendanceForEmployee({ employee, user }).catch(() => null)
         return getEmployeeById({ employeeId: employee._id, user })
     } catch (error) {
         handleDuplicate(error)
@@ -912,6 +914,7 @@ export async function updateEmployee({ employeeId, payload, user }) {
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")
         clearCacheByPrefix("hr-dashboard:")
+        await syncUnmatchedAttendanceForEmployee({ employee: updated, user }).catch(() => null)
         return getEmployeeById({ employeeId: updated._id, user })
     } catch (error) {
         handleDuplicate(error)

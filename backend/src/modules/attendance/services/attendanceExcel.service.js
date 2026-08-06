@@ -520,19 +520,38 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
         }
     }
 
-    // Keep enough parallelism to saturate MongoDB without flooding the pool.
-    const concurrency = Math.min(16, Math.max(1, rows.length))
+    // Rows for the same employee must be processed in date order so an
+    // overnight IN row and the following-day OUT row merge into one record.
+    // Different employees still run in parallel for good import performance.
+    const employeeGroups = new Map()
+    for (const row of rows) {
+        const key = String(row.payload.employeeCode || "").trim().toUpperCase()
+        if (!employeeGroups.has(key)) employeeGroups.set(key, [])
+        employeeGroups.get(key).push(row)
+    }
+
+    const groups = [...employeeGroups.values()].map((group) =>
+        group.sort(
+            (left, right) =>
+                new Date(left.payload.attendanceDate) -
+                new Date(right.payload.attendanceDate),
+        ),
+    )
+
+    const concurrency = Math.min(16, Math.max(1, groups.length))
     let cursor = 0
     const workers = Array.from({ length: concurrency }, async () => {
-        while (cursor < rows.length) {
-            const index = cursor++
-            await processRow(rows[index])
-            onProgress?.({
-                phase: "SAVING_ROWS",
-                percent: 35 + Math.round((completedRows / Math.max(rows.length, 1)) * 60),
-                processedRows: completedRows,
-                totalRows: summary.totalRows,
-            })
+        while (cursor < groups.length) {
+            const group = groups[cursor++]
+            for (const row of group) {
+                await processRow(row)
+                onProgress?.({
+                    phase: "SAVING_ROWS",
+                    percent: 35 + Math.round((completedRows / Math.max(rows.length, 1)) * 60),
+                    processedRows: completedRows,
+                    totalRows: summary.totalRows,
+                })
+            }
         }
     })
     await Promise.all(workers)
