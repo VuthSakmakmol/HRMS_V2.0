@@ -51,12 +51,11 @@ const shiftSchema = new Schema(
             set: normalizeText,
         },
 
-        shortName: {
-            type: String,
-            trim: true,
-            maxlength: 80,
-            set: normalizeText,
-            default: "",
+
+        attendancePolicyId: {
+            type: Schema.Types.ObjectId,
+            ref: "AttendancePolicy",
+            default: null,
         },
 
         startTime: {
@@ -104,8 +103,6 @@ const shiftSchema = new Schema(
             min: 1,
             max: 1440,
         },
-
-        attendancePolicyId: { type: Schema.Types.ObjectId, ref: "AttendancePolicy", required: true },
 
         isOvernight: {
             type: Boolean,

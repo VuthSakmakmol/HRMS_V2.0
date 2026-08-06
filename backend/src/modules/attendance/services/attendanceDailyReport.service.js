@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import Employee from "../../employee/models/Employee.js";
 import Department from "../../organization/models/Department.js";
 import Position from "../../organization/models/Position.js";
+import Shift from "../../shift/models/Shift.js";
 import CalendarDay from "../../calendar/models/CalendarDay.js";
 import HrDashboardTarget from "../../hrDashboardTarget/models/HrDashboardTarget.js";
 import AttendanceRecord from "../models/AttendanceRecord.js";
@@ -174,11 +175,12 @@ export async function buildAttendanceDailyReport({
 
   const [year, monthNumber] = query.month.split("-").map(Number);
   const [
-    employees,
-    records,
+    allEmployees,
+    allRecords,
     calendarDays,
     departments,
     positions,
+    shifts,
     attendanceTargetRecords,
   ] = await Promise.all([
     trackSource(
@@ -190,7 +192,7 @@ export async function buildAttendanceDailyReport({
         $or: [{ resignDate: null }, { resignDate: { $gte: start } }],
       })
         .select(
-          "_id joinDate resignDate employmentStatus departmentId positionId employeeTypeId employeeTypeChildId",
+          "_id joinDate resignDate employmentStatus departmentId positionId shiftId employeeTypeId employeeTypeChildId",
         )
         .lean(),
     ),
@@ -201,7 +203,7 @@ export async function buildAttendanceDailyReport({
         attendanceDate: { $gte: start, $lte: end },
       })
         .select(
-          "employeeId attendanceDate departmentId positionId status firstInAt lastOutAt attendanceCode absenceCode leaveCode leaveTypeCode correctionCode",
+          "employeeId attendanceDate departmentId positionId shiftId status firstInAt lastOutAt attendanceCode absenceCode leaveCode leaveTypeCode correctionCode",
         )
         .lean(),
     ),
@@ -222,6 +224,12 @@ export async function buildAttendanceDailyReport({
         .select("code title departmentId")
         .lean(),
     ),
+    trackSource(
+      Shift.find({ companyId, branchId, status: "ACTIVE" })
+        .select("code name startTime endTime")
+        .sort({ code: 1, name: 1 })
+        .lean(),
+    ),
     HrDashboardTarget.find({
       companyId,
       branchId,
@@ -237,13 +245,24 @@ export async function buildAttendanceDailyReport({
   onProgress({
     phase: "LOADING_DATA",
     percent: 35,
-    processedRows: 5,
-    totalRows: 5,
+    processedRows: 6,
+    totalRows: 6,
   });
+
+  const selectedShiftId = String(query.shiftId || "");
+  const employees = selectedShiftId
+    ? allEmployees.filter((employee) => String(employee.shiftId || "") === selectedShiftId)
+    : allEmployees;
+  const records = selectedShiftId
+    ? allRecords.filter((record) => String(record.shiftId || "") === selectedShiftId)
+    : allRecords;
 
   // Payroll keeps non-working employees as blank attendance rows for history.
   // Only WORKING employees belong to the expected face-scan population and
   // attendance-rate denominators. The stored attendance records are untouched.
+  const allWorkingEmployees = allEmployees.filter(
+    (employee) => employee.employmentStatus === FACE_SCAN_EMPLOYMENT_STATUS,
+  );
   const workingEmployees = employees.filter(
     (employee) => employee.employmentStatus === FACE_SCAN_EMPLOYMENT_STATUS,
   );
@@ -653,8 +672,53 @@ export async function buildAttendanceDailyReport({
     await new Promise((resolve) => setImmediate(resolve));
   }
 
+  const selectedReportDateKey = /^\d{4}-\d{2}-\d{2}$/.test(query.reportDate || "")
+    ? query.reportDate
+    : reportDays.find((day) => (recordsByDay.get(day.key) || []).length)?.key || reportDays[0]?.key;
+  const selectedReportDay = reportDays.find((day) => day.key === selectedReportDateKey);
+  const selectedDayStart = startOfBusinessDay(selectedReportDateKey);
+  const selectedDayEnd = endOfBusinessDay(selectedReportDateKey);
+  const allRecordsForSelectedDay = allRecords.filter(
+    (record) => dateKey(record.attendanceDate) === selectedReportDateKey,
+  );
+  const shiftComparison = shifts.map((shift) => {
+    const shiftId = String(shift._id);
+    const shiftEmployees = allWorkingEmployees.filter(
+      (employee) =>
+        String(employee.shiftId || "") === shiftId &&
+        activeOnDay(employee, selectedDayStart, selectedDayEnd),
+    );
+    const employeeIds = new Set(shiftEmployees.map((employee) => String(employee._id)));
+    const shiftRows = allRecordsForSelectedDay.filter(
+      (record) =>
+        String(record.shiftId || "") === shiftId &&
+        employeeIds.has(String(record.employeeId || "")),
+    );
+    const presence = selectedReportDay?.working && allRecordsForSelectedDay.length
+      ? attendancePresence(shiftEmployees, shiftRows)
+      : { faceScans: 0, absent: 0 };
+    return {
+      id: shiftId,
+      code: shift.code,
+      name: shift.name,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      overnight: String(shift.endTime || "") <= String(shift.startTime || ""),
+      totalEmployees: shiftEmployees.length,
+      faceScans: presence.faceScans,
+      absent: presence.absent,
+      absentRate: shiftEmployees.length ? (presence.absent / shiftEmployees.length) * 100 : 0,
+    };
+  });
+
   return {
     month: query.month,
+    reportDate: selectedReportDateKey,
+    selectedShiftId: selectedShiftId || null,
+    selectedShift: selectedShiftId
+      ? shiftComparison.find((shift) => shift.id === selectedShiftId) || null
+      : null,
+    shiftComparison,
     attendanceTarget: overallTarget
       ? {
           rate: Number(overallTarget.targetRate),

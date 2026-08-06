@@ -12,6 +12,7 @@ import { useToast } from "primevue/usetoast"
 
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js"
 import { lookupDepartments } from "@/modules/organization/department/api/department.api.js"
+import { lookupShifts } from "@/modules/organization/shift/api/shift.api.js"
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue"
 import EnterpriseFilterField from "@/shared/components/enterprise/EnterpriseFilterField.vue"
 import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
@@ -43,7 +44,7 @@ const currentDate = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
 }).format(today)
 const currentMonth = currentDate.slice(0, 7)
-const filters = reactive({ month: currentMonth, reportDate: currentDate, departmentId: "" })
+const filters = reactive({ month: currentMonth, reportDate: currentDate, departmentId: "", shiftId: "" })
 const report = ref(null)
 const loading = ref(false)
 const exporting = ref(false)
@@ -103,6 +104,7 @@ const payrollSchedule = reactive({
 })
 const error = ref("")
 const departments = ref([])
+const shifts = ref([])
 const collapsedDepartments = ref(new Set())
 const showExactCounts = ref(false)
 const progress = reactive({ percent: 0, phase: "", processedRows: 0, totalRows: 0 })
@@ -141,10 +143,20 @@ const departmentOptions = computed(() => [
     ...departments.value,
 ])
 
+const shiftOptions = computed(() => [
+    { id: "", name: "All Shifts" },
+    ...shifts.value.map((shift) => ({
+        id: shift._id || shift.id,
+        name: `${shift.code ? `${shift.code} — ` : ""}${shift.name}`,
+    })),
+])
+
 function params() {
     return {
         month: filters.month,
+        reportDate: filters.reportDate,
         departmentId: filters.departmentId,
+        shiftId: filters.shiftId,
         companyId: workspace.companyId,
         branchId: workspace.branchId,
     }
@@ -437,6 +449,12 @@ async function loadDepartments() {
         : []
 }
 
+async function loadShifts() {
+    shifts.value = workspace.ready
+        ? await lookupShifts({ companyId: workspace.companyId, branchId: workspace.branchId, status: "ACTIVE" })
+        : []
+}
+
 async function exportReport() {
     exporting.value = true
     Object.assign(progress, { percent: 0, phase: "QUEUED", processedRows: 0, totalRows: 0 })
@@ -609,7 +627,8 @@ watch(() => filters.reportDate, (value) => {
 
 watch(() => workspace.revision, async () => {
     filters.departmentId = ""
-    await Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()])
+    filters.shiftId = ""
+    await Promise.all([loadDepartments(), loadShifts(), load(), loadEmailSchedule(), loadPayrollSchedule()])
 })
 watch(payrollScheduleDialogVisible, (visible) => {
     if (visible) startPayrollStatusPolling()
@@ -621,7 +640,7 @@ watch(payrollScheduleDialogVisible, (visible) => {
 })
 onMounted(() => {
     startEmailScheduleStatusPolling()
-    return Promise.all([loadDepartments(), load(), loadEmailSchedule(), loadPayrollSchedule()])
+    return Promise.all([loadDepartments(), loadShifts(), load(), loadEmailSchedule(), loadPayrollSchedule()])
 })
 onBeforeUnmount(() => {
     stopPayrollStatusPolling()
@@ -688,9 +707,22 @@ onBeforeUnmount(() => {
             <ProgressBar :value="progress.percent" />
         </div>
 
-        <div v-else-if="report" class="report-card">
+        <div v-else-if="report" class="report-stack">
+            <div class="report-card">
             <div class="report-heading">
-                <div><strong>Attendance Daily Report</strong><span>{{ report.month }}</span></div>
+                <div class="report-title-group">
+                    <div><strong>Attendance Daily Report</strong><span>{{ report.month }}</span></div>
+                    <Select
+                        v-model="filters.shiftId"
+                        class="compact-shift-select"
+                        :options="shiftOptions"
+                        option-label="name"
+                        option-value="id"
+                        :filter="shiftOptions.length > 8"
+                        aria-label="Shift"
+                        @change="load"
+                    />
+                </div>
                 <div class="report-heading-actions">
                     <div class="metric-view-control" :title="t('attendance.dailyReport.displayModeHelp')">
                         <span :class="{ active: !showExactCounts }">{{ t("attendance.dailyReport.percentageView") }}</span>
@@ -751,6 +783,8 @@ onBeforeUnmount(() => {
                     </tbody>
                 </table>
             </div>
+        </div>
+
         </div>
 
         <Dialog v-model:visible="emailDialogVisible" modal header="Send Daily Attendance Email" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
@@ -1391,6 +1425,13 @@ onBeforeUnmount(() => {
     padding-left: 0.75rem;
 }
 
+
+.report-stack {
+    display: grid;
+    gap: 0.75rem;
+}
+
+
 @media (max-width: 700px) {
     .daily-report-page {
         padding: 0.4rem;
@@ -1413,6 +1454,46 @@ onBeforeUnmount(() => {
     .label-cell {
         min-width: 10.5rem !important;
         max-width: 10.5rem;
+    }
+}
+
+.report-title-group {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 0;
+}
+
+.report-title-group > div:first-child {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.compact-shift-select {
+    width: 11.5rem;
+    min-height: 2rem;
+}
+
+.compact-shift-select :deep(.p-select-label) {
+    padding-block: 0.35rem;
+    font-size: 0.78rem;
+}
+
+.compact-shift-select :deep(.p-select-dropdown) {
+    width: 2rem;
+}
+
+@media (max-width: 760px) {
+    .report-title-group {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    .compact-shift-select {
+        width: 100%;
     }
 }
 </style>

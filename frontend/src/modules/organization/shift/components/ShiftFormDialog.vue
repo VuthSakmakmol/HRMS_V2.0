@@ -35,10 +35,6 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
-    policyOptions: {
-        type: Array,
-        default: () => [],
-    },
 })
 
 const emit = defineEmits([
@@ -81,7 +77,6 @@ function closeDialog() {
             :branch-name="branchName"
             :disabled="saving"
             :editing="mode === 'edit'"
-            :policy-options="policyOptions"
             @clear-error="emit('clear-error', $event)"
         />
 

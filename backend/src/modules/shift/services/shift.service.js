@@ -9,9 +9,9 @@ import { AppError } from "../../../shared/errors/AppError.js"
 
 import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
+import AttendancePolicy from "../../attendance/models/AttendancePolicy.js"
 
 import Shift from "../models/Shift.js"
-import AttendancePolicy from "../../attendance/models/AttendancePolicy.js"
 
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -225,11 +225,6 @@ function getShiftScopeFilter(user) {
     }
 }
 
-async function validateAttendancePolicy(payload) {
-    const policy = await AttendancePolicy.exists({ _id: payload.attendancePolicyId, companyId: payload.companyId, branchId: payload.branchId, status: "ACTIVE" })
-    if (!policy) throw new AppError({ statusCode: 422, code: "ORGANIZATION_SHIFT_POLICY_INVALID", messageKey: "errors.organization.shift.policyInvalid", fields: { attendancePolicyId: ["errors.organization.shift.policyInvalid"] } })
-}
-
 function buildShiftSearchFilter(search) {
     const normalizedSearch = String(search || "").trim()
 
@@ -243,7 +238,6 @@ function buildShiftSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { name: searchRegex },
-            { shortName: searchRegex },
             { description: searchRegex },
         ],
     }
@@ -315,7 +309,6 @@ export function serializeShift(shift) {
 
         code: raw.code,
         name: raw.name,
-        shortName: raw.shortName || "",
 
         startTime: raw.startTime,
         endTime: raw.endTime,
@@ -325,11 +318,10 @@ export function serializeShift(shift) {
         totalMinutes: Number(raw.totalMinutes || 0),
         breakMinutes: Number(raw.breakMinutes || 0),
         workingMinutes: Number(raw.workingMinutes || 0),
-        preShiftWindowMinutes: Number(raw.preShiftWindowMinutes ?? 240),
-        postShiftWindowMinutes: Number(raw.postShiftWindowMinutes ?? 240),
-        attendancePolicyId: raw.attendancePolicyId?._id?.toString?.() || raw.attendancePolicyId?.toString?.() || raw.attendancePolicyId,
-        attendancePolicy: raw.attendancePolicyId && typeof raw.attendancePolicyId === "object" ? { id: raw.attendancePolicyId._id?.toString?.() || raw.attendancePolicyId.id, code: raw.attendancePolicyId.code, name: raw.attendancePolicyId.name } : null,
         isOvernight: Boolean(raw.isOvernight),
+
+        attendancePolicyId: raw.attendancePolicyId?._id?.toString?.() || raw.attendancePolicyId?.id || raw.attendancePolicyId?.toString?.() || raw.attendancePolicyId || null,
+        attendancePolicy: raw.attendancePolicyId && typeof raw.attendancePolicyId === "object" ? { id: raw.attendancePolicyId._id?.toString?.() || raw.attendancePolicyId.id, code: raw.attendancePolicyId.code, name: raw.attendancePolicyId.name, status: raw.attendancePolicyId.status } : null,
 
         description: raw.description || "",
         status: raw.status,
@@ -346,15 +338,11 @@ function buildUpdatePayload(payload, accountId) {
     for (const field of [
         "code",
         "name",
-        "shortName",
+        "attendancePolicyId",
         "startTime",
         "endTime",
         "breakStartTime",
         "breakEndTime",
-        "graceInMinutes",
-        "graceOutMinutes",
-        "preShiftWindowMinutes",
-        "postShiftWindowMinutes",
         "description",
         "status",
     ]) {
@@ -444,6 +432,17 @@ async function ensureBranchExists({ companyId, branchId, user }) {
     return branch
 }
 
+
+async function ensureAttendancePolicyExists({ attendancePolicyId, companyId, branchId }) {
+    if (!attendancePolicyId) return null
+    ensureValidObjectId(attendancePolicyId, "ATTENDANCE_POLICY_INVALID_ID", "errors.attendance.policy.invalidId")
+    const policy = await AttendancePolicy.findOne({ _id: attendancePolicyId, companyId, branchId, status: { $ne: "ARCHIVED" } }).lean()
+    if (!policy) {
+        throw new AppError({ statusCode: 404, code: "ATTENDANCE_POLICY_NOT_FOUND", messageKey: "errors.attendance.policy.notFound", fields: { attendancePolicyId: ["errors.attendance.policy.notFound"] } })
+    }
+    return policy
+}
+
 export async function listShifts({ query, user }) {
     const cacheKey = `shift:list:${user?.accountId || "anonymous"}:${JSON.stringify(query)}`
     const cachedResult = getCache(cacheKey)
@@ -496,6 +495,7 @@ export async function listShifts({ query, user }) {
                 path: "branchId",
                 select: "companyId code name shortName status isHeadOffice",
             })
+            .populate({ path: "attendancePolicyId", select: "code name status graceInMinutes graceOutMinutes" })
             .sort({ name: 1, code: 1 })
             .skip(skip)
             .limit(limit)
@@ -560,7 +560,7 @@ export async function lookupShifts({ query, user }) {
 
     const shifts = await Shift.find(filter)
         .select(
-            "companyId branchId code name shortName startTime endTime workingMinutes graceInMinutes graceOutMinutes preShiftWindowMinutes postShiftWindowMinutes isOvernight status",
+            "companyId branchId attendancePolicyId code name startTime endTime workingMinutes isOvernight status",
         )
         .sort({ name: 1, code: 1 })
         .limit(normalizedQuery.limit)
@@ -573,14 +573,10 @@ export async function lookupShifts({ query, user }) {
             branchId: shift.branchId?.toString?.() || shift.branchId,
             code: shift.code,
             name: shift.name,
-            shortName: shift.shortName || "",
+            attendancePolicyId: shift.attendancePolicyId?.toString?.() || shift.attendancePolicyId || null,
             startTime: shift.startTime,
             endTime: shift.endTime,
             workingMinutes: Number(shift.workingMinutes || 0),
-            graceInMinutes: Number(shift.graceInMinutes || 0),
-            graceOutMinutes: Number(shift.graceOutMinutes || 0),
-            preShiftWindowMinutes: Number(shift.preShiftWindowMinutes ?? 240),
-            postShiftWindowMinutes: Number(shift.postShiftWindowMinutes ?? 240),
             isOvernight: Boolean(shift.isOvernight),
             status: shift.status,
         })),
@@ -633,7 +629,7 @@ export async function createShift({ payload, user }) {
         user,
     })
 
-    await validateAttendancePolicy(payload)
+    await ensureAttendancePolicyExists({ attendancePolicyId: payload.attendancePolicyId, companyId: payload.companyId, branchId: payload.branchId })
     const timing = calculateShiftTiming(payload)
 
     try {
@@ -642,7 +638,7 @@ export async function createShift({ payload, user }) {
             branchId: payload.branchId,
             code: payload.code,
             name: payload.name,
-            shortName: payload.shortName || "",
+            attendancePolicyId: payload.attendancePolicyId || null,
             startTime: payload.startTime,
             endTime: payload.endTime,
             breakStartTime: payload.breakStartTime || "",
@@ -650,8 +646,6 @@ export async function createShift({ payload, user }) {
             totalMinutes: timing.totalMinutes,
             breakMinutes: timing.breakMinutes,
             workingMinutes: timing.workingMinutes,
-            graceInMinutes: payload.graceInMinutes || 0,
-            graceOutMinutes: payload.graceOutMinutes || 0,
             isOvernight: timing.isOvernight,
             description: payload.description || "",
             status: payload.status || "ACTIVE",
@@ -704,7 +698,7 @@ export async function updateShift({ shiftId, payload, user }) {
         ...payload,
     }
 
-    await validateAttendancePolicy(mergedPayload)
+    await ensureAttendancePolicyExists({ attendancePolicyId: mergedPayload.attendancePolicyId, companyId: existingShift.companyId, branchId: existingShift.branchId })
     const timing = calculateShiftTiming(mergedPayload)
 
     try {

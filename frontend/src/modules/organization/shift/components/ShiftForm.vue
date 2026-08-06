@@ -2,408 +2,112 @@
 import InputText from "primevue/inputtext"
 import Select from "primevue/select"
 import Textarea from "primevue/textarea"
-import { computed } from "vue"
+import Message from "primevue/message"
+import { computed, ref, watch } from "vue"
 import { useI18n } from "vue-i18n"
+import { fetchAttendancePolicies } from "@/modules/attendance/services/attendance.api.js"
 
 const props = defineProps({
-    form: {
-        type: Object,
-        required: true,
-    },
-    errors: {
-        type: Object,
-        default: () => ({}),
-    },
-    companyName: {
-        type: String,
-        default: "—",
-    },
-    branchName: {
-        type: String,
-        default: "—",
-    },
-    disabled: {
-        type: Boolean,
-        default: false,
-    },
-    editing: {
-        type: Boolean,
-        default: false,
-    },
-    policyOptions: {
-        type: Array,
-        default: () => [],
-    },
+    form: { type: Object, required: true },
+    errors: { type: Object, default: () => ({}) },
+    companyName: { type: String, default: "—" },
+    branchName: { type: String, default: "—" },
+    disabled: { type: Boolean, default: false },
 })
-
-const emit = defineEmits([
-    "clear-error",
-])
-
+const emit = defineEmits(["clear-error"])
 const { t } = useI18n()
+const policyOptions = ref([])
+const loadingPolicies = ref(false)
 
 const statusOptions = computed(() => [
-    {
-        label: t("organization.shift.statusActive"),
-        value: "ACTIVE",
-    },
-    {
-        label: t("organization.shift.statusInactive"),
-        value: "INACTIVE",
-    },
+    { label: t("organization.shift.statusActive"), value: "ACTIVE" },
+    { label: t("organization.shift.statusInactive"), value: "INACTIVE" },
 ])
+const overnight = computed(() => Boolean(props.form.startTime && props.form.endTime && props.form.endTime <= props.form.startTime))
 
 function message(field) {
     const value = props.errors?.[field]
-
-    if (!value) {
-        return ""
-    }
-
-    const key = Array.isArray(value)
-        ? value[0]
-        : value
-
+    const key = Array.isArray(value) ? value[0] : value
+    if (!key) return ""
     const translated = t(key)
-
-    return translated === key
-        ? key
-        : translated
+    return translated === key ? key : translated
 }
-
 function normalizeCode() {
-    props.form.code = String(props.form.code ?? "")
-        .trimStart()
-        .toUpperCase()
-
+    props.form.code = String(props.form.code ?? "").trimStart().toUpperCase()
     emit("clear-error", "code")
 }
+async function loadPolicies() {
+    if (!props.form.companyId || !props.form.branchId) {
+        policyOptions.value = []
+        return
+    }
+    loadingPolicies.value = true
+    try {
+        const result = await fetchAttendancePolicies({
+            companyId: props.form.companyId,
+            branchId: props.form.branchId,
+            status: "ACTIVE",
+            page: 1,
+            limit: 100,
+        })
+        policyOptions.value = (result?.items || []).map((item) => ({
+            label: `${item.code} — ${item.name}`,
+            value: item.id,
+        }))
+    } finally {
+        loadingPolicies.value = false
+    }
+}
+watch(() => [props.form.companyId, props.form.branchId], loadPolicies, { immediate: true })
 </script>
 
 <template>
-    <form
-        class="shift-form"
-        @submit.prevent
-    >
+    <form class="shift-form" @submit.prevent>
         <section class="shift-form__section">
-            <div class="shift-form__heading">
-                <h3>
-                    {{ t("organization.shift.organizationInformation") }}
-                </h3>
-            </div>
-
+            <h3>Organization</h3>
             <div class="shift-form__grid">
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.company") }} *
-                    </span>
-
-                    <InputText
-                        :model-value="companyName"
-                        disabled
-                    />
-
-                    <small v-if="message('companyId')">
-                        {{ message("companyId") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.branch") }} *
-                    </span>
-
-                    <InputText
-                        :model-value="branchName"
-                        disabled
-                    />
-
-                    <small v-if="message('branchId')">
-                        {{ message("branchId") }}
-                    </small>
-                </label>
+                <label class="enterprise-form-field"><span>Company *</span><InputText :model-value="companyName" disabled /></label>
+                <label class="enterprise-form-field"><span>Branch *</span><InputText :model-value="branchName" disabled /></label>
             </div>
         </section>
 
         <section class="shift-form__section">
-            <div class="shift-form__heading">
-                <h3>
-                    {{ t("organization.shift.basicInformation") }}
-                </h3>
-            </div>
-
+            <h3>Shift Information</h3>
             <div class="shift-form__grid">
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.code") }} *
-                    </span>
-
-                    <InputText
-                        v-model="form.code"
-                        :disabled="disabled"
-                        maxlength="30"
-                        autocomplete="off"
-                        @input="normalizeCode"
-                    />
-
-                    <small v-if="message('code')">
-                        {{ message("code") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.name") }} *
-                    </span>
-
-                    <InputText
-                        v-model="form.name"
-                        :disabled="disabled"
-                        maxlength="160"
-                        autocomplete="off"
-                        @input="emit('clear-error', 'name')"
-                    />
-
-                    <small v-if="message('name')">
-                        {{ message("name") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.shortName") }}
-                    </span>
-
-                    <InputText
-                        v-model="form.shortName"
-                        :disabled="disabled"
-                        maxlength="80"
-                        autocomplete="off"
-                        @input="emit('clear-error', 'shortName')"
-                    />
-
-                    <small v-if="message('shortName')">
-                        {{ message("shortName") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("common.status") }}
-                    </span>
-
-                    <Select
-                        v-model="form.status"
-                        :options="statusOptions"
-                        option-label="label"
-                        option-value="value"
-                        :disabled="disabled"
-                        @change="emit('clear-error', 'status')"
-                    />
-
-                    <small v-if="message('status')">
-                        {{ message("status") }}
-                    </small>
-                </label>
+                <label class="enterprise-form-field"><span>Shift Code *</span><InputText v-model="form.code" maxlength="30" :disabled="disabled" @input="normalizeCode" /><small v-if="message('code')">{{ message('code') }}</small></label>
+                <label class="enterprise-form-field"><span>Shift Name *</span><InputText v-model="form.name" maxlength="160" :disabled="disabled" @input="emit('clear-error','name')" /><small v-if="message('name')">{{ message('name') }}</small></label>
+                <label class="enterprise-form-field"><span>Attendance Policy</span><Select v-model="form.attendancePolicyId" :options="policyOptions" option-label="label" option-value="value" show-clear filter :loading="loadingPolicies" :disabled="disabled" placeholder="Use system defaults" /><small v-if="message('attendancePolicyId')">{{ message('attendancePolicyId') }}</small></label>
+                <label class="enterprise-form-field"><span>Status</span><Select v-model="form.status" :options="statusOptions" option-label="label" option-value="value" :disabled="disabled" /></label>
             </div>
         </section>
 
         <section class="shift-form__section">
-            <div class="shift-form__heading">
-                <h3>
-                    {{ t("organization.shift.scheduleInformation") }}
-                </h3>
-            </div>
-
+            <h3>Schedule</h3>
             <div class="shift-form__grid">
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.startTime") }} *
-                    </span>
-
-                    <InputText
-                        v-model="form.startTime"
-                        type="time"
-                        :disabled="disabled"
-                        @input="emit('clear-error', 'startTime')"
-                    />
-
-                    <small v-if="message('startTime')">
-                        {{ message("startTime") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.endTime") }} *
-                    </span>
-
-                    <InputText
-                        v-model="form.endTime"
-                        type="time"
-                        :disabled="disabled"
-                        @input="emit('clear-error', 'endTime')"
-                    />
-
-                    <small v-if="message('endTime')">
-                        {{ message("endTime") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.breakStartTime") }}
-                    </span>
-
-                    <InputText
-                        v-model="form.breakStartTime"
-                        type="time"
-                        :disabled="disabled"
-                        @input="emit('clear-error', 'breakStartTime')"
-                    />
-
-                    <small v-if="message('breakStartTime')">
-                        {{ message("breakStartTime") }}
-                    </small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.shift.breakEndTime") }}
-                    </span>
-
-                    <InputText
-                        v-model="form.breakEndTime"
-                        type="time"
-                        :disabled="disabled"
-                        @input="emit('clear-error', 'breakEndTime')"
-                    />
-
-                    <small v-if="message('breakEndTime')">
-                        {{ message("breakEndTime") }}
-                    </small>
-                </label>
+                <label class="enterprise-form-field"><span>Start Time *</span><InputText v-model="form.startTime" type="time" :disabled="disabled" /></label>
+                <label class="enterprise-form-field"><span>End Time *</span><InputText v-model="form.endTime" type="time" :disabled="disabled" /></label>
+                <label class="enterprise-form-field"><span>Break Start</span><InputText v-model="form.breakStartTime" type="time" :disabled="disabled" /></label>
+                <label class="enterprise-form-field"><span>Break End</span><InputText v-model="form.breakEndTime" type="time" :disabled="disabled" /></label>
             </div>
+            <Message :severity="overnight ? 'info' : 'secondary'" :closable="false">
+                {{ overnight ? 'Overnight shift detected automatically. The end time belongs to the next calendar day.' : 'Normal same-day shift.' }}
+            </Message>
         </section>
 
         <section class="shift-form__section">
-            <div class="shift-form__heading">
-                <h3>{{ t("organization.shift.attendanceRules") }}</h3>
-            </div>
-
-            <div class="shift-form__grid">
-                <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>{{ t("organization.shift.attendancePolicy") }} *</span>
-                    <Select
-                        v-model="form.attendancePolicyId"
-                        :options="policyOptions"
-                        option-label="label"
-                        option-value="value"
-                        :disabled="disabled"
-                        filter
-                        show-clear
-                        @change="emit('clear-error', 'attendancePolicyId')"
-                    />
-                    <small v-if="message('attendancePolicyId')">{{ message("attendancePolicyId") }}</small>
-                    <small v-else>{{ t("organization.shift.attendancePolicyHint") }}</small>
-                </label>
-
-                <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>{{ t("organization.shift.descriptionLabel") }}</span>
-                    <Textarea
-                        v-model="form.description"
-                        :disabled="disabled"
-                        rows="3"
-                        maxlength="500"
-                        auto-resize
-                        @input="emit('clear-error', 'description')"
-                    />
-                    <small v-if="message('description')">{{ message("description") }}</small>
-                </label>
-            </div>
+            <h3>Description</h3>
+            <label class="enterprise-form-field enterprise-form-field--full"><Textarea v-model="form.description" rows="3" maxlength="500" :disabled="disabled" /></label>
         </section>
     </form>
 </template>
 
 <style scoped>
-.shift-form {
-    display: grid;
-    gap: 1rem;
-}
-
-.shift-form__section {
-    display: grid;
-    gap: 0.75rem;
-}
-
-.shift-form__section + .shift-form__section {
-    padding-top: 0.9rem;
-    border-top: 1px solid var(--p-content-border-color, #e2e8f0);
-}
-
-.shift-form__heading h3 {
-    margin: 0;
-    color: var(--p-text-color, #334155);
-    font-size: 0.9rem;
-    font-weight: 700;
-}
-
-.shift-form__grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-}
-
-.enterprise-form-field {
-    display: grid;
-    min-width: 0;
-    gap: 0.3rem;
-}
-
-.enterprise-form-field > span {
-    color: var(--p-text-color, #334155);
-    font-size: 0.75rem;
-    font-weight: 600;
-}
-
-.enterprise-form-field small {
-    color: var(--p-red-500, #ef4444);
-    font-size: 0.7rem;
-}
-
-.enterprise-form-field--full {
-    grid-column: 1 / -1;
-}
-
-.enterprise-form-field :deep(.p-inputtext),
-.enterprise-form-field :deep(.p-select),
-.enterprise-form-field :deep(.p-inputnumber),
-.enterprise-form-field :deep(.p-inputnumber-input),
-.enterprise-form-field :deep(.p-textarea) {
-    width: 100%;
-    min-width: 0;
-}
-
-.enterprise-form-field :deep(.p-select) {
-    display: flex;
-}
-
-.enterprise-form-field :deep(.p-select-label) {
-    min-width: 0;
-    flex: 1 1 auto;
-}
-
-.enterprise-form-field :deep(.p-inputnumber-button) {
-    width: 2.25rem;
-}
-
-@media (max-width: 680px) {
-    .shift-form__grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
-
-    .enterprise-form-field--full {
-        grid-column: auto;
-    }
-}
+.shift-form { display: grid; gap: 1rem; }
+.shift-form__section { padding: 1rem; border: 1px solid var(--surface-border); border-radius: 10px; background: var(--surface-card); }
+.shift-form__section h3 { margin: 0 0 .85rem; font-size: .95rem; }
+.shift-form__grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .85rem; }
+.enterprise-form-field { display: grid; gap: .35rem; font-size: .85rem; }
+.enterprise-form-field small { color: var(--p-red-500); }
+.enterprise-form-field--full { width: 100%; }
+@media (max-width: 720px) { .shift-form__grid { grid-template-columns: 1fr; } }
 </style>

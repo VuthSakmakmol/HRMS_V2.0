@@ -10,7 +10,6 @@ import {
 } from "vue"
 import { useI18n } from "vue-i18n"
 import { useToast } from "primevue/usetoast"
-import { fetchAttendancePolicies } from "@/modules/attendance/services/attendance.api.js"
 
 import { useAuthStore } from "@/app/stores/auth.store.js"
 import { useUiStore } from "@/app/stores/ui.store.js"
@@ -81,7 +80,6 @@ const archiveCandidate = ref(null)
 const importVisible = ref(false)
 const exporting = ref(false)
 const downloadingTemplate = ref(false)
-const policyOptions = ref([])
 
 const columns = computed(() => createShiftColumns(t))
 const statusOptions = computed(() => [
@@ -276,13 +274,6 @@ function breakLabel(row) {
     return `${row.breakStartTime} – ${row.breakEndTime}`
 }
 
-function graceLabel(row) {
-    return `${Number(row.graceInMinutes ?? 0)} / ${Number(row.graceOutMinutes ?? 0)} min`
-}
-
-function scanWindowLabel(row) {
-    return `${Number(row.preShiftWindowMinutes ?? 240)}m before / ${Number(row.postShiftWindowMinutes ?? 240)}m after`
-}
 
 async function downloadTemplate() {
     downloadingTemplate.value = true
@@ -378,16 +369,6 @@ async function submitImport() {
             life: 5000,
         })
     }
-}
-
-async function loadPolicyOptions() {
-    const companyId = workspaceStore.selectedCompanyId
-    const branchId = workspaceStore.selectedBranchId
-    if (!companyId || !branchId) { policyOptions.value = []; return }
-    try {
-        const result = await fetchAttendancePolicies({ companyId, branchId, status: "ACTIVE", page: 1, limit: 100 })
-        policyOptions.value = (result?.items || []).map((item) => ({ label: `${item.code} - ${item.name}`, value: item.id }))
-    } catch { policyOptions.value = [] }
 }
 
 onMounted(load)
@@ -567,17 +548,8 @@ onMounted(load)
                 {{ minutesToHours(row.workingMinutes) }}
             </span>
         </template>
-
-        <template #cell-grace="{ row }">
-            <span class="enterprise-table__text" :title="graceLabel(row)">
-                {{ graceLabel(row) }}
-            </span>
-        </template>
-
-        <template #cell-scanWindow="{ row }">
-            <span class="enterprise-table__text" :title="scanWindowLabel(row)">
-                {{ scanWindowLabel(row) }}
-            </span>
+        <template #cell-attendancePolicy="{ row }">
+            <span class="enterprise-table__text">{{ row.attendancePolicy?.name || "System Default" }}</span>
         </template>
 
         <template #cell-status="{ row }">
@@ -606,7 +578,6 @@ onMounted(load)
         :company-name="workspaceCompanyName"
         :branch-name="workspaceBranchName"
         :saving="formSaving"
-        :policy-options="policyOptions"
         @submit="saveShift"
         @close="formState.close"
         @clear-error="formState.clearErrors"
