@@ -349,21 +349,57 @@ export async function buildAttendanceDailyReport({
     const activeEmployeeIds = new Set(
       activeEmployees.map((employee) => String(employee._id)),
     );
+    const allActiveEmployees = employees.filter((employee) =>
+      activeOnDay(employee, dayStart, dayEnd),
+    );
+    const allActiveEmployeeIds = new Set(
+      allActiveEmployees.map((employee) => String(employee._id)),
+    );
+    const activeMaternityEmployeeIds = new Set(
+      allActiveEmployees
+        .filter(
+          (employee) =>
+            employee.employmentStatus === MATERNITY_LEAVE_EMPLOYMENT_STATUS,
+        )
+        .map((employee) => String(employee._id)),
+    );
     const dayRecords = recordsByDay.get(day.key) || [];
     const hasAttendanceData = dayRecords.length > 0;
     const rows = dayRecords.filter((row) =>
       activeEmployeeIds.has(String(row.employeeId || "")),
     );
+    const leaveRows = dayRecords.filter((row) =>
+      allActiveEmployeeIds.has(String(row.employeeId || "")),
+    );
     const presence = hasAttendanceData
       ? attendancePresence(activeEmployees, rows)
       : { faceScans: 0, absent: 0 };
-    const leave = Object.fromEntries(
+    const leaveEmployeeIds = Object.fromEntries(
       LEAVE_CODES.map((code) => [
         code,
-        uniqueEmployeeCount(
-          rows.filter((row) => normalizedCode(row) === code),
+        new Set(
+          leaveRows
+            .filter((row) => normalizedCode(row) === code)
+            .map((row) => String(row.employeeId || ""))
+            .filter(Boolean),
         ),
       ]),
+    );
+
+    // Maternity employees are moved out of WORKING by payroll. Their imported
+    // attendance row can therefore be blank and was previously excluded from
+    // the Daily Summary. Count every active MATERNITY_LEAVE employee that has
+    // an attendance record for this date, while keeping them outside the face
+    // scan and absent denominators.
+    for (const record of leaveRows) {
+      const recordEmployeeId = String(record.employeeId || "");
+      if (activeMaternityEmployeeIds.has(recordEmployeeId)) {
+        leaveEmployeeIds.ML.add(recordEmployeeId);
+      }
+    }
+
+    const leave = Object.fromEntries(
+      LEAVE_CODES.map((code) => [code, leaveEmployeeIds[code].size]),
     );
     return {
       totalEmployees: activeEmployees.length,

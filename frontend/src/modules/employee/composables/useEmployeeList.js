@@ -6,7 +6,7 @@ export function useEmployeeList() {
     const loading = ref(false)
     const error = ref(null)
     const pagination = reactive({ page: 1, limit: 10, total: 0, totalPages: 1 })
-    const filters = reactive({ search: "", employmentStatus: "ALL", recordStatus: "ACTIVE", companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "" })
+    const filters = reactive({ search: "", employmentStatus: "ALL", recordStatus: "ACTIVE", companyId: "", branchId: "", employeeTypeId: "", employeeTypeChildId: "", departmentId: "", positionId: "", lineId: "", shiftId: "", gender: "ALL", maritalStatus: "ALL", joinDateFrom: "", joinDateTo: "", resignDateFrom: "", resignDateTo: "" })
 
     const query = computed(() => ({
         page: pagination.page,
@@ -35,7 +35,7 @@ export function useEmployeeList() {
     }
 
     function applyFilters() { pagination.page = 1; return load() }
-    function clearFilters() { Object.assign(filters, { search: "", employmentStatus: "ALL", recordStatus: "ACTIVE", companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "" }); return applyFilters() }
+    function clearFilters() { Object.assign(filters, { search: "", employmentStatus: "ALL", recordStatus: "ACTIVE", companyId: "", branchId: "", employeeTypeId: "", employeeTypeChildId: "", departmentId: "", positionId: "", lineId: "", shiftId: "", gender: "ALL", maritalStatus: "ALL", joinDateFrom: "", joinDateTo: "", resignDateFrom: "", resignDateTo: "" }); return applyFilters() }
     function changePage({ page, rows: limit }) { pagination.page = page + 1; pagination.limit = limit; return load() }
 
     return { rows, loading, error, pagination, filters, query, load, archive, applyFilters, clearFilters, changePage }

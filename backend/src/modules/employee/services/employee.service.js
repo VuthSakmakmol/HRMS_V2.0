@@ -395,6 +395,8 @@ function buildSearchFilter(search) {
             { khmerLastName: regex },
             { phoneNumber: regex },
             { email: regex },
+            { "documents.nssfNo": regex },
+            { "documents.idCardNo": regex },
         ],
     }
 }
@@ -776,6 +778,18 @@ export async function listEmployees({ query, user }) {
     }
     if (query.employmentStatus !== "ALL") filter.employmentStatus = query.employmentStatus
     if (query.recordStatus !== "ALL") filter.recordStatus = query.recordStatus
+    if (query.gender !== "ALL") filter.gender = query.gender
+    if (query.maritalStatus !== "ALL") filter.maritalStatus = query.maritalStatus
+    if (query.joinDateFrom || query.joinDateTo) {
+        filter.joinDate = {}
+        if (query.joinDateFrom) filter.joinDate.$gte = query.joinDateFrom
+        if (query.joinDateTo) filter.joinDate.$lte = query.joinDateTo
+    }
+    if (query.resignDateFrom || query.resignDateTo) {
+        filter.resignDate = {}
+        if (query.resignDateFrom) filter.resignDate.$gte = query.resignDateFrom
+        if (query.resignDateTo) filter.resignDate.$lte = query.resignDateTo
+    }
 
     const page = query.page
     const limit = query.limit

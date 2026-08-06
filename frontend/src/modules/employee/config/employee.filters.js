@@ -17,6 +17,7 @@ export const RECORD_STATUS_OPTIONS = Object.freeze([
 ])
 
 export const GENDER_OPTIONS = Object.freeze([
+    { label: "All genders", value: "ALL" },
     { label: "Male", value: "MALE" },
     { label: "Female", value: "FEMALE" },
     { label: "Other", value: "OTHER" },
@@ -24,6 +25,7 @@ export const GENDER_OPTIONS = Object.freeze([
 ])
 
 export const MARITAL_STATUS_OPTIONS = Object.freeze([
+    { label: "All marital statuses", value: "ALL" },
     { label: "Single", value: "SINGLE" },
     { label: "Married", value: "MARRIED" },
     { label: "Divorced", value: "DIVORCED" },

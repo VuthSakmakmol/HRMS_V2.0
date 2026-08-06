@@ -15,7 +15,13 @@ import { useToast } from "primevue/usetoast";
 import { useI18n } from "vue-i18n";
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js";
 import { useAuthStore } from "@/app/stores/auth.store.js";
-import { lookupDepartments } from "@/modules/organization/department/api/department.api.js";
+import {
+  fetchEmployeeDepartments,
+  fetchEmployeePositions,
+  fetchEmployeeLines,
+  fetchEmployeeShifts,
+  fetchEmployeeTypes,
+} from "@/modules/employee/api/employee.api.js";
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue";
 import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue";
 import EnterpriseFilterBar from "@/shared/components/enterprise/EnterpriseFilterBar.vue";
@@ -52,8 +58,23 @@ const query = reactive({
   status: "ALL",
   leaveCode: "ALL",
   departmentId: "",
+  positionId: "",
+  lineId: "",
+  shiftId: "",
+  employeeTypeId: "",
+  employeeTypeChildId: "",
+  employmentStatus: "ALL",
+  scanCondition: "ALL",
+  source: "ALL",
+  lockStatus: "ALL",
+  lateCondition: "ALL",
+  earlyLeaveCondition: "ALL",
 });
 const departments = ref([]),
+  positions = ref([]),
+  lines = ref([]),
+  shifts = ref([]),
+  employeeTypes = ref([]),
   dialogVisible = ref(false),
   importVisible = ref(false),
   unmatchedVisible = ref(false),
@@ -85,6 +106,59 @@ const rows = computed(() =>
     vacation: leaveLabels[item.leaveCode] || "—",
   })),
 );
+
+const simpleOptions = (items, allLabel) => [
+  { label: allLabel, value: "" },
+  ...items.map((item) => ({ label: `${item.code ? `${item.code} - ` : ""}${item.name || item.title || item.displayName || item.code}`, value: item.id || item._id })),
+];
+const positionOptions = computed(() => simpleOptions(positions.value, "All Positions"));
+const lineOptions = computed(() => simpleOptions(lines.value, "All Lines"));
+const shiftOptions = computed(() => simpleOptions(shifts.value, "All Shifts"));
+const employeeTypeOptions = computed(() => simpleOptions(employeeTypes.value, "All Employee Types"));
+const employeeTypeChildOptions = computed(() => {
+  const selected = employeeTypes.value.find((item) => (item.id || item._id) === query.employeeTypeId);
+  return [
+    { label: "All Child Groups", value: "" },
+    ...(selected?.children || []).map((item) => ({ label: `${item.code ? `${item.code} - ` : ""}${item.name || item.code}`, value: item.id || item._id })),
+  ];
+});
+const employmentOptions = [
+  { label: "All Employment Statuses", value: "ALL" },
+  { label: "Working", value: "WORKING" },
+  { label: "Maternity Leave", value: "MATERNITY_LEAVE" },
+  { label: "Resigned", value: "RESIGNED" },
+  { label: "Terminated", value: "TERMINATED" },
+  { label: "Abandoned", value: "ABANDONED" },
+  { label: "Passed Away", value: "PASSED_AWAY" },
+  { label: "Retired", value: "RETIRED" },
+];
+const scanOptions = [
+  { label: "All Scan Conditions", value: "ALL" },
+  { label: "Complete Scan", value: "COMPLETE" },
+  { label: "Has Any Scan", value: "HAS_ANY" },
+  { label: "Missing Both", value: "MISSING_BOTH" },
+  { label: "Missing Time 1", value: "MISSING_IN" },
+  { label: "Missing Time 2", value: "MISSING_OUT" },
+  { label: "Time 1 Only", value: "TIME1_ONLY" },
+  { label: "Time 2 Only", value: "TIME2_ONLY" },
+];
+const sourceOptions = [
+  { label: "All Sources", value: "ALL" },
+  { label: "Manual Entry", value: "MANUAL" },
+  { label: "Excel Import", value: "EXCEL_IMPORT" },
+  { label: "Machine Sync", value: "MACHINE_SYNC" },
+];
+const lockOptions = [
+  { label: "All Lock Statuses", value: "ALL" },
+  { label: "Open", value: "OPEN" },
+  { label: "HR Verified", value: "HR_VERIFIED" },
+  { label: "Payroll Locked", value: "PAYROLL_LOCKED" },
+  { label: "Finalized", value: "FINALIZED" },
+];
+const yesNoOptions = (yes, no) => [
+  { label: "All", value: "ALL" }, { label: yes, value: yes === "Late" ? "LATE" : "EARLY" }, { label: no, value: yes === "Late" ? "NOT_LATE" : "NOT_EARLY" },
+];
+
 const departmentOptions = computed(() => [
   { id: "", name: "All Departments" },
   ...departments.value,
@@ -102,6 +176,8 @@ const activeFilterCount = computed(
     [
       query.search,
       query.departmentId,
+      query.positionId, query.lineId, query.shiftId, query.employeeTypeId, query.employeeTypeChildId,
+      query.employmentStatus !== "ALL", query.scanCondition !== "ALL", query.source !== "ALL", query.lockStatus !== "ALL", query.lateCondition !== "ALL", query.earlyLeaveCondition !== "ALL",
       query.status !== "ALL",
       query.leaveCode !== "ALL",
       query.dateFrom !== firstDay,
@@ -137,14 +213,26 @@ async function load(overrides = {}, force = false) {
   }
 }
 async function loadLookups() {
-  departments.value = workspace.ready
-    ? await lookupDepartments({
-        companyId: workspace.companyId,
-        branchId: workspace.branchId,
-        status: "ACTIVE",
-      })
-    : [];
+  if (!workspace.ready) {
+    departments.value = []; positions.value = []; lines.value = []; shifts.value = []; employeeTypes.value = [];
+    return;
+  }
+  const [departmentRows, lineRows, shiftRows, typeRows] = await Promise.all([
+    fetchEmployeeDepartments({ companyId: workspace.companyId, branchId: workspace.branchId }),
+    fetchEmployeeLines({ companyId: workspace.companyId, branchId: workspace.branchId }),
+    fetchEmployeeShifts({ companyId: workspace.companyId, branchId: workspace.branchId }),
+    fetchEmployeeTypes(workspace.companyId),
+  ]);
+  departments.value = departmentRows;
+  lines.value = lineRows;
+  shifts.value = shiftRows;
+  employeeTypes.value = (Array.isArray(typeRows) ? typeRows : typeRows?.items || []).filter((item) => !item.branchId || item.branchId === workspace.branchId);
 }
+async function onDepartmentChange() {
+  query.positionId = "";
+  positions.value = query.departmentId ? await fetchEmployeePositions({ companyId: workspace.companyId, branchId: workspace.branchId, departmentId: query.departmentId }) : [];
+}
+function onEmployeeTypeChange() { query.employeeTypeChildId = ""; }
 function delayedSearch() {
   clearTimeout(timer);
   timer = setTimeout(() => load({ page: 1 }), 350);
@@ -157,7 +245,8 @@ function clearFilters() {
     dateTo: today,
     status: "ALL",
     leaveCode: "ALL",
-    departmentId: "",
+    departmentId: "", positionId: "", lineId: "", shiftId: "", employeeTypeId: "", employeeTypeChildId: "",
+    employmentStatus: "ALL", scanCondition: "ALL", source: "ALL", lockStatus: "ALL", lateCondition: "ALL", earlyLeaveCondition: "ALL",
   });
   load({}, true);
 }
@@ -384,26 +473,26 @@ onBeforeUnmount(() => clearTimeout(timer));
                 :branch-id="workspace.branchId"
                 compact
                 :show-status="false" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Department"
-              ><Select
-                v-model="query.departmentId"
-                :options="departmentOptions"
-                option-label="name"
-                option-value="id"
-                filter /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Status"
+            ><EnterpriseFilterField label="Employee Type"><Select v-model="query.employeeTypeId" :options="employeeTypeOptions" option-label="label" option-value="value" filter @change="onEmployeeTypeChange" /></EnterpriseFilterField>
+            <EnterpriseFilterField v-if="employeeTypeChildOptions.length > 1" label="Child Group"><Select v-model="query.employeeTypeChildId" :options="employeeTypeChildOptions" option-label="label" option-value="value" filter /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Department"><Select v-model="query.departmentId" :options="departmentOptions" option-label="name" option-value="id" filter @change="onDepartmentChange" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Position"><Select v-model="query.positionId" :options="positionOptions" option-label="label" option-value="value" filter :disabled="!query.departmentId" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Line"><Select v-model="query.lineId" :options="lineOptions" option-label="label" option-value="value" filter /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Shift"><Select v-model="query.shiftId" :options="shiftOptions" option-label="label" option-value="value" filter /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Employment"><Select v-model="query.employmentStatus" :options="employmentOptions" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Status"
               ><Select
                 v-model="query.status"
                 :options="attendanceStatusOptions"
                 option-label="label"
                 option-value="value" /></EnterpriseFilterField
-            ><EnterpriseFilterField :label="t('attendance.vacation')"
-              ><Select
-                v-model="query.leaveCode"
-                :options="vacationOptions"
-                option-label="label"
-                option-value="value" /></EnterpriseFilterField
-            ><template #actions
+            ><EnterpriseFilterField :label="t('attendance.vacation')"><Select v-model="query.leaveCode" :options="vacationOptions" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Scan Condition"><Select v-model="query.scanCondition" :options="scanOptions" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Late"><Select v-model="query.lateCondition" :options="yesNoOptions('Late', 'Not Late')" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Early Leave"><Select v-model="query.earlyLeaveCondition" :options="yesNoOptions('Early Leave', 'Not Early Leave')" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Source"><Select v-model="query.source" :options="sourceOptions" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Lock Status"><Select v-model="query.lockStatus" :options="lockOptions" option-label="label" option-value="value" /></EnterpriseFilterField>
+            <template #actions
               ><Button
                 label="Clear"
                 icon="pi pi-times"

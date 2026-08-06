@@ -83,6 +83,50 @@ function applyLeaveCodeFilter(filter, leaveCode) {
     filter.leaveCode = leaveCode
 }
 
+
+function applyScanCondition(filter, condition) {
+    if (!condition || condition === "ALL") return
+    const hasIn = { firstInAt: { $ne: null } }
+    const noIn = { $or: [{ firstInAt: null }, { firstInAt: { $exists: false } }] }
+    const hasOut = { lastOutAt: { $ne: null } }
+    const noOut = { $or: [{ lastOutAt: null }, { lastOutAt: { $exists: false } }] }
+    const rules = {
+        COMPLETE: [hasIn, hasOut],
+        HAS_ANY: [{ $or: [hasIn, hasOut] }],
+        MISSING_BOTH: [noIn, noOut],
+        MISSING_IN: [noIn],
+        MISSING_OUT: [noOut],
+        TIME1_ONLY: [hasIn, noOut],
+        TIME2_ONLY: [noIn, hasOut],
+    }
+    if (rules[condition]) filter.$and = [...(filter.$and || []), ...rules[condition]]
+}
+
+async function applyEmployeeRecordFilters(filter, query, user) {
+    const employeeFilter = { ...attendanceScopeFilter(user) }
+    let needsEmployeeLookup = false
+    for (const field of ["employeeTypeId", "employeeTypeChildId"]) {
+        if (query[field]) { employeeFilter[field] = query[field]; needsEmployeeLookup = true }
+    }
+    if (query.employmentStatus && query.employmentStatus !== "ALL") {
+        employeeFilter.employmentStatus = query.employmentStatus
+        needsEmployeeLookup = true
+    }
+    if (query.search) {
+        const regex = { $regex: query.search, $options: "i" }
+        employeeFilter.$or = [
+            { employeeCode: regex }, { displayName: regex },
+            { englishFirstName: regex }, { englishLastName: regex },
+            { khmerFirstName: regex }, { khmerLastName: regex },
+            { phoneNumber: regex }, { email: regex },
+        ]
+        needsEmployeeLookup = true
+    }
+    if (!needsEmployeeLookup) return
+    const employees = await Employee.find(employeeFilter).select("_id").lean()
+    filter.employeeId = { $in: employees.map((employee) => employee._id) }
+}
+
 export async function upsertAttendanceRecord({
     payload,
     user,
@@ -237,7 +281,7 @@ export async function listAttendanceRecords({ query, user }) {
             $lte: endOfBusinessDay(query.dateTo),
         },
     }
-    for (const field of ["companyId", "branchId", "departmentId", "positionId", "lineId"]) {
+    for (const field of ["companyId", "branchId", "departmentId", "positionId", "lineId", "shiftId"]) {
         if (query[field]) filter[field] = query[field]
     }
     if (query.status !== "ALL") filter.status = query.status
@@ -246,18 +290,14 @@ export async function listAttendanceRecords({ query, user }) {
         filter.verificationStatus = query.verificationStatus
     }
     if (query.issueCode) filter.issueCodes = query.issueCode
-    if (query.search) {
-        const employees = await Employee.find({
-            ...attendanceScopeFilter(user),
-            $or: [
-                { employeeCode: { $regex: query.search, $options: "i" } },
-                { displayName: { $regex: query.search, $options: "i" } },
-                { englishFirstName: { $regex: query.search, $options: "i" } },
-                { englishLastName: { $regex: query.search, $options: "i" } },
-            ],
-        }).select("_id").lean()
-        filter.employeeId = { $in: employees.map((employee) => employee._id) }
-    }
+    if (query.source !== "ALL") filter.source = query.source
+    if (query.lockStatus !== "ALL") filter.lockStatus = query.lockStatus
+    if (query.lateCondition === "LATE") filter.lateMinutes = { $gt: 0 }
+    if (query.lateCondition === "NOT_LATE") filter.lateMinutes = { $lte: 0 }
+    if (query.earlyLeaveCondition === "EARLY") filter.earlyLeaveMinutes = { $gt: 0 }
+    if (query.earlyLeaveCondition === "NOT_EARLY") filter.earlyLeaveMinutes = { $lte: 0 }
+    applyScanCondition(filter, query.scanCondition)
+    await applyEmployeeRecordFilters(filter, query, user)
     const skip = (query.page - 1) * query.limit
     const [items, total] = await Promise.all([
         AttendanceRecord.find(filter)
@@ -284,23 +324,22 @@ export async function getAttendanceExportRecords({ query, user }) {
         ...attendanceScopeFilter(user),
         attendanceDate: { $gte: startOfBusinessDay(query.dateFrom), $lte: endOfBusinessDay(query.dateTo) },
     }
-    for (const field of ["companyId", "branchId", "departmentId", "positionId", "lineId"]) {
+    for (const field of ["companyId", "branchId", "departmentId", "positionId", "lineId", "shiftId"]) {
         if (query[field]) filter[field] = query[field]
     }
     if (query.status !== "ALL") filter.status = query.status
     applyLeaveCodeFilter(filter, query.leaveCode)
     if (query.verificationStatus && query.verificationStatus !== "ALL") filter.verificationStatus = query.verificationStatus
     if (query.issueCode) filter.issueCodes = query.issueCode
-    if (query.search) {
-        const employees = await Employee.find({
-            ...attendanceScopeFilter(user),
-            $or: [
-                { employeeCode: { $regex: query.search, $options: "i" } },
-                { displayName: { $regex: query.search, $options: "i" } },
-            ],
-        }).select("_id").lean()
-        filter.employeeId = { $in: employees.map((employee) => employee._id) }
-    }
+    if (query.source !== "ALL") filter.source = query.source
+    if (query.lockStatus !== "ALL") filter.lockStatus = query.lockStatus
+    if (query.lateCondition === "LATE") filter.lateMinutes = { $gt: 0 }
+    if (query.lateCondition === "NOT_LATE") filter.lateMinutes = { $lte: 0 }
+    if (query.earlyLeaveCondition === "EARLY") filter.earlyLeaveMinutes = { $gt: 0 }
+    if (query.earlyLeaveCondition === "NOT_EARLY") filter.earlyLeaveMinutes = { $lte: 0 }
+    applyScanCondition(filter, query.scanCondition)
+    await applyEmployeeRecordFilters(filter, query, user)
+
     return AttendanceRecord.find(filter)
         .populate("employeeId", "employeeCode displayName")
         .populate("departmentId", "code name")
