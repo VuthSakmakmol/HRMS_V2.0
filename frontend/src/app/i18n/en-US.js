@@ -89,9 +89,9 @@ export default {
         attendanceDailyReport: "Attendance Daily Report",
         attendancePolicies: "Attendance Policies",
         attendanceRawScans: "Raw Scan Import",
-        hrDashboard: "HR Dashboard",
+        hrDashboard: "Excome",
         recruitmentChannels: "Recruitment Channels",
-        hrDashboardTargets: "Dashboard Targets",
+        hrDashboardTargets: "Excome Targets",
         exitReasons: "Exit Reasons"
     },
     attendance: {
@@ -119,14 +119,7 @@ export default {
             emailReviewDescription: "Review the selected attendance day before sending.",
             emailSent: "Daily attendance summary sent successfully.",
             emailAlreadySent: "A daily attendance email for this date has already been sent.",
-            sendAgain: "Send Again",
-            shift: "Shift",
-            allShifts: "All Shifts",
-            attendanceByShift: "Attendance by Shift",
-            activeShifts: "active shifts",
-            schedule: "Schedule",
-            absent: "Absent",
-            overnight: "+1 day"
+            sendAgain: "Send Again"
         },
         template: "Sample Excel",
         import: "Import Excel",
@@ -247,7 +240,7 @@ export default {
     },
     hrDashboard: {
         eyebrow: "Phase 1 Workforce Analytics",
-        title: "HR Dashboard",
+        title: "Excome",
         description: "General workforce data, manpower planning, and employee movement for the selected period.",
         loadFailed: "Unable to load the HR dashboard.",
         filters: {
@@ -264,6 +257,7 @@ export default {
             allDepartments: "All departments",
             allPositions: "All positions",
             allLines: "All lines",
+            allShifts: "All shifts",
             allEmployeeTypes: "All employee types"
         },
         sections: {
@@ -277,7 +271,7 @@ export default {
             attendanceByLine: "Attendance by Line",
             manpower: "Manpower",
             recruitmentChannels: "Recruitment Channels",
-        hrDashboardTargets: "Dashboard Targets",
+        hrDashboardTargets: "Excome Targets",
             movement: "Movement",
             turnover: "Turnover"
         },
@@ -432,11 +426,11 @@ export default {
         }
     },
     hrDashboardTarget: {
-        title: "Dashboard Targets",
+        title: "Excome Targets",
         createTitle: "Create dashboard target",
         editTitle: "Edit dashboard target",
         archiveTitle: "Archive dashboard target",
-        archiveConfirm: "Archive this dashboard target? It will no longer be used by HR Dashboard or Attendance.",
+        archiveConfirm: "Archive this dashboard target? It will no longer be used by Excome or Attendance.",
         allMetrics: "All metrics",
         allMonths: "All months",
         allScopes: "All target scopes",

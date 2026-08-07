@@ -39,6 +39,7 @@ export const hrDashboardQuerySchema = z
         departmentId: objectIdSchema.optional(),
         positionId: objectIdSchema.optional(),
         lineId: objectIdSchema.optional(),
+        shiftId: objectIdSchema.optional(),
         employeeTypeId: objectIdSchema.optional(),
         employeeTypeChildCode: employeeTypeChildCodeSchema,
         employeeTypeFilterKey: employeeTypeFilterKeySchema,

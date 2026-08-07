@@ -1,5 +1,10 @@
 import { defineStore } from "pinia"
 
+const DASHBOARD_CACHE_TTL = 60_000
+const dashboardCache = new Map()
+
+function cacheKey(filters) { return JSON.stringify(Object.keys(filters).sort().reduce((o,k)=>(o[k]=filters[k],o),{})) }
+
 import {
     fetchHrDashboard,
     fetchHrDashboardLookups,
@@ -68,6 +73,7 @@ export const useHrDashboardStore = defineStore("hrDashboard", {
             departments: [],
             positions: [],
             lines: [],
+            shifts: [],
             employeeTypes: [],
         },
         loading: false,
@@ -81,6 +87,7 @@ export const useHrDashboardStore = defineStore("hrDashboard", {
             departmentId: undefined,
             positionId: undefined,
             lineId: undefined,
+            shiftId: undefined,
         },
     }),
 
@@ -112,9 +119,19 @@ export const useHrDashboardStore = defineStore("hrDashboard", {
             }
 
             try {
-                this.dashboard = await fetchHrDashboard(cleanFilters(this.filters))
-                return this.dashboard
+                const cleaned = cleanFilters(this.filters)
+                const key = cacheKey(cleaned)
+                const cached = dashboardCache.get(key)
+                if (cached && Date.now() - cached.createdAt < DASHBOARD_CACHE_TTL) {
+                    this.dashboard = cached.data
+                    this.loading = false
+                }
+                const fresh = await fetchHrDashboard(cleaned)
+                dashboardCache.set(key, { data: fresh, createdAt: Date.now() })
+                this.dashboard = fresh
+                return fresh
             } catch (error) {
+                if (error?.code === "ERR_CANCELED" || error?.name === "CanceledError") return this.dashboard
                 this.error = error
                 throw error
             } finally {

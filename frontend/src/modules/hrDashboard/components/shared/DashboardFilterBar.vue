@@ -149,6 +149,13 @@ const positionOptions = computed(() =>
     ),
 )
 
+const shiftOptions = computed(() =>
+    (props.lookups.shifts || []).filter((item) =>
+        (!props.modelValue.companyId || item.companyId === props.modelValue.companyId) &&
+        (!props.modelValue.branchId || item.branchId === props.modelValue.branchId),
+    ),
+)
+
 const lineOptions = computed(() =>
     (props.lookups.lines || []).filter((item) =>
         (!props.modelValue.companyId ||
@@ -268,6 +275,19 @@ function updateEmployeeTypeChild(childKey) {
                 filter
                 :loading="lookupLoading"
                 @update:model-value="updateEmployeeTypeChild"
+            />
+
+            <Select
+                class="dashboard-filter-field"
+                :model-value="modelValue.shiftId"
+                :options="shiftOptions"
+                :option-label="optionLabel"
+                option-value="id"
+                :placeholder="t('hrDashboard.filters.allShifts')"
+                show-clear
+                filter
+                :loading="lookupLoading"
+                @update:model-value="updateField('shiftId', $event)"
             />
 
             <Select

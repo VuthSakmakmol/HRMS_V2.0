@@ -14,6 +14,7 @@ import Branch from "../../organization/models/Branch.js"
 import Company from "../../organization/models/Company.js"
 import Department from "../../organization/models/Department.js"
 import Position from "../../organization/models/Position.js"
+import Shift from "../../shift/models/Shift.js"
 
 const MONTH_LABELS = Object.freeze([
     "Jan",
@@ -46,6 +47,7 @@ const FILTER_FIELDS = Object.freeze([
     "positionId",
     "lineId",
     "employeeTypeId",
+    "shiftId",
 ])
 
 const ATTENDANCE_FILTER_FIELDS = Object.freeze([
@@ -54,6 +56,7 @@ const ATTENDANCE_FILTER_FIELDS = Object.freeze([
     "departmentId",
     "positionId",
     "lineId",
+    "shiftId",
 ])
 
 const PRESENT_STATUSES = new Set([
@@ -365,6 +368,7 @@ async function loadEmployees(query) {
             "departmentId",
             "positionId",
             "lineId",
+            "shiftId",
             "employeeTypeId",
             "employeeTypeChildId",
             "employeeTypeChildCode",
@@ -2428,7 +2432,7 @@ export async function getHrDashboardLookups({ query }) {
         ...(query.branchId ? { branchId: toObjectId(query.branchId) } : {}),
     }
 
-    const [companies, branches, departments, positions, lines, employeeTypes] =
+    const [companies, branches, departments, positions, lines, shifts, employeeTypes] =
         await Promise.all([
             Company.find({ status: "ACTIVE", ...companyMatch })
                 .select(["code", "displayName"])
@@ -2459,6 +2463,10 @@ export async function getHrDashboardLookups({ query }) {
                 ])
                 .sort({ name: 1 })
                 .lean(),
+            Shift.find(dimensionMatch)
+                .select(["code", "name", "companyId", "branchId", "startTime", "endTime"])
+                .sort({ name: 1 })
+                .lean(),
             EmployeeType.find(employeeTypeMatch)
                 .select([
                     "code",
@@ -2484,10 +2492,43 @@ export async function getHrDashboardLookups({ query }) {
         departments: departments.map((item) => normalizeLookupItem(item)),
         positions: positions.map((item) => normalizeLookupItem(item, "title")),
         lines: lines.map((item) => normalizeLookupItem(item)),
+        shifts: shifts.map((item) => normalizeLookupItem(item)),
         employeeTypes: buildEmployeeTypeLookupOptions(employeeTypes),
     }
 
     return setCache(cacheKey, result, 60_000)
+}
+
+function buildDataReadiness({ employees, plans, attendanceRecords, recruitmentChannels, movements, dashboardTargets }) {
+    const totalEmployees = employees.length
+    const countMissing = (field) => employees.filter((employee) => !employee?.[field]).length
+    const missingExitReason = employees.filter((employee) =>
+        employee.resignDate && !employee.exitReasonId && !String(employee.resignReason || "").trim(),
+    ).length
+
+    const items = [
+        { key: "employeeMaster", label: "Employee Master", ready: totalEmployees > 0, count: totalEmployees, detail: totalEmployees ? `${totalEmployees.toLocaleString()} employees available` : "No employee data" },
+        { key: "dateOfBirth", label: "Date of Birth", ready: totalEmployees > 0 && countMissing("dateOfBirth") === 0, count: countMissing("dateOfBirth"), detail: `${countMissing("dateOfBirth").toLocaleString()} employees missing DOB` },
+        { key: "joinDate", label: "Join Date", ready: totalEmployees > 0 && countMissing("joinDate") === 0, count: countMissing("joinDate"), detail: `${countMissing("joinDate").toLocaleString()} employees missing join date` },
+        { key: "employeeType", label: "Employee Type", ready: totalEmployees > 0 && countMissing("employeeTypeId") === 0, count: countMissing("employeeTypeId"), detail: `${countMissing("employeeTypeId").toLocaleString()} employees missing employee type` },
+        { key: "department", label: "Department", ready: totalEmployees > 0 && countMissing("departmentId") === 0, count: countMissing("departmentId"), detail: `${countMissing("departmentId").toLocaleString()} employees missing department` },
+        { key: "position", label: "Position", ready: totalEmployees > 0 && countMissing("positionId") === 0, count: countMissing("positionId"), detail: `${countMissing("positionId").toLocaleString()} employees missing position` },
+        { key: "shift", label: "Shift", ready: totalEmployees > 0 && countMissing("shiftId") === 0, count: countMissing("shiftId"), detail: `${countMissing("shiftId").toLocaleString()} employees missing shift` },
+        { key: "attendance", label: "Attendance", ready: attendanceRecords.length > 0, count: attendanceRecords.length, detail: attendanceRecords.length ? `${attendanceRecords.length.toLocaleString()} attendance records in selected range` : "No attendance data in selected range" },
+        { key: "manpowerPlan", label: "Manpower Plan", ready: plans.length > 0, count: plans.length, detail: plans.length ? `${plans.length.toLocaleString()} active plan rows` : "Budget and roadmap are not configured" },
+        { key: "recruitment", label: "Recruitment Channels", ready: recruitmentChannels.length > 0, count: recruitmentChannels.length, detail: recruitmentChannels.length ? `${recruitmentChannels.length.toLocaleString()} recruitment channels available` : "Recruitment channel data is missing" },
+        { key: "movement", label: "Employee Movement", ready: movements.length > 0, count: movements.length, detail: movements.length ? `${movements.length.toLocaleString()} movement records in selected range` : "No employee movement history in selected range" },
+        { key: "exitReason", label: "Exit Reasons", ready: missingExitReason === 0, count: missingExitReason, detail: `${missingExitReason.toLocaleString()} exited employees missing exit reason` },
+        { key: "targets", label: "Excome Targets", ready: dashboardTargets.length > 0, count: dashboardTargets.length, detail: dashboardTargets.length ? `${dashboardTargets.length.toLocaleString()} targets configured` : "No Excome targets configured" },
+    ]
+
+    const readyCount = items.filter((item) => item.ready).length
+    return {
+        status: readyCount === items.length ? "READY" : readyCount >= Math.ceil(items.length * 0.6) ? "PARTIAL" : "NOT_READY",
+        readyCount,
+        totalCount: items.length,
+        items,
+    }
 }
 
 export async function getHrDashboard({ query }) {
@@ -2501,7 +2542,7 @@ export async function getHrDashboard({ query }) {
     const endDate = parseEndDate(cleanQuery.endDate)
     const periods = createPeriods(startDate, endDate)
 
-    const lookups = await getHrDashboardLookups({
+    const lookupsPromise = getHrDashboardLookups({
         query: {
             companyId: cleanQuery.companyId,
             branchId: cleanQuery.branchId,
@@ -2512,6 +2553,7 @@ export async function getHrDashboard({ query }) {
     const totalGeneralQuery = buildGeneralTotalQuery(cleanQuery)
 
     const [
+        lookups,
         employees,
         totalGeneralEmployees,
         plans,
@@ -2523,6 +2565,7 @@ export async function getHrDashboard({ query }) {
         exitReasons,
         lines,
     ] = await Promise.all([
+            lookupsPromise,
             loadEmployees(cleanQuery),
             loadEmployees(totalGeneralQuery),
             loadPlans(cleanQuery, periods),
@@ -2544,18 +2587,15 @@ export async function getHrDashboard({ query }) {
         ])
 
     const selectedYear = startDate.getUTCFullYear()
-    const attendanceRecords = await loadAttendanceRecords(
-        cleanQuery,
-        startDate,
-        endDate,
-        employees,
-    )
-    const attendanceComparisonRecords = await loadAttendanceRecords(
-        cleanQuery,
-        monthStart(selectedYear - 1, 1),
-        monthEnd(selectedYear, 12),
-        employees,
-    )
+    const [attendanceRecords, attendanceComparisonRecords] = await Promise.all([
+        loadAttendanceRecords(cleanQuery, startDate, endDate, employees),
+        loadAttendanceRecords(
+            cleanQuery,
+            monthStart(selectedYear - 1, 1),
+            monthEnd(selectedYear, 12),
+            employees,
+        ),
+    ])
 
     const selectedPeriod = periods.at(-1)
     const absenceTargetRates = buildDashboardTargetRates({
@@ -2615,11 +2655,20 @@ export async function getHrDashboard({ query }) {
             departmentId: cleanQuery.departmentId || null,
             positionId: cleanQuery.positionId || null,
             lineId: cleanQuery.lineId || null,
+            shiftId: cleanQuery.shiftId || null,
             employeeTypeId: cleanQuery.employeeTypeId || null,
             employeeTypeChildCode: cleanQuery.employeeTypeChildCode || null,
             employeeTypeFilterKey: cleanQuery.employeeTypeFilterKey || null,
             employeeTypeLabel: selectedEmployeeTypeLabel,
         },
+        readiness: buildDataReadiness({
+            employees,
+            plans,
+            attendanceRecords,
+            recruitmentChannels,
+            movements,
+            dashboardTargets,
+        }),
         general: buildGeneralData({
             totalEmployees: totalGeneralEmployees,
             selectedEmployees: employees,
