@@ -89,7 +89,7 @@ export default {
         attendanceDailyReport: "Attendance Daily Report",
         attendancePolicies: "Attendance Policies",
         attendanceRawScans: "Raw Scan Import",
-        hrDashboard: "Excome",
+        excome: "Excome",
         recruitmentChannels: "Recruitment Channels",
         hrDashboardTargets: "Excome Targets",
         exitReasons: "Exit Reasons"
@@ -238,7 +238,7 @@ export default {
             }
         }
     },
-    hrDashboard: {
+    excome: {
         eyebrow: "Phase 1 Workforce Analytics",
         title: "Excome",
         description: "General workforce data, manpower planning, and employee movement for the selected period.",
@@ -413,6 +413,13 @@ export default {
             noData: "No data",
             previousYearChart: "Hiring Source Breakdown – {year}",
             currentYearChart: "Hiring Source Breakdown – {year}"
+        },
+        exitAnalysis: {
+            title: "Exit Analysis",
+            exitReasons: "Exit Reasons",
+            periodOfService: "Period of Service",
+            totalExits: "Total exits",
+            noData: "No exit data matched the selected period."
         },
         turnover: {
             turnover: "Turnover",

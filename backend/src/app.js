@@ -21,7 +21,7 @@ import employeeMovementRoutes from "./modules/employeeMovement/routes/employeeMo
 import manpowerPlanRoutes from "./modules/manpowerPlan/routes/manpowerPlan.routes.js"
 import approvalRoutes from "./modules/approval/routes/approval.routes.js"
 import calendarRoutes from "./modules/calendar/routes/calendar.routes.js"
-import hrDashboardRoutes from "./modules/hrDashboard/routes/hrDashboard.routes.js"
+import excomeRoutes from "./modules/excome/routes/excome.routes.js"
 
 import attendanceAgentRoutes from "./modules/attendance/routes/attendanceAgent.routes.js"
 import attendancePolicyRoutes from "./modules/attendance/routes/attendancePolicy.routes.js"
@@ -128,7 +128,7 @@ app.use("/api/v1/approvals", approvalRoutes)
  * Calendar and reports
  */
 app.use("/api/v1/calendar", calendarRoutes)
-app.use("/api/v1/hr-dashboard", hrDashboardRoutes)
+app.use("/api/v1/excome", excomeRoutes)
 app.use("/api/v1/reports/manpower-plans", manpowerPlanRoutes)
 app.use(
     "/api/v1/reports/hr-dashboard-targets",

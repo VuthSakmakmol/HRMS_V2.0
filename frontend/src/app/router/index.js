@@ -212,11 +212,11 @@ const router = createRouter({
                 },
 
                 {
-                    path: "reports/hr-dashboard",
-                    name: "reports-hr-dashboard",
-                    component: () => import("@/modules/hrDashboard/views/HRDashboardView.vue"),
+                    path: "reports/excome",
+                    name: "reports-excome",
+                    component: () => import("@/modules/excome/views/ExcomeDashboardView.vue"),
                     meta: {
-                        titleKey: "nav.hrDashboard",
+                        titleKey: "nav.excome",
                         permissionCode: "REPORT.HR_ANALYTICS.VIEW",
                     },
                 },
@@ -233,7 +233,7 @@ const router = createRouter({
                 },
 
                 {
-                    path: "reports/hr-dashboard-targets",
+                    path: "reports/excome-targets",
                     name: "report-hr-dashboard-targets",
                     component: () =>
                         import("@/modules/hrDashboardTarget/views/HrDashboardTargetListView.vue"),
