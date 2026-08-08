@@ -14,9 +14,10 @@ import District from "../../location/models/District.js"
 import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
 import EmployeeType from "../../employeeType/models/EmployeeType.js"
+import Account from "../../access/models/Account.js"
 
 import Employee from "../models/Employee.js"
-import { listEmployees } from "./employee.service.js"
+import { listEmployeesForExport } from "./employee.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
 import { syncUnmatchedAttendance } from "../../attendance/services/attendanceUnmatchedSync.service.js"
 
@@ -76,6 +77,113 @@ const TEMPLATE_HEADERS = [
     "overlock",
     "coverstitch",
     "totalMachines",
+]
+
+const EXPORT_HEADERS = [
+    "employeeCode",
+    "profileImageUrl",
+    "khmerFirstName",
+    "khmerLastName",
+    "englishFirstName",
+    "englishLastName",
+    "displayName",
+    "gender",
+    "dateOfBirth",
+    "age",
+    "email",
+    "phoneNumber",
+    "createAccount",
+    "loginId",
+    "accountStatus",
+    "lastLoginAt",
+    "agentPhoneNumber",
+    "agentPerson",
+    "note",
+    "maritalStatus",
+    "spouseName",
+    "spouseContactNumber",
+    "education",
+    "religion",
+    "nationality",
+    "birthCountryCode",
+    "birthCountryName",
+    "birthProvinceCode",
+    "birthProvinceName",
+    "birthProvince",
+    "birthDistrictCode",
+    "birthDistrictName",
+    "birthDistrict",
+    "birthCommuneCode",
+    "birthCommuneName",
+    "birthCommune",
+    "birthVillageCode",
+    "birthVillageName",
+    "birthVillage",
+    "birthAddressDetail",
+    "permanentCountryCode",
+    "permanentCountryName",
+    "permanentProvinceCode",
+    "permanentProvinceName",
+    "permanentProvince",
+    "permanentDistrictCode",
+    "permanentDistrictName",
+    "permanentDistrict",
+    "permanentCommuneCode",
+    "permanentCommuneName",
+    "permanentCommune",
+    "permanentVillageCode",
+    "permanentVillageName",
+    "permanentVillage",
+    "permanentAddressDetail",
+    "companyCode",
+    "companyName",
+    "branchCode",
+    "branchName",
+    "departmentCode",
+    "departmentName",
+    "positionCode",
+    "positionName",
+    "lineCode",
+    "lineName",
+    "shiftCode",
+    "shiftName",
+    "joinDate",
+    "employmentStatus",
+    "resignDate",
+    "resignReason",
+    "exitReasonCode",
+    "exitReasonName",
+    "remark",
+    "idCardNo",
+    "idCardExpireDate",
+    "nssfNo",
+    "passportNo",
+    "passportExpireDate",
+    "visaExpireDate",
+    "medicalCheckNo",
+    "medicalCheckDate",
+    "workingBookNo",
+    "sourceOfHiring",
+    "recruitmentChannelCode",
+    "recruitmentChannelName",
+    "introducerEmployeeCode",
+    "introducerEmployeeName",
+    "employeeTypeCode",
+    "employeeTypeName",
+    "employeeType",
+    "employeeTypeChildCode",
+    "employeeTypeChildName",
+    "employeeTypeReviewRequired",
+    "employeeTypeReviewReason",
+    "singleNeedle",
+    "overlock",
+    "coverstitch",
+    "totalMachines",
+    "approvalPolicyCode",
+    "approvalPolicyName",
+    "recordStatus",
+    "createdAt",
+    "updatedAt",
 ]
 
 const HEADER_ALIASES = new Map([
@@ -856,11 +964,36 @@ function formatDate(value) {
     return `${day}/${month}/${date.getUTCFullYear()}`
 }
 
+function formatDateTime(value) {
+    if (!value) return ""
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ""
+
+    const day = String(date.getUTCDate()).padStart(2, "0")
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+    const hours = String(date.getUTCHours()).padStart(2, "0")
+    const minutes = String(date.getUTCMinutes()).padStart(2, "0")
+    const seconds = String(date.getUTCSeconds()).padStart(2, "0")
+
+    return `${day}/${month}/${date.getUTCFullYear()} ${hours}:${minutes}:${seconds}`
+}
+
 export async function buildEmployeeExportWorkbook({ employees }) {
     const workbook = new ExcelJS.Workbook()
+    workbook.creator = "HRMS Enterprise"
+    workbook.created = new Date()
     const worksheet = workbook.addWorksheet("Employees", { views: [{ state: "frozen", ySplit: 1 }] })
-    worksheet.columns = TEMPLATE_HEADERS.map((header) => ({ header, key: header, width: Math.min(Math.max(header.length + 4, 16), 28) }))
+    worksheet.columns = EXPORT_HEADERS.map((header) => ({
+        header,
+        key: header,
+        width: Math.min(Math.max(header.length + 4, 16), 34),
+    }))
     addCellHeaderStyle(worksheet)
+    worksheet.autoFilter = {
+        from: { row: 1, column: 1 },
+        to: { row: 1, column: EXPORT_HEADERS.length },
+    }
+
     for (const employee of employees) {
         worksheet.addRow({
             employeeCode: employee.employeeCode,
@@ -869,10 +1002,16 @@ export async function buildEmployeeExportWorkbook({ employees }) {
             khmerLastName: employee.khmerLastName,
             englishFirstName: employee.englishFirstName,
             englishLastName: employee.englishLastName,
+            displayName: employee.displayName,
             gender: employee.gender,
             dateOfBirth: formatDate(employee.dateOfBirth),
+            age: employee.age ?? "",
             email: employee.email,
             phoneNumber: employee.phoneNumber,
+            createAccount: employee.account ? "YES" : "NO",
+            loginId: employee.account?.loginId || "",
+            accountStatus: employee.account?.status || "",
+            lastLoginAt: formatDateTime(employee.account?.lastLoginAt),
             agentPhoneNumber: employee.agentPhoneNumber,
             agentPerson: employee.agentPerson,
             note: employee.note,
@@ -882,24 +1021,54 @@ export async function buildEmployeeExportWorkbook({ employees }) {
             education: employee.education,
             religion: employee.religion,
             nationality: employee.nationality,
+            birthCountryCode: employee.birthAddress?.country?.code || "",
+            birthCountryName: employee.birthAddress?.country?.name || "",
+            birthProvinceCode: employee.birthAddress?.province?.code || "",
+            birthProvinceName: employee.birthAddress?.province?.name || "",
             birthProvince: employee.birthAddress?.province?.name || "",
+            birthDistrictCode: employee.birthAddress?.district?.code || "",
+            birthDistrictName: employee.birthAddress?.district?.name || "",
             birthDistrict: employee.birthAddress?.district?.name || "",
+            birthCommuneCode: employee.birthAddress?.commune?.code || "",
+            birthCommuneName: employee.birthAddress?.commune?.name || "",
             birthCommune: employee.birthAddress?.commune?.name || "",
+            birthVillageCode: employee.birthAddress?.village?.code || "",
+            birthVillageName: employee.birthAddress?.village?.name || "",
             birthVillage: employee.birthAddress?.village?.name || "",
+            birthAddressDetail: employee.birthAddressDetail || "",
+            permanentCountryCode: employee.permanentAddress?.country?.code || "",
+            permanentCountryName: employee.permanentAddress?.country?.name || "",
+            permanentProvinceCode: employee.permanentAddress?.province?.code || "",
+            permanentProvinceName: employee.permanentAddress?.province?.name || "",
             permanentProvince: employee.permanentAddress?.province?.name || "",
+            permanentDistrictCode: employee.permanentAddress?.district?.code || "",
+            permanentDistrictName: employee.permanentAddress?.district?.name || "",
             permanentDistrict: employee.permanentAddress?.district?.name || "",
+            permanentCommuneCode: employee.permanentAddress?.commune?.code || "",
+            permanentCommuneName: employee.permanentAddress?.commune?.name || "",
             permanentCommune: employee.permanentAddress?.commune?.name || "",
+            permanentVillageCode: employee.permanentAddress?.village?.code || "",
+            permanentVillageName: employee.permanentAddress?.village?.name || "",
             permanentVillage: employee.permanentAddress?.village?.name || "",
+            permanentAddressDetail: employee.permanentAddressDetail || "",
             companyCode: employee.company?.code || "",
+            companyName: employee.company?.name || employee.company?.displayName || "",
             branchCode: employee.branch?.code || "",
+            branchName: employee.branch?.name || "",
             departmentCode: employee.department?.code || "",
+            departmentName: employee.department?.name || "",
             positionCode: employee.position?.code || "",
+            positionName: employee.position?.name || employee.position?.title || "",
             lineCode: employee.line?.code || "",
+            lineName: employee.line?.name || "",
             shiftCode: employee.shift?.code || "",
+            shiftName: employee.shift?.name || "",
             joinDate: formatDate(employee.joinDate),
             employmentStatus: employee.employmentStatus,
             resignDate: formatDate(employee.resignDate),
             resignReason: employee.resignReason,
+            exitReasonCode: employee.exitReason?.code || "",
+            exitReasonName: employee.exitReason?.name || "",
             remark: employee.remark,
             idCardNo: employee.documents?.idCardNo || "",
             idCardExpireDate: formatDate(employee.documents?.idCardExpireDate),
@@ -911,18 +1080,52 @@ export async function buildEmployeeExportWorkbook({ employees }) {
             medicalCheckDate: formatDate(employee.documents?.medicalCheckDate),
             workingBookNo: employee.documents?.workingBookNo || "",
             sourceOfHiring: employee.sourceOfHiring,
+            recruitmentChannelCode: employee.recruitmentChannel?.code || "",
+            recruitmentChannelName: employee.recruitmentChannel?.name || "",
             introducerEmployeeCode: employee.introducerEmployee?.employeeCode || "",
+            introducerEmployeeName: employee.introducerEmployee?.displayName || "",
+            employeeTypeCode: employee.employeeType?.code || "",
+            employeeTypeName: employee.employeeType?.name || employee.employeeTypeLabel || "",
             employeeType: employee.employeeType?.code || employee.employeeType?.name || employee.employeeTypeLabel || "",
+            employeeTypeChildCode: employee.employeeTypeChildCode || employee.employeeTypeChild?.code || "",
+            employeeTypeChildName: employee.employeeTypeChildName || employee.employeeTypeChild?.name || "",
+            employeeTypeReviewRequired: employee.employeeTypeReviewRequired ? "YES" : "NO",
+            employeeTypeReviewReason: employee.employeeTypeReviewReason || "",
             singleNeedle: employee.machineSkills?.singleNeedle || 0,
             overlock: employee.machineSkills?.overlock || 0,
             coverstitch: employee.machineSkills?.coverstitch || 0,
             totalMachines: employee.machineSkills?.totalMachines || 0,
+            approvalPolicyCode: employee.approvalPolicy?.code || "",
+            approvalPolicyName: employee.approvalPolicy?.name || "",
+            recordStatus: employee.recordStatus,
+            createdAt: formatDateTime(employee.createdAt),
+            updatedAt: formatDateTime(employee.updatedAt),
         })
     }
+
+    worksheet.eachRow((row, rowNumber) => {
+        row.alignment = { vertical: "middle", wrapText: rowNumber === 1 }
+    })
+
     return workbook
 }
 
 export async function getExportEmployees({ query, user }) {
-    const result = await listEmployees({ query: { ...query, page: 1, limit: 10000 }, user })
-    return result.items
+    const employees = await listEmployeesForExport({ query, user })
+    if (!employees.length) return employees
+
+    const accounts = await Account.find({
+        employeeId: { $in: employees.map((employee) => employee.id) },
+    })
+        .select("employeeId loginId status lastLoginAt")
+        .lean()
+
+    const accountByEmployeeId = new Map(
+        accounts.map((account) => [account.employeeId?.toString?.(), account]),
+    )
+
+    return employees.map((employee) => ({
+        ...employee,
+        account: accountByEmployeeId.get(employee.id) || null,
+    }))
 }

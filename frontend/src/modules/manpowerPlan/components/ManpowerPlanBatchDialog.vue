@@ -19,7 +19,6 @@ import { createMonthOptions } from "../config/manpowerPlan.filters.js"
 
 const props = defineProps({
     visible: { type: Boolean, default: false },
-    employeeTypes: { type: Array, default: () => [] },
     canSave: { type: Boolean, default: false },
 })
 
@@ -31,9 +30,8 @@ const workspaceStore = useWorkspaceStore()
 const scope = reactive({
     year: new Date().getFullYear(),
     month: new Date().getMonth() + 1,
-    employeeTypeId: "",
-    employeeTypeChildId: "",
 })
+
 const rows = ref([])
 const selectedRows = ref([])
 const search = ref("")
@@ -47,20 +45,7 @@ const expandedDepartments = ref(new Set())
 const monthOptions = computed(() =>
     createMonthOptions(t, locale.value, false),
 )
-const employeeTypeOptions = computed(() => [
-    { id: "", name: t("manpowerPlan.allEmployeeTypes") },
-    ...props.employeeTypes,
-])
-const childOptions = computed(() => {
-    const type = props.employeeTypes.find(
-        (item) => item.id === scope.employeeTypeId,
-    )
 
-    return [
-        { id: "", name: t("manpowerPlan.allChildGroups") },
-        ...(type?.children || []),
-    ]
-})
 const filteredRows = computed(() => {
     const keyword = search.value.trim().toLowerCase()
     if (!keyword) return rows.value
@@ -68,10 +53,10 @@ const filteredRows = computed(() => {
     return rows.value.filter((row) =>
         [
             row.department?.name,
-            row.position?.name || row.position?.title,
-            row.line?.name,
-            row.shift?.name,
-            row.employeeTypeChildName,
+            row.department?.code,
+            row.position?.name,
+            row.position?.title,
+            row.position?.code,
         ]
             .filter(Boolean)
             .some((value) =>
@@ -79,12 +64,14 @@ const filteredRows = computed(() => {
             ),
     )
 })
+
 const summary = computed(() =>
     rows.value.reduce(
         (result, row) => {
             result.current += Number(row.currentEmployees || 0)
             result.budget += Number(row.targetBudget || 0)
             result.roadmap += Number(row.targetRoadmap || 0)
+
             if (
                 Number(row.targetBudget || 0) !== row._budget ||
                 Number(row.targetRoadmap || 0) !== row._roadmap ||
@@ -93,6 +80,7 @@ const summary = computed(() =>
             ) {
                 result.changed += 1
             }
+
             return result
         },
         { current: 0, budget: 0, roadmap: 0, changed: 0 },
@@ -139,71 +127,16 @@ const groupedRows = computed(() => {
     return [...groups.values()]
 })
 
-const selectedEmployeeType = computed(() =>
-    props.employeeTypes.find(
-        (item) => item.id === scope.employeeTypeId,
-    ) || null,
+const allRowsSelected = computed(() =>
+    filteredRows.value.length > 0 &&
+    filteredRows.value.every((row) => selectedRows.value.includes(row)),
 )
-
-function normalizedId(value) {
-    return String(value?.id || value?._id || value || "")
-}
-
-function allowedPositionIds() {
-    const type = selectedEmployeeType.value
-
-    if (!type) {
-        return null
-    }
-
-    if (scope.employeeTypeChildId) {
-        const child = (type.children || []).find(
-            (item) => item.id === scope.employeeTypeChildId,
-        )
-
-        if (!child || child.positionAssignmentMode === "ALL_POSITIONS") {
-            return null
-        }
-
-        return new Set(
-            (child.positionIds || []).map(normalizedId).filter(Boolean),
-        )
-    }
-
-    if (type.children?.length) {
-        if (
-            type.children.some(
-                (child) => child.positionAssignmentMode === "ALL_POSITIONS",
-            )
-        ) {
-            return null
-        }
-
-        return new Set(
-            type.children
-                .flatMap((child) => child.positionIds || [])
-                .map(normalizedId)
-                .filter(Boolean),
-        )
-    }
-
-    if (type.positionAssignmentMode === "ALL_POSITIONS") {
-        return null
-    }
-
-    return new Set(
-        (type.positionIds || []).map(normalizedId).filter(Boolean),
-    )
-}
 
 function toggleDepartment(departmentId) {
     const next = new Set(expandedDepartments.value)
 
-    if (next.has(departmentId)) {
-        next.delete(departmentId)
-    } else {
-        next.add(departmentId)
-    }
+    if (next.has(departmentId)) next.delete(departmentId)
+    else next.add(departmentId)
 
     expandedDepartments.value = next
 }
@@ -211,13 +144,6 @@ function toggleDepartment(departmentId) {
 function isDepartmentExpanded(departmentId) {
     return expandedDepartments.value.has(departmentId)
 }
-
-const allRowsSelected = computed(() =>
-    filteredRows.value.length > 0 &&
-    filteredRows.value.every((row) =>
-        selectedRows.value.includes(row),
-    ),
-)
 
 function toggleAllRows() {
     if (allRowsSelected.value) {
@@ -229,17 +155,12 @@ function toggleAllRows() {
     }
 
     selectedRows.value = [
-        ...new Set([
-            ...selectedRows.value,
-            ...filteredRows.value,
-        ]),
+        ...new Set([...selectedRows.value, ...filteredRows.value]),
     ]
 }
 
 function departmentSummary(row) {
-    return departmentSummaries.value.get(
-        row.departmentId || "none",
-    ) || {
+    return departmentSummaries.value.get(row.departmentId || "none") || {
         current: 0,
         budget: 0,
         roadmap: 0,
@@ -260,7 +181,7 @@ function normalizeRow(row) {
 }
 
 function errorText(error) {
-    const key = error?.response?.data?.error?.messageKey
+    const key = error?.response?.data?.error?.messageKey || error?.messageKey
     if (!key) return t("errors.internal")
     const translated = t(key)
     return translated === key ? t("errors.internal") : translated
@@ -276,17 +197,9 @@ async function loadGrid() {
             branchId: workspaceStore.branchId,
             year: Number(scope.year),
             month: Number(scope.month),
-            employeeTypeId: scope.employeeTypeId || undefined,
-            employeeTypeChildId: scope.employeeTypeChildId || undefined,
         })
-        const positionIds = allowedPositionIds()
-        const exactRows = positionIds
-            ? (result.rows || []).filter((row) =>
-                  positionIds.has(normalizedId(row.positionId)),
-              )
-            : result.rows || []
 
-        rows.value = exactRows.map(normalizeRow)
+        rows.value = (result.rows || []).map(normalizeRow)
         selectedRows.value = []
         expandedDepartments.value = new Set()
         loaded.value = true
@@ -331,12 +244,6 @@ async function saveAll() {
                 id: row.id || undefined,
                 departmentId: row.departmentId,
                 positionId: row.positionId,
-                lineId: row.lineId || null,
-                shiftId: row.shiftId || null,
-                employeeTypeId: row.employeeTypeId || null,
-                employeeTypeChildId: row.employeeTypeChildId || null,
-                employeeTypeChildCode: row.employeeTypeChildCode || "",
-                employeeTypeChildName: row.employeeTypeChildName || "",
                 targetBudget: Number(row.targetBudget || 0),
                 targetRoadmap: Number(row.targetRoadmap || 0),
                 remark: String(row.remark || "").trim(),
@@ -344,14 +251,18 @@ async function saveAll() {
                 archive: Boolean(row.archive),
             })),
         })
+
         toast.add({
             severity: "success",
             summary: t("manpowerPlan.batchSaved"),
             detail: t("manpowerPlan.batchSavedDetail", {
-                count: Number(result.modified || 0) + Number(result.upserted || 0),
+                count:
+                    Number(result.modified || 0) +
+                    Number(result.upserted || 0),
             }),
             life: 3500,
         })
+
         await loadGrid()
         emit("saved")
     } catch (error) {
@@ -367,22 +278,17 @@ async function saveAll() {
 }
 
 watch(
-    () => scope.employeeTypeId,
-    () => {
-        scope.employeeTypeChildId = ""
-        loaded.value = false
-    },
-)
-watch(
-    () => [scope.year, scope.month, scope.employeeTypeChildId],
+    () => [scope.year, scope.month],
     () => {
         loaded.value = false
     },
 )
+
 watch(
     () => workspaceStore.revision,
     () => {
         rows.value = []
+        selectedRows.value = []
         expandedDepartments.value = new Set()
         loaded.value = false
         emit("update:visible", false)
@@ -404,20 +310,28 @@ watch(
                 <div class="manpower-batch__scope-grid">
                     <label class="enterprise-form-field">
                         <span>{{ t("manpowerPlan.year") }}</span>
-                        <InputNumber v-model="scope.year" :min="2000" :max="2100" :use-grouping="false" />
+                        <InputNumber
+                            v-model="scope.year"
+                            :min="2000"
+                            :max="2100"
+                            :use-grouping="false"
+                        />
                     </label>
+
                     <label class="enterprise-form-field">
                         <span>{{ t("manpowerPlan.month") }}</span>
-                        <Select v-model="scope.month" :options="monthOptions" option-label="label" option-value="value" />
+                        <Select
+                            v-model="scope.month"
+                            :options="monthOptions"
+                            option-label="label"
+                            option-value="value"
+                        />
                     </label>
-                    <label class="enterprise-form-field">
-                        <span>{{ t("manpowerPlan.employeeType") }}</span>
-                        <Select v-model="scope.employeeTypeId" :options="employeeTypeOptions" option-label="name" option-value="id" filter />
-                    </label>
-                    <label class="enterprise-form-field">
-                        <span>{{ t("manpowerPlan.childGroup") }}</span>
-                        <Select v-model="scope.employeeTypeChildId" :options="childOptions" option-label="name" option-value="id" filter :disabled="!scope.employeeTypeId" />
-                    </label>
+
+                    <div class="manpower-batch__scope-note">
+                        <strong>{{ t("manpowerPlan.positionLevelTitle") }}</strong>
+                        <span>{{ t("manpowerPlan.positionLevelHint") }}</span>
+                    </div>
 
                     <div class="manpower-batch__scope-action">
                         <Button
@@ -445,13 +359,34 @@ watch(
                 <div class="manpower-batch__tools">
                     <span class="enterprise-search-input manpower-batch__search">
                         <i class="pi pi-search" />
-                        <InputText v-model="search" :placeholder="t('manpowerPlan.gridSearchPlaceholder')" />
+                        <InputText
+                            v-model="search"
+                            :placeholder="t('manpowerPlan.gridSearchPlaceholder')"
+                        />
                     </span>
 
                     <div class="manpower-batch__fill-tools">
-                        <InputNumber v-model="fillBudget" :min="0" :use-grouping="false" :placeholder="t('manpowerPlan.fillBudget')" />
-                        <InputNumber v-model="fillRoadmap" :min="0" :use-grouping="false" :placeholder="t('manpowerPlan.fillRoadmap')" />
-                        <Button severity="secondary" outlined icon="pi pi-arrow-down" :label="t('manpowerPlan.fillSelected')" @click="fillSelected" />
+                        <InputNumber
+                            v-model="fillBudget"
+                            :min="0"
+                            :max="1000000"
+                            :use-grouping="false"
+                            :placeholder="t('manpowerPlan.fillBudget')"
+                        />
+                        <InputNumber
+                            v-model="fillRoadmap"
+                            :min="0"
+                            :max="1000000"
+                            :use-grouping="false"
+                            :placeholder="t('manpowerPlan.fillRoadmap')"
+                        />
+                        <Button
+                            severity="secondary"
+                            outlined
+                            icon="pi pi-arrow-down"
+                            :label="t('manpowerPlan.fillSelected')"
+                            @click="fillSelected"
+                        />
                     </div>
                 </div>
 
@@ -467,9 +402,6 @@ watch(
                         <colgroup>
                             <col class="manpower-sheet__select-column" />
                             <col class="manpower-sheet__position-column" />
-                            <col class="manpower-sheet__line-column" />
-                            <col class="manpower-sheet__shift-column" />
-                            <col class="manpower-sheet__child-column" />
                             <col class="manpower-sheet__current-column" />
                             <col class="manpower-sheet__number-column" />
                             <col class="manpower-sheet__number-column" />
@@ -489,9 +421,6 @@ watch(
                                 <th class="manpower-sheet__sticky-position">
                                     {{ t("manpowerPlan.position") }}
                                 </th>
-                                <th>{{ t("manpowerPlan.line") }}</th>
-                                <th>{{ t("manpowerPlan.shift") }}</th>
-                                <th>{{ t("manpowerPlan.childGroup") }}</th>
                                 <th>{{ t("manpowerPlan.current") }}</th>
                                 <th>{{ t("manpowerPlan.budget") }}</th>
                                 <th>{{ t("manpowerPlan.roadmap") }}</th>
@@ -500,13 +429,10 @@ watch(
                             </tr>
                         </thead>
 
-                        <template
-                            v-for="group in groupedRows"
-                            :key="group.key"
-                        >
+                        <template v-for="group in groupedRows" :key="group.key">
                             <tbody class="manpower-sheet__group">
                                 <tr class="manpower-sheet__group-row">
-                                    <td colspan="10">
+                                    <td colspan="7">
                                         <div class="manpower-batch__department-row">
                                             <button
                                                 type="button"
@@ -522,14 +448,8 @@ watch(
                                                             : 'pi-chevron-right',
                                                     ]"
                                                 />
-
-                                                <strong>
-                                                    {{ group.department?.name || "—" }}
-                                                </strong>
-
-                                                <small>
-                                                    {{ group.rows.length }}
-                                                </small>
+                                                <strong>{{ group.department?.name || "—" }}</strong>
+                                                <small>{{ group.rows.length }}</small>
                                             </button>
 
                                             <div class="manpower-batch__department-totals">
@@ -557,36 +477,37 @@ watch(
                                     class="manpower-sheet__data-row"
                                 >
                                     <td class="manpower-sheet__sticky-select">
-                                        <Checkbox
-                                            v-model="selectedRows"
-                                            :value="row"
-                                        />
+                                        <Checkbox v-model="selectedRows" :value="row" />
                                     </td>
+
                                     <td class="manpower-sheet__sticky-position manpower-sheet__position-cell">
                                         {{ row.position?.title || row.position?.name || "—" }}
                                     </td>
-                                    <td>{{ row.line?.name || "—" }}</td>
-                                    <td>{{ row.shift?.name || "—" }}</td>
-                                    <td>{{ row.employeeTypeChildName || "—" }}</td>
+
                                     <td class="manpower-sheet__metric-cell">
                                         {{ row.currentEmployees || 0 }}
                                     </td>
+
                                     <td>
                                         <InputNumber
                                             v-model="row.targetBudget"
                                             class="manpower-batch__number"
                                             :min="0"
+                                            :max="1000000"
                                             :use-grouping="false"
                                         />
                                     </td>
+
                                     <td>
                                         <InputNumber
                                             v-model="row.targetRoadmap"
                                             class="manpower-batch__number"
                                             :min="0"
+                                            :max="1000000"
                                             :use-grouping="false"
                                         />
                                     </td>
+
                                     <td>
                                         <InputText
                                             v-model="row.remark"
@@ -594,6 +515,7 @@ watch(
                                             :placeholder="t('manpowerPlan.remark')"
                                         />
                                     </td>
+
                                     <td>
                                         <Checkbox
                                             v-model="row.archive"
@@ -618,7 +540,7 @@ watch(
                 :save-label="t('manpowerPlan.saveAll')"
                 :cancel-label="t('common.cancel')"
                 :saving="saving"
-                :disabled="!canSave || !loaded || !rows.length"
+                :disabled="!loaded || !rows.length || !canSave"
                 @save="saveAll"
                 @cancel="emit('update:visible', false)"
             />
@@ -642,21 +564,15 @@ watch(
     border-top: 1px solid var(--hrms-border);
 }
 
-:global(.enterprise-dialog--fullscreen .p-dialog-footer .p-button) {
-    min-height: 2rem;
-    padding: 0.32rem 0.65rem;
-    font-size: 0.76rem;
-}
-
 .manpower-batch {
     display: flex;
     width: 100%;
     min-width: 0;
     min-height: 0;
+    height: 100%;
     flex: 1 1 auto;
     flex-direction: column;
     gap: 0.45rem;
-    height: 100%;
 }
 
 .manpower-batch__scope {
@@ -670,9 +586,9 @@ watch(
 
 .manpower-batch__scope-grid {
     display: grid;
-    grid-template-columns: 7rem 9rem minmax(12rem, 1fr) minmax(12rem, 1fr) auto;
+    grid-template-columns: 7rem 9rem minmax(18rem, 1fr) auto;
     align-items: end;
-    gap: 0.4rem;
+    gap: 0.45rem;
 }
 
 .enterprise-form-field {
@@ -698,28 +614,30 @@ watch(
     font-size: 0.76rem;
 }
 
-.enterprise-form-field :deep(.p-select-label) {
-    min-width: 0;
-    padding: 0.32rem 0.45rem;
-    font-size: 0.76rem;
+.manpower-batch__scope-note {
+    display: grid;
+    align-self: stretch;
+    align-content: center;
+    gap: 0.08rem;
+    padding: 0.3rem 0.55rem;
+    background: var(--hrms-surface-muted);
+    border: 1px solid var(--hrms-border);
+    border-radius: var(--hrms-radius-sm);
 }
 
-.enterprise-form-field :deep(.p-select-dropdown) {
-    width: 1.8rem;
+.manpower-batch__scope-note strong {
+    font-size: 0.69rem;
+}
+
+.manpower-batch__scope-note span {
+    color: var(--hrms-text-muted);
+    font-size: 0.64rem;
 }
 
 .manpower-batch__scope-action {
     display: flex;
     align-items: center;
     gap: 0.15rem;
-    margin-top: 2px;
-}
-
-.manpower-batch__scope-action :deep(.p-button) {
-    min-height: 1.9rem;
-    padding: 0.3rem 0.55rem;
-    font-size: 0.74rem;
-    white-space: nowrap;
 }
 
 .manpower-batch__workspace {
@@ -733,7 +651,6 @@ watch(
 
 .manpower-batch__tools {
     display: flex;
-    z-index: 18;
     align-items: center;
     flex: 0 0 auto;
     flex-wrap: wrap;
@@ -747,7 +664,6 @@ watch(
 .manpower-batch__search {
     position: relative;
     display: block;
-    width: 100%;
     min-width: 0;
     flex: 1 1 18rem;
 }
@@ -759,7 +675,6 @@ watch(
     left: 0.55rem;
     color: var(--hrms-text-muted);
     font-size: 0.72rem;
-    pointer-events: none;
     transform: translateY(-50%);
 }
 
@@ -778,33 +693,11 @@ watch(
     margin-left: auto;
 }
 
-.manpower-batch__fill-tools > .p-inputnumber {
-    width: 100%;
-    min-width: 0;
-}
-
-.manpower-batch__fill-tools :deep(.p-inputnumber-input) {
-    width: 100%;
-    min-width: 0;
-}
-
+.manpower-batch__fill-tools > .p-inputnumber,
+.manpower-batch__fill-tools :deep(.p-inputnumber-input),
 .manpower-batch__fill-tools :deep(.p-button) {
     width: 100%;
     min-width: 0;
-    justify-content: center;
-    white-space: nowrap;
-}
-
-.manpower-batch__tools :deep(.p-inputtext),
-.manpower-batch__tools :deep(.p-inputnumber-input),
-.manpower-batch__tools :deep(.p-button) {
-    height: 1.85rem;
-    min-height: 1.85rem;
-    font-size: 0.74rem;
-}
-
-.manpower-batch__tools :deep(.p-button) {
-    padding: 0.28rem 0.5rem;
 }
 
 .manpower-batch__summary {
@@ -832,7 +725,6 @@ watch(
 }
 
 .manpower-batch__table-wrap {
-    height: auto;
     min-height: 0;
     flex: 1 1 0;
     overflow: auto;
@@ -842,21 +734,18 @@ watch(
 
 .manpower-sheet {
     width: 100%;
-    min-width: 74rem;
+    min-width: 62rem;
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
 }
 
-.manpower-sheet col.manpower-sheet__select-column { width: 3%; }
-.manpower-sheet col.manpower-sheet__position-column { width: 18%; }
-.manpower-sheet col.manpower-sheet__line-column { width: 11%; }
-.manpower-sheet col.manpower-sheet__shift-column { width: 9%; }
-.manpower-sheet col.manpower-sheet__child-column { width: 12%; }
-.manpower-sheet col.manpower-sheet__current-column { width: 7%; }
-.manpower-sheet col.manpower-sheet__number-column { width: 8%; }
-.manpower-sheet col.manpower-sheet__remark-column { width: 17%; }
-.manpower-sheet col.manpower-sheet__archive-column { width: 7%; }
+.manpower-sheet col.manpower-sheet__select-column { width: 4%; }
+.manpower-sheet col.manpower-sheet__position-column { width: 24%; }
+.manpower-sheet col.manpower-sheet__current-column { width: 9%; }
+.manpower-sheet col.manpower-sheet__number-column { width: 11%; }
+.manpower-sheet col.manpower-sheet__remark-column { width: 32%; }
+.manpower-sheet col.manpower-sheet__archive-column { width: 9%; }
 
 .manpower-sheet thead {
     position: sticky;
@@ -884,11 +773,6 @@ watch(
     font-weight: 700;
 }
 
-.manpower-sheet th:first-child,
-.manpower-sheet td:first-child {
-    border-left: 1px solid var(--hrms-border);
-}
-
 .manpower-sheet__data-row td {
     color: var(--hrms-text);
     background: var(--hrms-surface);
@@ -911,7 +795,7 @@ watch(
 
 .manpower-sheet__sticky-position {
     z-index: 14;
-    left: 2.2rem;
+    left: 2.5rem;
     box-shadow: 1px 0 0 var(--hrms-border-strong);
 }
 
@@ -961,11 +845,6 @@ watch(
     cursor: pointer;
 }
 
-.manpower-batch__department-toggle i,
-.manpower-batch__department-toggle small {
-    font-size: 0.62rem;
-}
-
 .manpower-batch__department-toggle strong {
     overflow: hidden;
     font-size: 0.7rem;
@@ -978,6 +857,7 @@ watch(
     color: var(--hrms-text-muted);
     background: var(--hrms-surface);
     border-radius: 999px;
+    font-size: 0.62rem;
 }
 
 .manpower-batch__department-totals {
@@ -1033,44 +913,31 @@ watch(
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .manpower-batch__scope-note,
     .manpower-batch__scope-action {
         grid-column: 1 / -1;
-        justify-content: flex-end;
     }
 
-    .manpower-batch__search {
-        flex-basis: 100%;
+    .manpower-batch__scope-action {
+        justify-content: flex-end;
     }
 
     .manpower-batch__fill-tools {
         width: 100%;
         flex-basis: 100%;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 8.5rem;
         margin-left: 0;
     }
 }
 
 @media (max-width: 620px) {
-    .manpower-batch__scope-grid {
+    .manpower-batch__scope-grid,
+    .manpower-batch__fill-tools {
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .manpower-batch__scope-note,
     .manpower-batch__scope-action {
         grid-column: auto;
-        justify-self: stretch;
-    }
-
-    .manpower-batch__fill-tools {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .manpower-batch__fill-tools :deep(.p-button) {
-        grid-column: 1 / -1;
-        width: 100%;
-    }
-
-    .manpower-batch__scope-action > * {
-        flex: 1 1 auto;
     }
 
     .manpower-batch__department-totals {

@@ -39,8 +39,59 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
         fileSize: 10 * 1024 * 1024,
+        files: 1,
     },
 })
+
+function uploadImportFile(req, res, next) {
+    upload.single("file")(req, res, (error) => {
+        if (!error) {
+            next()
+            return
+        }
+
+        if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
+            next(
+                new AppError({
+                    statusCode: 422,
+                    code: "MANPOWER_PLAN_IMPORT_FILE_TOO_LARGE",
+                    messageKey: "errors.report.manpowerPlanImport.fileTooLarge",
+                    details: {
+                        errors: [
+                            {
+                                rowNumber: null,
+                                field: "file",
+                                messageKey: "errors.report.manpowerPlanImport.fileTooLarge",
+                                value: "",
+                                expected: "An .xlsx file no larger than 10 MB",
+                            },
+                        ],
+                    },
+                }),
+            )
+            return
+        }
+
+        next(
+            new AppError({
+                statusCode: 422,
+                code: "MANPOWER_PLAN_IMPORT_UPLOAD_FAILED",
+                messageKey: "errors.report.manpowerPlanImport.uploadFailed",
+                details: {
+                    errors: [
+                        {
+                            rowNumber: null,
+                            field: "file",
+                            messageKey: "errors.report.manpowerPlanImport.uploadFailed",
+                            value: "",
+                            expected: "One valid .xlsx file",
+                        },
+                    ],
+                },
+            }),
+        )
+    })
+}
 
 const MANPOWER_PLAN_PERMISSIONS = Object.freeze({
     VIEW: "REPORT.MANPOWER_PLAN.VIEW",
@@ -228,7 +279,7 @@ router.get(
 router.post(
     "/import",
     requirePermission(MANPOWER_PLAN_PERMISSIONS.IMPORT),
-    upload.single("file"),
+    uploadImportFile,
     async (req, res, next) => {
         try {
             const query = parseRequest(
@@ -239,10 +290,21 @@ router.post(
                 throw new AppError({
                     statusCode: 422,
                     code: "MANPOWER_PLAN_WORKSPACE_REQUIRED",
-                    messageKey: "errors.validationFailed",
+                    messageKey: "errors.report.manpowerPlanImport.workspaceRequired",
                     fields: {
-                        companyId: ["errors.validationFailed"],
-                        branchId: ["errors.validationFailed"],
+                        companyId: ["errors.report.manpowerPlanImport.workspaceRequired"],
+                        branchId: ["errors.report.manpowerPlanImport.workspaceRequired"],
+                    },
+                    details: {
+                        errors: [
+                            {
+                                rowNumber: null,
+                                field: "file",
+                                messageKey: "errors.report.manpowerPlanImport.workspaceRequired",
+                                value: "",
+                                expected: "Select a company and branch in the top bar",
+                            },
+                        ],
                     },
                 })
             }
@@ -261,14 +323,45 @@ router.post(
                     code: "MANPOWER_PLAN_IMPORT_FILE_REQUIRED",
                     messageKey:
                         "errors.report.manpowerPlanImport.fileRequired",
+                    details: {
+                        errors: [
+                            {
+                                rowNumber: null,
+                                field: "file",
+                                messageKey: "errors.report.manpowerPlanImport.fileRequired",
+                                value: "",
+                                expected: "Choose the completed .xlsx sample file",
+                            },
+                        ],
+                    },
                 })
             }
 
-            const { rows, errors } =
+            if (!/\.xlsx$/i.test(req.file.originalname || "")) {
+                throw new AppError({
+                    statusCode: 422,
+                    code: "MANPOWER_PLAN_IMPORT_FILE_TYPE_INVALID",
+                    messageKey: "errors.report.manpowerPlanImport.fileTypeInvalid",
+                    details: {
+                        errors: [
+                            {
+                                rowNumber: null,
+                                field: "file",
+                                messageKey: "errors.report.manpowerPlanImport.fileTypeInvalid",
+                                value: req.file.originalname || "Unknown file",
+                                expected: "A file ending in .xlsx",
+                            },
+                        ],
+                    },
+                })
+            }
+
+            const { rows, errors, totalRows } =
                 await parseManpowerPlanImportWorkbook(req.file.buffer)
             const summary = await importManpowerPlansFromRows({
                 rows,
                 parseErrors: errors,
+                totalRows,
                 user: req.auth.user,
                 workspace: {
                     companyId: query.companyId,

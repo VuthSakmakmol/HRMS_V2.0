@@ -2,93 +2,49 @@ import { ref } from "vue"
 
 import {
     lookupDepartments,
-    lookupEmployeeTypes,
-    lookupLines,
     lookupPositions,
-    lookupShifts,
 } from "../api/manpowerPlan.api.js"
 
 export function useManpowerPlanLookups() {
     const departments = ref([])
-    const shifts = ref([])
-    const employeeTypes = ref([])
     const filterPositions = ref([])
-    const filterLines = ref([])
     const formPositions = ref([])
-    const formLines = ref([])
     const loading = ref(false)
 
     async function loadBase() {
         loading.value = true
 
         try {
-            const results = await Promise.all([
-                lookupDepartments(),
-                lookupShifts(),
-                lookupEmployeeTypes(),
-            ])
-
-            departments.value = results[0]
-            shifts.value = results[1]
-            employeeTypes.value = results[2]
+            departments.value = await lookupDepartments()
         } finally {
             loading.value = false
         }
     }
 
-    async function loadDepartmentChildren(
-        departmentId,
-        positionsTarget,
-        linesTarget,
-    ) {
-        positionsTarget.value = []
-        linesTarget.value = []
-
+    async function loadPositions(departmentId, target) {
+        target.value = []
         if (!departmentId) return
-
-        const results = await Promise.all([
-            lookupPositions({ departmentId }),
-            lookupLines({ departmentId }),
-        ])
-
-        positionsTarget.value = results[0]
-        linesTarget.value = results[1]
+        target.value = await lookupPositions({ departmentId })
     }
 
     function loadFilterChildren(departmentId) {
-        return loadDepartmentChildren(
-            departmentId,
-            filterPositions,
-            filterLines,
-        )
+        return loadPositions(departmentId, filterPositions)
     }
 
     function loadFormChildren(departmentId) {
-        return loadDepartmentChildren(
-            departmentId,
-            formPositions,
-            formLines,
-        )
+        return loadPositions(departmentId, formPositions)
     }
 
     function clear() {
         departments.value = []
-        shifts.value = []
-        employeeTypes.value = []
         filterPositions.value = []
-        filterLines.value = []
         formPositions.value = []
-        formLines.value = []
     }
 
     return {
         departments,
-        shifts,
-        employeeTypes,
         filterPositions,
-        filterLines,
         formPositions,
-        formLines,
         loading,
         loadBase,
         loadFilterChildren,

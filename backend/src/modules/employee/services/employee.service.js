@@ -402,6 +402,47 @@ function buildSearchFilter(search) {
     }
 }
 
+function buildEmployeeFilter(query, user) {
+    const filter = {
+        ...getEmployeeScopeFilter(user),
+        ...buildSearchFilter(query.search),
+    }
+
+    for (const key of [
+        "companyId",
+        "branchId",
+        "departmentId",
+        "positionId",
+        "lineId",
+        "shiftId",
+        "employeeTypeId",
+        "employeeTypeChildId",
+        "recruitmentChannelId",
+        "exitReasonId",
+    ]) {
+        if (query[key]) filter[key] = query[key]
+    }
+
+    if (query.employmentStatus !== "ALL") filter.employmentStatus = query.employmentStatus
+    if (query.recordStatus !== "ALL") filter.recordStatus = query.recordStatus
+    if (query.gender !== "ALL") filter.gender = query.gender
+    if (query.maritalStatus !== "ALL") filter.maritalStatus = query.maritalStatus
+
+    if (query.joinDateFrom || query.joinDateTo) {
+        filter.joinDate = {}
+        if (query.joinDateFrom) filter.joinDate.$gte = query.joinDateFrom
+        if (query.joinDateTo) filter.joinDate.$lte = query.joinDateTo
+    }
+
+    if (query.resignDateFrom || query.resignDateTo) {
+        filter.resignDate = {}
+        if (query.resignDateFrom) filter.resignDate.$gte = query.resignDateFrom
+        if (query.resignDateTo) filter.resignDate.$lte = query.resignDateTo
+    }
+
+    return filter
+}
+
 function ageFromDate(dateValue) {
     if (!dateValue) return null
     const dob = new Date(dateValue)
@@ -468,8 +509,6 @@ export function serializeEmployee(employee) {
         gender: raw.gender || "UNKNOWN",
         dateOfBirth: raw.dateOfBirth,
         age: ageFromDate(raw.dateOfBirth),
-        dateOfBirth: raw.dateOfBirth,
-        age: ageFromDate(raw.dateOfBirth),
         email: raw.email || "",
         phoneNumber: raw.phoneNumber || "",
         agentPhoneNumber: raw.agentPhoneNumber || "",
@@ -512,7 +551,9 @@ export function serializeEmployee(employee) {
         introducerEmployee: raw.introducerEmployeeId && typeof raw.introducerEmployeeId === "object" ? {
             id: raw.introducerEmployeeId._id?.toString?.() || raw.introducerEmployeeId.id,
             employeeCode: raw.introducerEmployeeId.employeeCode,
-            displayName: raw.introducerEmployeeId.displayName,
+            displayName: raw.introducerEmployeeId.displayName
+                || [raw.introducerEmployeeId.englishFirstName, raw.introducerEmployeeId.englishLastName].filter(Boolean).join(" ")
+                || [raw.introducerEmployeeId.khmerFirstName, raw.introducerEmployeeId.khmerLastName].filter(Boolean).join(" "),
         } : null,
         employeeTypeId: raw.employeeTypeId?._id?.toString?.() || raw.employeeTypeId?.id || raw.employeeTypeId?.toString?.() || null,
         employeeType: serializeEmployeeType(raw.employeeTypeId),
@@ -521,6 +562,8 @@ export function serializeEmployee(employee) {
         employeeTypeChildCode: raw.employeeTypeChildCode || "",
         employeeTypeChildName: raw.employeeTypeChildName || "",
         employeeTypeChild: serializeEmployeeTypeChild(raw),
+        employeeTypeReviewRequired: Boolean(raw.employeeTypeReviewRequired),
+        employeeTypeReviewReason: raw.employeeTypeReviewReason || "",
         machineSkills: raw.machineSkills || {},
         approvalPolicyId: raw.approvalPolicyId?._id?.toString?.() || raw.approvalPolicyId?.id || raw.approvalPolicyId?.toString?.() || null,
         approvalPolicy: simpleOrg(raw.approvalPolicyId),
@@ -773,24 +816,7 @@ export async function listEmployees({ query, user }) {
     const cached = getCache(cacheKey)
     if (cached) return cached
 
-    const filter = { ...getEmployeeScopeFilter(user), ...buildSearchFilter(query.search) }
-    for (const key of ["companyId", "branchId", "departmentId", "positionId", "lineId", "shiftId", "employeeTypeId", "employeeTypeChildId", "recruitmentChannelId", "exitReasonId"]) {
-        if (query[key]) filter[key] = query[key]
-    }
-    if (query.employmentStatus !== "ALL") filter.employmentStatus = query.employmentStatus
-    if (query.recordStatus !== "ALL") filter.recordStatus = query.recordStatus
-    if (query.gender !== "ALL") filter.gender = query.gender
-    if (query.maritalStatus !== "ALL") filter.maritalStatus = query.maritalStatus
-    if (query.joinDateFrom || query.joinDateTo) {
-        filter.joinDate = {}
-        if (query.joinDateFrom) filter.joinDate.$gte = query.joinDateFrom
-        if (query.joinDateTo) filter.joinDate.$lte = query.joinDateTo
-    }
-    if (query.resignDateFrom || query.resignDateTo) {
-        filter.resignDate = {}
-        if (query.resignDateFrom) filter.resignDate.$gte = query.resignDateFrom
-        if (query.resignDateTo) filter.resignDate.$lte = query.resignDateTo
-    }
+    const filter = buildEmployeeFilter(query, user)
 
     const page = query.page
     const limit = query.limit
@@ -811,6 +837,20 @@ export async function listEmployees({ query, user }) {
     }
 
     return setCache(cacheKey, result, 30_000)
+}
+
+/**
+ * Return every employee matching the active filters with the complete profile
+ * populated. Export must not reuse the compact paginated list serializer,
+ * because that intentionally omits many employee fields.
+ */
+export async function listEmployeesForExport({ query, user }) {
+    const filter = buildEmployeeFilter(query, user)
+    const employees = await employeePopulate(Employee.find(filter))
+        .sort({ employeeCode: 1 })
+        .lean()
+
+    return employees.map(serializeEmployee)
 }
 
 export async function getEmployeeById({ employeeId, user }) {

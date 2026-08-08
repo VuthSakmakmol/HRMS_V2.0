@@ -13,9 +13,6 @@ defineProps({
     branchName: { type: String, default: "—" },
     departments: { type: Array, default: () => [] },
     positions: { type: Array, default: () => [] },
-    lines: { type: Array, default: () => [] },
-    shifts: { type: Array, default: () => [] },
-    employeeTypes: { type: Array, default: () => [] },
     saving: { type: Boolean, default: false },
 })
 
@@ -24,7 +21,6 @@ const emit = defineEmits([
     "save",
     "clear-error",
     "department-change",
-    "employee-type-change",
 ])
 const { t } = useI18n()
 </script>
@@ -43,14 +39,11 @@ const { t } = useI18n()
             :branch-name="branchName"
             :departments="departments"
             :positions="positions"
-            :lines="lines"
-            :shifts="shifts"
-            :employee-types="employeeTypes"
             :disabled="saving"
             @clear-error="emit('clear-error', $event)"
             @department-change="emit('department-change')"
-            @employee-type-change="emit('employee-type-change')"
         />
+
         <template #footer>
             <EnterpriseFormFooter
                 :save-label="t('common.save')"

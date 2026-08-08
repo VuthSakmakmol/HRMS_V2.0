@@ -57,9 +57,7 @@ const exporting = ref(false)
 const downloadingTemplate = ref(false)
 
 const columns = computed(() => createManpowerPlanColumns(t))
-const statusOptions = computed(() =>
-    createManpowerPlanStatusOptions(t),
-)
+const statusOptions = computed(() => createManpowerPlanStatusOptions(t))
 const monthOptions = computed(() =>
     createMonthOptions(t, uiStore.locale, true),
 )
@@ -71,41 +69,17 @@ const positionOptions = computed(() => [
     { id: "", title: t("manpowerPlan.allPositions") },
     ...lookups.filterPositions.value,
 ])
-const lineOptions = computed(() => [
-    { id: "", name: t("manpowerPlan.allLines") },
-    ...lookups.filterLines.value,
-])
-const shiftOptions = computed(() => [
-    { id: "", name: t("manpowerPlan.allShifts") },
-    ...lookups.shifts.value,
-])
-const employeeTypeOptions = computed(() => [
-    { id: "", name: t("manpowerPlan.allEmployeeTypes") },
-    ...lookups.employeeTypes.value,
-])
-const childOptions = computed(() => {
-    const type = lookups.employeeTypes.value.find(
-        (item) => item.id === list.query.employeeTypeId,
-    )
 
-    return [
-        { id: "", name: t("manpowerPlan.allChildGroups") },
-        ...(type?.children || []),
-    ]
-})
 const activeFilterCount = computed(() => {
     let count = 0
     if (list.query.search?.trim()) count += 1
     if (list.query.month) count += 1
-    if (list.query.employeeTypeId) count += 1
-    if (list.query.employeeTypeChildId) count += 1
     if (list.query.departmentId) count += 1
     if (list.query.positionId) count += 1
-    if (list.query.lineId) count += 1
-    if (list.query.shiftId) count += 1
     if (list.query.status !== "ALL") count += 1
     return count
 })
+
 const companyName = computed(() =>
     workspaceStore.selectedCompany?.displayName ||
     workspaceStore.selectedCompany?.legalName ||
@@ -137,10 +111,7 @@ async function load() {
     if (!workspaceStore.ready) return
 
     try {
-        await Promise.all([
-            list.load(),
-            lookups.loadBase(),
-        ])
+        await Promise.all([list.load(), lookups.loadBase()])
     } catch (error) {
         toast.add({
             severity: "error",
@@ -162,12 +133,7 @@ async function openEdit(row) {
 
 async function onFormDepartmentChange() {
     formState.form.positionId = ""
-    formState.form.lineId = ""
     await lookups.loadFormChildren(formState.form.departmentId)
-}
-
-function onFormEmployeeTypeChange() {
-    formState.form.employeeTypeChildId = ""
 }
 
 async function savePlan() {
@@ -247,17 +213,11 @@ function statusLabel(status) {
     )?.label || status
 }
 
-function employeeTypeLabel(row) {
-    if (!row.employeeType?.name) return "—"
-    return row.employeeTypeChildName
-        ? `${row.employeeType.name} / ${row.employeeTypeChildName}`
-        : row.employeeType.name
-}
-
 function formatDateTime(value) {
     if (!value) return "—"
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return "—"
+
     return new Intl.DateTimeFormat(uiStore.locale, {
         dateStyle: "medium",
         timeStyle: "short",
@@ -289,16 +249,9 @@ async function exportRows() {
             search: list.query.search || undefined,
             year: list.query.year || undefined,
             month: list.query.month || undefined,
-            employeeTypeId: list.query.employeeTypeId || undefined,
-            employeeTypeChildId:
-                list.query.employeeTypeChildId || undefined,
             departmentId: list.query.departmentId || undefined,
             positionId: list.query.positionId || undefined,
-            lineId: list.query.lineId || undefined,
-            shiftId: list.query.shiftId || undefined,
             status: list.query.status,
-            sortBy: list.query.sortBy,
-            sortOrder: list.query.sortOrder,
         })
     } catch (error) {
         toast.add({
@@ -319,7 +272,7 @@ async function submitImport() {
 
         if (errorCount) {
             toast.add({
-                severity: "warn",
+                severity: result?.validationFailed ? "error" : "warn",
                 summary: t("manpowerPlan.importCompletedWithErrors"),
                 detail: t("manpowerPlan.importResultSummary", {
                     created: result?.created || 0,
@@ -327,7 +280,7 @@ async function submitImport() {
                     skipped: result?.skipped || 0,
                     failed: errorCount,
                 }),
-                life: 7000,
+                life: 5000,
             })
             return
         }
@@ -354,16 +307,10 @@ watch(
     () => list.query.departmentId,
     async (departmentId) => {
         list.query.positionId = ""
-        list.query.lineId = ""
         await lookups.loadFilterChildren(departmentId)
     },
 )
-watch(
-    () => list.query.employeeTypeId,
-    () => {
-        list.query.employeeTypeChildId = ""
-    },
-)
+
 watch(
     () => workspaceStore.revision,
     async () => {
@@ -407,52 +354,136 @@ onMounted(load)
                 :active-filter-count="activeFilterCount"
             >
                 <template #start>
-                    <Button severity="secondary" text icon="pi pi-refresh" :label="t('common.refresh')" :loading="list.loading.value" :disabled="!workspaceStore.ready" @click="list.load" />
-                    <PermissionButton :permission="MANPOWER_PLAN_PERMISSIONS.IMPORT" severity="secondary" text icon="pi pi-download" :label="t('manpowerPlan.downloadTemplate')" :loading="downloadingTemplate" :disabled="!workspaceStore.ready" @click="downloadTemplate" />
-                    <PermissionButton :permission="MANPOWER_PLAN_PERMISSIONS.IMPORT" severity="secondary" text icon="pi pi-upload" :label="t('manpowerPlan.import')" :disabled="!workspaceStore.ready" @click="importVisible = true" />
-                    <PermissionButton :permission="MANPOWER_PLAN_PERMISSIONS.EXPORT" severity="secondary" text icon="pi pi-file-export" :label="t('manpowerPlan.export')" :loading="exporting" :disabled="!workspaceStore.ready" @click="exportRows" />
+                    <Button
+                        severity="secondary"
+                        text
+                        icon="pi pi-refresh"
+                        :label="t('common.refresh')"
+                        :loading="list.loading.value"
+                        :disabled="!workspaceStore.ready"
+                        @click="list.load"
+                    />
+                    <PermissionButton
+                        :permission="MANPOWER_PLAN_PERMISSIONS.IMPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-download"
+                        :label="t('manpowerPlan.downloadTemplate')"
+                        :loading="downloadingTemplate"
+                        :disabled="!workspaceStore.ready"
+                        @click="downloadTemplate"
+                    />
+                    <PermissionButton
+                        :permission="MANPOWER_PLAN_PERMISSIONS.IMPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-upload"
+                        :label="t('manpowerPlan.import')"
+                        :disabled="!workspaceStore.ready"
+                        @click="importVisible = true"
+                    />
+                    <PermissionButton
+                        :permission="MANPOWER_PLAN_PERMISSIONS.EXPORT"
+                        severity="secondary"
+                        text
+                        icon="pi pi-file-export"
+                        :label="t('manpowerPlan.export')"
+                        :loading="exporting"
+                        :disabled="!workspaceStore.ready"
+                        @click="exportRows"
+                    />
                 </template>
+
                 <template #actions>
-                    <PermissionButton :permission="MANPOWER_PLAN_PERMISSIONS.CREATE" icon="pi pi-table" :label="t('manpowerPlan.planManpower')" :disabled="!workspaceStore.ready" @click="batchVisible = true" />
+                    <PermissionButton
+                        :permission="MANPOWER_PLAN_PERMISSIONS.CREATE"
+                        icon="pi pi-table"
+                        :label="t('manpowerPlan.planManpower')"
+                        :disabled="!workspaceStore.ready"
+                        @click="batchVisible = true"
+                    />
                 </template>
+
                 <template #filters>
                     <EnterpriseFilterBar :loading="list.loading.value">
-                        <EnterpriseFilterField class="manpower-filter-search" :label="t('common.search')" search>
+                        <EnterpriseFilterField
+                            class="manpower-filter-search"
+                            :label="t('common.search')"
+                            search
+                        >
                             <span class="enterprise-search-input">
                                 <i class="pi pi-search" />
-                                <InputText v-model="list.query.search" :placeholder="t('manpowerPlan.searchPlaceholder')" @keyup.enter="list.applyFilters" />
+                                <InputText
+                                    v-model="list.query.search"
+                                    :placeholder="t('manpowerPlan.searchPlaceholder')"
+                                    @keyup.enter="list.applyFilters"
+                                />
                             </span>
                         </EnterpriseFilterField>
+
                         <EnterpriseFilterField :label="t('manpowerPlan.year')">
-                            <InputNumber v-model="list.query.year" :min="2000" :max="2100" :use-grouping="false" />
+                            <InputNumber
+                                v-model="list.query.year"
+                                :min="2000"
+                                :max="2100"
+                                :use-grouping="false"
+                            />
                         </EnterpriseFilterField>
+
                         <EnterpriseFilterField :label="t('manpowerPlan.month')">
-                            <Select v-model="list.query.month" :options="monthOptions" option-label="label" option-value="value" />
+                            <Select
+                                v-model="list.query.month"
+                                :options="monthOptions"
+                                option-label="label"
+                                option-value="value"
+                            />
                         </EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('manpowerPlan.employeeType')">
-                            <Select v-model="list.query.employeeTypeId" :options="employeeTypeOptions" option-label="name" option-value="id" filter />
-                        </EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('manpowerPlan.childGroup')">
-                            <Select v-model="list.query.employeeTypeChildId" :options="childOptions" option-label="name" option-value="id" filter :disabled="!list.query.employeeTypeId" />
-                        </EnterpriseFilterField>
+
                         <EnterpriseFilterField :label="t('manpowerPlan.department')">
-                            <Select v-model="list.query.departmentId" :options="departmentOptions" option-label="name" option-value="id" filter />
+                            <Select
+                                v-model="list.query.departmentId"
+                                :options="departmentOptions"
+                                option-label="name"
+                                option-value="id"
+                                filter
+                            />
                         </EnterpriseFilterField>
+
                         <EnterpriseFilterField :label="t('manpowerPlan.position')">
-                            <Select v-model="list.query.positionId" :options="positionOptions" option-label="title" option-value="id" filter :disabled="!list.query.departmentId" />
+                            <Select
+                                v-model="list.query.positionId"
+                                :options="positionOptions"
+                                option-label="title"
+                                option-value="id"
+                                filter
+                                :disabled="!list.query.departmentId"
+                            />
                         </EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('manpowerPlan.line')">
-                            <Select v-model="list.query.lineId" :options="lineOptions" option-label="name" option-value="id" filter :disabled="!list.query.departmentId" />
-                        </EnterpriseFilterField>
-                        <EnterpriseFilterField :label="t('manpowerPlan.shift')">
-                            <Select v-model="list.query.shiftId" :options="shiftOptions" option-label="name" option-value="id" filter />
-                        </EnterpriseFilterField>
+
                         <EnterpriseFilterField :label="t('common.status')">
-                            <Select v-model="list.query.status" :options="statusOptions" option-label="label" option-value="value" />
+                            <Select
+                                v-model="list.query.status"
+                                :options="statusOptions"
+                                option-label="label"
+                                option-value="value"
+                            />
                         </EnterpriseFilterField>
+
                         <template #actions>
-                            <Button severity="secondary" outlined icon="pi pi-times" :label="t('common.clear')" :disabled="list.loading.value || !list.hasActiveFilters.value" @click="list.clearFilters" />
-                            <Button icon="pi pi-check" :label="t('common.apply')" :loading="list.loading.value" @click="list.applyFilters" />
+                            <Button
+                                severity="secondary"
+                                outlined
+                                icon="pi pi-times"
+                                :label="t('common.clear')"
+                                :disabled="list.loading.value || !list.hasActiveFilters.value"
+                                @click="list.clearFilters"
+                            />
+                            <Button
+                                icon="pi pi-check"
+                                :label="t('common.apply')"
+                                :loading="list.loading.value"
+                                @click="list.applyFilters"
+                            />
                         </template>
                     </EnterpriseFilterBar>
                 </template>
@@ -460,23 +491,95 @@ onMounted(load)
         </template>
 
         <template #empty-action>
-            <PermissionButton :permission="MANPOWER_PLAN_PERMISSIONS.CREATE" icon="pi pi-table" :label="t('manpowerPlan.planManpower')" :disabled="!workspaceStore.ready" @click="batchVisible = true" />
+            <PermissionButton
+                :permission="MANPOWER_PLAN_PERMISSIONS.CREATE"
+                icon="pi pi-table"
+                :label="t('manpowerPlan.planManpower')"
+                :disabled="!workspaceStore.ready"
+                @click="batchVisible = true"
+            />
         </template>
-        <template #cell-year="{ row }"><span class="enterprise-table__text enterprise-table__code">{{ row.year }} / {{ row.month }}</span></template>
-        <template #cell-department="{ row }"><span class="enterprise-table__text" :title="row.department?.name || '—'">{{ row.department?.name || "—" }}</span></template>
-        <template #cell-position="{ row }"><span class="enterprise-table__text" :title="row.position?.title || row.position?.name || '—'">{{ row.position?.title || row.position?.name || "—" }}</span></template>
-        <template #cell-line="{ row }"><span class="enterprise-table__text" :title="row.line?.name || '—'">{{ row.line?.name || "—" }}</span></template>
-        <template #cell-shift="{ row }"><span class="enterprise-table__text" :title="row.shift?.name || '—'">{{ row.shift?.name || "—" }}</span></template>
-        <template #cell-employeeType="{ row }"><span class="enterprise-table__text" :title="employeeTypeLabel(row)">{{ employeeTypeLabel(row) }}</span></template>
-        <template #cell-status="{ row }"><Tag :value="statusLabel(row.status)" :severity="statusSeverity(row.status)" rounded /></template>
-        <template #cell-updatedAt="{ row }"><span class="enterprise-table__text">{{ formatDateTime(row.updatedAt) }}</span></template>
-        <template #actions="{ row }"><EnterpriseActionMenu :items="rowActions(row)" :disabled="list.archiving.value" /></template>
+
+        <template #cell-year="{ row }">
+            <span class="enterprise-table__text enterprise-table__code">
+                {{ row.year }} / {{ row.month }}
+            </span>
+        </template>
+
+        <template #cell-department="{ row }">
+            <span class="enterprise-table__text" :title="row.department?.name || '—'">
+                {{ row.department?.name || "—" }}
+            </span>
+        </template>
+
+        <template #cell-position="{ row }">
+            <span
+                class="enterprise-table__text"
+                :title="row.position?.title || row.position?.name || '—'"
+            >
+                {{ row.position?.title || row.position?.name || "—" }}
+            </span>
+        </template>
+
+        <template #cell-status="{ row }">
+            <Tag
+                :value="statusLabel(row.status)"
+                :severity="statusSeverity(row.status)"
+                rounded
+            />
+        </template>
+
+        <template #cell-updatedAt="{ row }">
+            <span class="enterprise-table__text">{{ formatDateTime(row.updatedAt) }}</span>
+        </template>
+
+        <template #actions="{ row }">
+            <EnterpriseActionMenu
+                :items="rowActions(row)"
+                :disabled="list.archiving.value"
+            />
+        </template>
     </EnterpriseListPage>
 
-    <ManpowerPlanBatchDialog v-model:visible="batchVisible" :employee-types="lookups.employeeTypes.value" :can-save="authStore.hasPermission(MANPOWER_PLAN_PERMISSIONS.CREATE)" @saved="list.load({ page: 1 })" />
-    <ManpowerPlanFormDialog v-model:visible="formVisible" :form="formState.form" :errors="formState.errors.value" :company-name="companyName" :branch-name="branchName" :departments="lookups.departments.value" :positions="lookups.formPositions.value" :lines="lookups.formLines.value" :shifts="lookups.shifts.value" :employee-types="lookups.employeeTypes.value" :saving="formState.saving.value" @save="savePlan" @clear-error="formState.clearError" @department-change="onFormDepartmentChange" @employee-type-change="onFormEmployeeTypeChange" />
-    <ManpowerPlanArchiveDialog v-model:visible="archiveVisible" :plan="archiveCandidate" :busy="list.archiving.value" @confirm="confirmArchive" @cancel="archiveVisible = false" />
-    <ManpowerPlanImportDialog v-model:visible="importVisible" :importing="importState.importing.value" :progress="importState.progress.value" :result="importState.result.value" :error-message="importState.error.value ? errorText(importState.error.value) : ''" @file-change="importState.setFile" @download-template="downloadTemplate" @import="submitImport" @close="importState.reset" />
+    <ManpowerPlanBatchDialog
+        v-model:visible="batchVisible"
+        :can-save="authStore.hasPermission(MANPOWER_PLAN_PERMISSIONS.CREATE)"
+        @saved="list.load({ page: 1 })"
+    />
+
+    <ManpowerPlanFormDialog
+        v-model:visible="formVisible"
+        :form="formState.form"
+        :errors="formState.errors.value"
+        :company-name="companyName"
+        :branch-name="branchName"
+        :departments="lookups.departments.value"
+        :positions="lookups.formPositions.value"
+        :saving="formState.saving.value"
+        @save="savePlan"
+        @clear-error="formState.clearError"
+        @department-change="onFormDepartmentChange"
+    />
+
+    <ManpowerPlanArchiveDialog
+        v-model:visible="archiveVisible"
+        :plan="archiveCandidate"
+        :busy="list.archiving.value"
+        @confirm="confirmArchive"
+        @cancel="archiveVisible = false"
+    />
+
+    <ManpowerPlanImportDialog
+        v-model:visible="importVisible"
+        :importing="importState.importing.value"
+        :progress="importState.progress.value"
+        :result="importState.result.value"
+        :error="importState.error.value"
+        @file-change="importState.setFile"
+        @download-template="downloadTemplate"
+        @import="submitImport"
+        @close="importState.reset"
+    />
 </template>
 
 <style scoped>

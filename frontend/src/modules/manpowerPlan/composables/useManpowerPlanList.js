@@ -23,12 +23,8 @@ export function useManpowerPlanList() {
         search: "",
         year: new Date().getFullYear(),
         month: "",
-        employeeTypeId: "",
-        employeeTypeChildId: "",
         departmentId: "",
         positionId: "",
-        lineId: "",
-        shiftId: "",
         status: "ALL",
         sortBy: "year",
         sortOrder: "desc",
@@ -47,12 +43,8 @@ export function useManpowerPlanList() {
         Boolean(
             query.search ||
             query.month ||
-            query.employeeTypeId ||
-            query.employeeTypeChildId ||
             query.departmentId ||
             query.positionId ||
-            query.lineId ||
-            query.shiftId ||
             query.status !== "ALL",
         ),
     )
@@ -99,12 +91,8 @@ export function useManpowerPlanList() {
             search: "",
             year: new Date().getFullYear(),
             month: "",
-            employeeTypeId: "",
-            employeeTypeChildId: "",
             departmentId: "",
             positionId: "",
-            lineId: "",
-            shiftId: "",
             status: "ALL",
         })
 

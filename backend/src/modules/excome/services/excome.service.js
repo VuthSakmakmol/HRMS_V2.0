@@ -280,6 +280,66 @@ function buildDimensionMatch(query, prefix = "") {
     return match
 }
 
+function buildManpowerPlanDimensionMatch(query) {
+    const match = {}
+    const filter = normalizedQuery(query)
+
+    for (const field of ["companyId", "branchId", "departmentId", "positionId"]) {
+        if (!filter[field]) continue
+        match[field] = toObjectId(filter[field])
+    }
+
+    return match
+}
+
+async function resolveManpowerPlanPositionIds(query) {
+    const filter = normalizedQuery(query)
+
+    if (filter.positionId || !filter.employeeTypeId) return null
+
+    const employeeType = await EmployeeType.findOne({
+        _id: toObjectId(filter.employeeTypeId),
+        status: { $ne: "ARCHIVED" },
+    })
+        .select("positionAssignmentMode positionIds children")
+        .lean()
+
+    if (!employeeType) return []
+
+    if (filter.employeeTypeChildCode) {
+        const child = (employeeType.children || []).find(
+            (item) => item.code === filter.employeeTypeChildCode,
+        )
+
+        if (!child) return []
+        if (child.positionAssignmentMode === "ALL_POSITIONS") return null
+
+        return [...new Set((child.positionIds || []).map((id) => String(id)))]
+            .filter(Boolean)
+            .map(toObjectId)
+    }
+
+    if (employeeType.positionAssignmentMode === "ALL_POSITIONS") return null
+    if (
+        (employeeType.children || []).some(
+            (child) => child.positionAssignmentMode === "ALL_POSITIONS",
+        )
+    ) {
+        return null
+    }
+
+    return [
+        ...new Set([
+            ...(employeeType.positionIds || []).map((id) => String(id)),
+            ...(employeeType.children || []).flatMap((child) =>
+                (child.positionIds || []).map((id) => String(id)),
+            ),
+        ]),
+    ]
+        .filter(Boolean)
+        .map(toObjectId)
+}
+
 function buildAttendanceDimensionMatch(query) {
     const match = {}
 
@@ -398,21 +458,25 @@ async function loadPlans(query, periods) {
         year: period.year,
         month: period.month,
     }))
+    const positionIds = await resolveManpowerPlanPositionIds(query)
+    const dimensionMatch = buildManpowerPlanDimensionMatch(query)
+
+    if (Array.isArray(positionIds)) {
+        dimensionMatch.positionId = { $in: positionIds }
+    }
 
     return ManpowerPlan.find({
-        ...buildDimensionMatch(query),
+        ...dimensionMatch,
         status: "ACTIVE",
         $or: periodConditions,
     })
         .select([
             "year",
             "month",
+            "departmentId",
+            "positionId",
             "targetBudget",
             "targetRoadmap",
-            "employeeTypeId",
-            "employeeTypeChildId",
-            "employeeTypeChildCode",
-            "employeeTypeChildName",
         ])
         .lean()
 }

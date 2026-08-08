@@ -19,7 +19,6 @@ const manpowerPlanSchema = new Schema(
             ref: "Branch",
             required: true,
         },
-
         year: {
             type: Number,
             min: 2000,
@@ -32,51 +31,16 @@ const manpowerPlanSchema = new Schema(
             max: 12,
             required: true,
         },
-
         departmentId: {
             type: Schema.Types.ObjectId,
             ref: "Department",
-            default: null,
+            required: true,
         },
         positionId: {
             type: Schema.Types.ObjectId,
             ref: "Position",
-            default: null,
+            required: true,
         },
-        lineId: {
-            type: Schema.Types.ObjectId,
-            ref: "Line",
-            default: null,
-        },
-        shiftId: {
-            type: Schema.Types.ObjectId,
-            ref: "Shift",
-            default: null,
-        },
-
-        employeeTypeId: {
-            type: Schema.Types.ObjectId,
-            ref: "EmployeeType",
-            default: null,
-        },
-        employeeTypeChildId: {
-            type: Schema.Types.ObjectId,
-            default: null,
-        },
-        employeeTypeChildCode: {
-            type: String,
-            trim: true,
-            maxlength: 30,
-            default: "",
-        },
-        employeeTypeChildName: {
-            type: String,
-            trim: true,
-            maxlength: 120,
-            set: normalizeText,
-            default: "",
-        },
-
         targetBudget: {
             type: Number,
             min: 0,
@@ -89,7 +53,6 @@ const manpowerPlanSchema = new Schema(
             default: 0,
             required: true,
         },
-
         remark: {
             type: String,
             trim: true,
@@ -97,14 +60,12 @@ const manpowerPlanSchema = new Schema(
             set: normalizeText,
             default: "",
         },
-
         status: {
             type: String,
             enum: ["ACTIVE", "INACTIVE", "ARCHIVED"],
             default: "ACTIVE",
             required: true,
         },
-
         createdByAccountId: {
             type: Schema.Types.ObjectId,
             ref: "Account",
@@ -123,6 +84,9 @@ const manpowerPlanSchema = new Schema(
     },
 )
 
+// One manpower plan for one position in one company/branch/month.
+// Line, Shift, Employee Type and Employee Type Child are employee/setup
+// dimensions and are intentionally not part of the manpower-plan key.
 manpowerPlanSchema.index(
     {
         companyId: 1,
@@ -131,14 +95,10 @@ manpowerPlanSchema.index(
         month: 1,
         departmentId: 1,
         positionId: 1,
-        lineId: 1,
-        shiftId: 1,
-        employeeTypeId: 1,
-        employeeTypeChildId: 1,
     },
     {
         unique: true,
-        name: "uq_manpower_plan_scope_period",
+        name: "uq_manpower_plan_position_scope",
     },
 )
 
@@ -159,12 +119,10 @@ manpowerPlanSchema.index(
     {
         departmentId: 1,
         positionId: 1,
-        lineId: 1,
-        employeeTypeId: 1,
         status: 1,
     },
     {
-        name: "idx_manpower_plan_dimension_status",
+        name: "idx_manpower_plan_position_status",
     },
 )
 
