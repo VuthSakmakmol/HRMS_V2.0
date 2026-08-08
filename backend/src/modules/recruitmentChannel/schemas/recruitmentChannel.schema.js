@@ -1,13 +1,14 @@
 import { z } from "zod"
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
-    message: "Invalid MongoDB ObjectId.",
+    message: "errors.organization.recruitmentChannel.invalidId",
 })
 
-const optionalObjectIdSchema = z
+const nullableObjectIdSchema = z
     .union([objectIdSchema, z.literal(""), z.null()])
-    .optional()
     .transform((value) => value || null)
+
+const optionalObjectIdSchema = nullableObjectIdSchema.optional()
 
 const normalizedCodeSchema = z
     .string()
@@ -16,28 +17,41 @@ const normalizedCodeSchema = z
     .pipe(
         z
             .string()
-            .min(2)
-            .max(40)
+            .min(2, "errors.organization.recruitmentChannel.codeRequired")
+            .max(40, "errors.organization.recruitmentChannel.codeTooLong")
             .regex(/^[A-Z0-9_-]+$/, {
-                message: "Code can contain uppercase letters, numbers, underscore, and dash only.",
+                message: "errors.organization.recruitmentChannel.codeInvalid",
             }),
     )
 
-const textSchema = (min, max) =>
+const requiredTextSchema = (min, max, requiredMessageKey, tooLongMessageKey) =>
     z
         .string()
         .trim()
         .transform((value) => value.replace(/\s+/g, " "))
-        .pipe(z.string().min(min).max(max))
+        .pipe(
+            z
+                .string()
+                .min(min, requiredMessageKey)
+                .max(max, tooLongMessageKey),
+        )
 
-const optionalTextSchema = (max) =>
+const optionalTextCreateSchema = (max, tooLongMessageKey) =>
     z
         .string()
         .trim()
         .transform((value) => value.replace(/\s+/g, " "))
-        .pipe(z.string().max(max))
+        .pipe(z.string().max(max, tooLongMessageKey))
         .optional()
         .default("")
+
+const optionalTextUpdateSchema = (max, tooLongMessageKey) =>
+    z
+        .string()
+        .trim()
+        .transform((value) => value.replace(/\s+/g, " "))
+        .pipe(z.string().max(max, tooLongMessageKey))
+        .optional()
 
 export const recruitmentChannelIdParamSchema = z.object({
     recruitmentChannelId: objectIdSchema,
@@ -45,37 +59,89 @@ export const recruitmentChannelIdParamSchema = z.object({
 
 export const recruitmentChannelListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: z.coerce.number().int().min(1).max(100).default(10),
     companyId: objectIdSchema.optional(),
     branchId: objectIdSchema.optional(),
     status: z.enum(["ALL", "ACTIVE", "INACTIVE", "ARCHIVED"]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
 })
 
-export const recruitmentChannelCreateSchema = z.object({
-    companyId: optionalObjectIdSchema,
-    branchId: optionalObjectIdSchema,
-    code: normalizedCodeSchema,
-    name: textSchema(2, 160),
-    shortName: optionalTextSchema(80),
-    targetMonthly: z.coerce.number().min(0).max(999999).optional().default(0),
-    sortOrder: z.coerce.number().int().min(0).max(999999).optional().default(0),
-    description: optionalTextSchema(500),
-    status: z.enum(["ACTIVE", "INACTIVE"]).optional().default("ACTIVE"),
-})
+export const recruitmentChannelCreateSchema = z
+    .object({
+        companyId: optionalObjectIdSchema,
+        branchId: optionalObjectIdSchema,
+        code: normalizedCodeSchema,
+        name: requiredTextSchema(
+            2,
+            160,
+            "errors.organization.recruitmentChannel.nameRequired",
+            "errors.organization.recruitmentChannel.nameTooLong",
+        ),
+        shortName: optionalTextCreateSchema(
+            80,
+            "errors.organization.recruitmentChannel.shortNameTooLong",
+        ),
+        targetMonthly: z.coerce
+            .number()
+            .min(0, "errors.organization.recruitmentChannel.targetMonthlyInvalid")
+            .max(999999, "errors.organization.recruitmentChannel.targetMonthlyInvalid")
+            .optional()
+            .default(0),
+        sortOrder: z.coerce
+            .number()
+            .int("errors.organization.recruitmentChannel.sortOrderInvalid")
+            .min(0, "errors.organization.recruitmentChannel.sortOrderInvalid")
+            .max(999999, "errors.organization.recruitmentChannel.sortOrderInvalid")
+            .optional()
+            .default(0),
+        description: optionalTextCreateSchema(
+            500,
+            "errors.organization.recruitmentChannel.descriptionTooLong",
+        ),
+        status: z.enum(["ACTIVE", "INACTIVE"]).optional().default("ACTIVE"),
+    })
+    .superRefine((value, context) => {
+        if (value.branchId && !value.companyId) {
+            context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["companyId"],
+                message: "errors.organization.recruitmentChannel.companyRequiredForBranch",
+            })
+        }
+    })
 
 export const recruitmentChannelUpdateSchema = z
     .object({
         companyId: optionalObjectIdSchema,
         branchId: optionalObjectIdSchema,
         code: normalizedCodeSchema.optional(),
-        name: textSchema(2, 160).optional(),
-        shortName: optionalTextSchema(80),
-        targetMonthly: z.coerce.number().min(0).max(999999).optional(),
-        sortOrder: z.coerce.number().int().min(0).max(999999).optional(),
-        description: optionalTextSchema(500),
+        name: requiredTextSchema(
+            2,
+            160,
+            "errors.organization.recruitmentChannel.nameRequired",
+            "errors.organization.recruitmentChannel.nameTooLong",
+        ).optional(),
+        shortName: optionalTextUpdateSchema(
+            80,
+            "errors.organization.recruitmentChannel.shortNameTooLong",
+        ),
+        targetMonthly: z.coerce
+            .number()
+            .min(0, "errors.organization.recruitmentChannel.targetMonthlyInvalid")
+            .max(999999, "errors.organization.recruitmentChannel.targetMonthlyInvalid")
+            .optional(),
+        sortOrder: z.coerce
+            .number()
+            .int("errors.organization.recruitmentChannel.sortOrderInvalid")
+            .min(0, "errors.organization.recruitmentChannel.sortOrderInvalid")
+            .max(999999, "errors.organization.recruitmentChannel.sortOrderInvalid")
+            .optional(),
+        description: optionalTextUpdateSchema(
+            500,
+            "errors.organization.recruitmentChannel.descriptionTooLong",
+        ),
         status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
     })
     .refine((value) => Object.keys(value).length > 0, {
-        message: "At least one field is required.",
+        message: "errors.organization.recruitmentChannel.updateRequired",
     })

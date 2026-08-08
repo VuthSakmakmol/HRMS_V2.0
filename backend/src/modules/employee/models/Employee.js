@@ -1,5 +1,11 @@
 import mongoose from "mongoose"
 
+// Register the real referenced setup models before Employee is compiled.
+// Mongoose refs use model names, so temporary fallback models are unnecessary and
+// can permanently cache an incomplete schema for the lifetime of the process.
+import "../../recruitmentChannel/models/recruitmentChannel.js"
+import "../../exitReason/models/ExitReason.js"
+
 const { Schema } = mongoose
 
 function normalizeCode(value) {
@@ -10,34 +16,6 @@ function normalizeCode(value) {
 function normalizeText(value) {
     if (typeof value !== "string") return value
     return value.trim().replace(/\s+/g, " ")
-}
-
-// Recruitment Channel is a separate setup module.
-// This fallback keeps Employee populate working even when app startup order changes.
-if (!mongoose.models.RecruitmentChannel) {
-    const recruitmentChannelFallbackSchema = new Schema(
-        {},
-        {
-            collection: "recruitment_channels",
-            strict: false,
-            versionKey: false,
-        },
-    )
-
-    mongoose.model("RecruitmentChannel", recruitmentChannelFallbackSchema)
-}
-
-if (!mongoose.models.ExitReason) {
-    const exitReasonFallbackSchema = new Schema(
-        {},
-        {
-            collection: "exit_reasons",
-            strict: false,
-            versionKey: false,
-        },
-    )
-
-    mongoose.model("ExitReason", exitReasonFallbackSchema)
 }
 
 const addressSchema = new Schema(

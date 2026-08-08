@@ -89,7 +89,10 @@ router.get(
     async (req, res, next) => {
         try {
             const params = parseRequest(recruitmentChannelIdParamSchema, req.params)
-            const recruitmentChannel = await getRecruitmentChannelById(params)
+            const recruitmentChannel = await getRecruitmentChannelById({
+                ...params,
+                user: req.auth.user,
+            })
 
             res.status(200).json({
                 success: true,

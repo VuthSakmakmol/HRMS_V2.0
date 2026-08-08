@@ -3,6 +3,7 @@ import { defineStore } from "pinia"
 import {
     archiveExitReason,
     createExitReason,
+    fetchExitReasonById,
     fetchExitReasons,
     lookupExitReasons,
     updateExitReason,
@@ -19,6 +20,7 @@ export const useExitReasonStore = defineStore("exitReason", {
             totalPages: 1,
         },
         loading: false,
+        detailLoading: false,
         lookupLoading: false,
         saving: false,
         archiving: false,
@@ -30,13 +32,21 @@ export const useExitReasonStore = defineStore("exitReason", {
 
             try {
                 const data = await fetchExitReasons(params)
-
                 this.items = data.items || []
                 this.pagination = data.pagination || this.pagination
-
                 return data
             } finally {
                 this.loading = false
+            }
+        },
+
+        async loadExitReasonById(exitReasonId) {
+            this.detailLoading = true
+
+            try {
+                return await fetchExitReasonById(exitReasonId)
+            } finally {
+                this.detailLoading = false
             }
         },
 
@@ -45,9 +55,7 @@ export const useExitReasonStore = defineStore("exitReason", {
 
             try {
                 const data = await lookupExitReasons(params)
-
                 this.lookupItems = data.items || []
-
                 return this.lookupItems
             } finally {
                 this.lookupLoading = false

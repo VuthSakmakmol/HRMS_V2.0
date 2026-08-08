@@ -6,8 +6,8 @@ export const EXIT_REASON_PERMISSIONS = Object.freeze({
 
 export const exitReasonColumns = [
     { field: "code", header: "Code", frozen: true, width: "10rem", minWidth: "10rem" },
-    { field: "name", header: "Exit Reason", width: "16rem", minWidth: "16rem" },
-    { field: "description", header: "Description", width: "22rem", minWidth: "22rem" },
+    { field: "name", header: "Exit Reason", width: "17rem", minWidth: "17rem" },
+    { field: "description", header: "Description", width: "24rem", minWidth: "24rem" },
     { field: "status", header: "Status", width: "8rem", minWidth: "8rem" },
     { field: "updatedAt", header: "Updated", width: "11rem", minWidth: "11rem" },
 ]

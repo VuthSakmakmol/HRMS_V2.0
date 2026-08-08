@@ -21,6 +21,11 @@ export async function fetchExitReasons(params = {}) {
     return response.data.data
 }
 
+export async function fetchExitReasonById(exitReasonId) {
+    const response = await apiClient.get(`${BASE_URL}/${exitReasonId}`)
+    return response.data.data.exitReason
+}
+
 export async function lookupExitReasons(params = {}) {
     const response = await apiClient.get(`${BASE_URL}/lookup`, {
         params: cleanParams(params),
@@ -31,18 +36,15 @@ export async function lookupExitReasons(params = {}) {
 
 export async function createExitReason(payload) {
     const response = await apiClient.post(BASE_URL, payload)
-
     return response.data.data.exitReason
 }
 
 export async function updateExitReason(exitReasonId, payload) {
     const response = await apiClient.patch(`${BASE_URL}/${exitReasonId}`, payload)
-
     return response.data.data.exitReason
 }
 
 export async function archiveExitReason(exitReasonId) {
     const response = await apiClient.patch(`${BASE_URL}/${exitReasonId}/archive`)
-
     return response.data.data.exitReason
 }

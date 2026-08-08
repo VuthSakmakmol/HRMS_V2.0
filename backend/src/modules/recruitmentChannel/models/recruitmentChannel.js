@@ -110,6 +110,17 @@ recruitmentChannelSchema.set("toJSON", {
     },
 })
 
+// Defensive development guard: an older Employee model used to register a
+// schema-less RecruitmentChannel fallback. If that stale model is already in
+// Mongoose's registry, replace it with this real schema before any populate().
+const registeredRecruitmentChannel = mongoose.models.RecruitmentChannel
+if (
+    registeredRecruitmentChannel &&
+    !registeredRecruitmentChannel.schema.path("companyId")
+) {
+    mongoose.deleteModel("RecruitmentChannel")
+}
+
 const RecruitmentChannel =
     mongoose.models.RecruitmentChannel ||
     mongoose.model("RecruitmentChannel", recruitmentChannelSchema)

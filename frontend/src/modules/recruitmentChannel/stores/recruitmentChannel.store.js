@@ -3,19 +3,16 @@ import { defineStore } from "pinia"
 import {
     archiveRecruitmentChannel,
     createRecruitmentChannel,
+    fetchRecruitmentChannelById,
     fetchRecruitmentChannels,
     updateRecruitmentChannel,
 } from "../services/recruitmentChannel.api.js"
 
 function cleanFilters(filters = {}) {
-    const clean = {
-        ...filters,
-    }
+    const clean = { ...filters }
 
     for (const key of ["companyId", "branchId", "search"]) {
-        if (!clean[key]) {
-            delete clean[key]
-        }
+        if (!clean[key]) delete clean[key]
     }
 
     return clean
@@ -24,21 +21,23 @@ function cleanFilters(filters = {}) {
 export const useRecruitmentChannelStore = defineStore("recruitmentChannel", {
     state: () => ({
         items: [],
+        current: null,
         pagination: {
             page: 1,
-            limit: 20,
+            limit: 10,
             total: 0,
-            totalPages: 1,
+            totalPages: 0,
         },
         filters: {
             page: 1,
-            limit: 20,
+            limit: 10,
             search: "",
             status: "ALL",
             companyId: "",
             branchId: "",
         },
         loading: false,
+        loadingOne: false,
         saving: false,
         archiving: false,
         error: null,
@@ -54,14 +53,16 @@ export const useRecruitmentChannelStore = defineStore("recruitmentChannel", {
             }
 
             try {
-                const result = await fetchRecruitmentChannels(cleanFilters(this.filters))
+                const result = await fetchRecruitmentChannels(
+                    cleanFilters(this.filters),
+                )
 
                 this.items = result.items || []
                 this.pagination = result.pagination || {
                     page: this.filters.page,
                     limit: this.filters.limit,
                     total: 0,
-                    totalPages: 1,
+                    totalPages: 0,
                 }
 
                 return result
@@ -70,6 +71,24 @@ export const useRecruitmentChannelStore = defineStore("recruitmentChannel", {
                 throw error
             } finally {
                 this.loading = false
+            }
+        },
+
+        async loadRecruitmentChannel(recruitmentChannelId) {
+            this.loadingOne = true
+            this.error = null
+
+            try {
+                const item = await fetchRecruitmentChannelById(
+                    recruitmentChannelId,
+                )
+                this.current = item
+                return item
+            } catch (error) {
+                this.error = error
+                throw error
+            } finally {
+                this.loadingOne = false
             }
         },
 
@@ -92,7 +111,10 @@ export const useRecruitmentChannelStore = defineStore("recruitmentChannel", {
             this.error = null
 
             try {
-                return await updateRecruitmentChannel(recruitmentChannelId, payload)
+                return await updateRecruitmentChannel(
+                    recruitmentChannelId,
+                    payload,
+                )
             } catch (error) {
                 this.error = error
                 throw error

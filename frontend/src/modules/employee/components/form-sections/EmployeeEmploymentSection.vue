@@ -85,13 +85,13 @@ watch(
             />
         </label>
 
-        <template v-if="isExitStatus(form.employmentStatus) && form.resignDate">
+        <template v-if="isExitStatus(form.employmentStatus)">
             <label class="enterprise-form-field">
                 <span>Exit Reason</span>
                 <Select
                     v-model="form.exitReasonId"
                     :options="options.exitReasonId || []"
-                    option-label="label"
+                    option-label="name"
                     option-value="value"
                     filter
                     show-clear

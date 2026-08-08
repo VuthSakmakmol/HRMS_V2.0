@@ -255,6 +255,10 @@ function clearFieldError(fieldName) {
     }
 }
 
+function resolveEntityId(item) {
+    return item?.id || item?._id || null
+}
+
 function statusSeverity(status) {
     if (status === "ACTIVE") return "success"
     if (status === "INACTIVE") return "warn"
@@ -326,12 +330,38 @@ function openCreateDialog() {
     dialogVisible.value = true
 }
 
-function openEditDialog(item) {
+async function openEditDialog(item) {
     formErrors.value = {}
+
+    const recruitmentChannelId = resolveEntityId(item)
+
+    if (!recruitmentChannelId) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.recruitmentChannel.loadFailed"),
+            detail: t("errors.organization.recruitmentChannel.invalidId"),
+            life: 5000,
+        })
+        return
+    }
+
     dialogMode.value = "edit"
-    selectedRecruitmentChannelId.value = item.id
-    assignForm(item)
-    dialogVisible.value = true
+    selectedRecruitmentChannelId.value = recruitmentChannelId
+
+    try {
+        const current = await recruitmentChannelStore.loadRecruitmentChannel(
+            recruitmentChannelId,
+        )
+        assignForm(current || item)
+        dialogVisible.value = true
+    } catch (error) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.recruitmentChannel.loadFailed"),
+            detail: getErrorMessage(error),
+            life: 5000,
+        })
+    }
 }
 
 async function saveRecruitmentChannel() {
@@ -341,6 +371,10 @@ async function saveRecruitmentChannel() {
         if (dialogMode.value === "create") {
             await recruitmentChannelStore.createRecruitmentChannel(buildPayload())
         } else {
+            if (!selectedRecruitmentChannelId.value) {
+                throw new Error(t("errors.organization.recruitmentChannel.invalidId"))
+            }
+
             await recruitmentChannelStore.updateRecruitmentChannel(
                 selectedRecruitmentChannelId.value,
                 buildPayload(),
@@ -367,7 +401,22 @@ async function saveRecruitmentChannel() {
 }
 
 function openArchiveDialog(item) {
-    archiveCandidate.value = item
+    const recruitmentChannelId = resolveEntityId(item)
+
+    if (!recruitmentChannelId) {
+        toast.add({
+            severity: "error",
+            summary: t("organization.recruitmentChannel.archiveFailed"),
+            detail: t("errors.organization.recruitmentChannel.invalidId"),
+            life: 5000,
+        })
+        return
+    }
+
+    archiveCandidate.value = {
+        ...item,
+        id: recruitmentChannelId,
+    }
     archiveDialogVisible.value = true
 }
 
@@ -375,7 +424,13 @@ async function confirmArchive() {
     if (!archiveCandidate.value) return
 
     try {
-        await recruitmentChannelStore.archiveRecruitmentChannel(archiveCandidate.value.id)
+        const recruitmentChannelId = resolveEntityId(archiveCandidate.value)
+
+        if (!recruitmentChannelId) {
+            throw new Error(t("errors.organization.recruitmentChannel.invalidId"))
+        }
+
+        await recruitmentChannelStore.archiveRecruitmentChannel(recruitmentChannelId)
         archiveDialogVisible.value = false
         archiveCandidate.value = null
 
@@ -570,6 +625,7 @@ onMounted(async () => {
                                     text
                                     rounded
                                     icon="pi pi-pencil"
+                                    :loading="recruitmentChannelStore.loadingOne && selectedRecruitmentChannelId === resolveEntityId(data)"
                                     @click="openEditDialog(data)"
                                 />
                                 <Button
@@ -698,6 +754,7 @@ onMounted(async () => {
                     icon="pi pi-save"
                     :label="t('common.save')"
                     :loading="recruitmentChannelStore.saving"
+                    :disabled="recruitmentChannelStore.loadingOne"
                     @click="saveRecruitmentChannel"
                 />
             </template>

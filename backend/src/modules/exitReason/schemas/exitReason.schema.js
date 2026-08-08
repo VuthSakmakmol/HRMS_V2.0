@@ -1,16 +1,8 @@
 import { z } from "zod"
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
-    message: "Invalid MongoDB ObjectId.",
+    message: "errors.organization.exitReason.invalidId",
 })
-
-const nullableObjectIdSchema = z.preprocess(
-    (value) => {
-        if (value === "" || value === undefined || value === null) return null
-        return value
-    },
-    objectIdSchema.nullable(),
-)
 
 const optionalObjectIdQuerySchema = z.preprocess(
     (value) => {
@@ -25,17 +17,35 @@ const codeSchema = z
     .trim()
     .transform((value) => value.replace(/\s+/g, "_").toUpperCase())
     .pipe(
-        z.string().min(2).max(40).regex(/^[A-Z0-9_-]+$/, {
-            message: "Code can contain uppercase letters, numbers, underscore, and dash only.",
-        }),
+        z
+            .string()
+            .min(2, { message: "errors.organization.exitReason.codeRequired" })
+            .max(40, { message: "errors.organization.exitReason.codeTooLong" })
+            .regex(/^[A-Z0-9_-]+$/, {
+                message: "errors.organization.exitReason.codeInvalid",
+            }),
     )
 
-const textSchema = (min = 0, max = 500) =>
-    z
-        .string()
-        .trim()
-        .transform((value) => value.replace(/\s+/g, " "))
-        .pipe(min > 0 ? z.string().min(min).max(max) : z.string().max(max))
+const nameSchema = z
+    .string()
+    .trim()
+    .transform((value) => value.replace(/\s+/g, " "))
+    .pipe(
+        z
+            .string()
+            .min(2, { message: "errors.organization.exitReason.nameRequired" })
+            .max(180, { message: "errors.organization.exitReason.nameTooLong" }),
+    )
+
+const descriptionSchema = z
+    .string()
+    .trim()
+    .transform((value) => value.replace(/\s+/g, " "))
+    .pipe(
+        z
+            .string()
+            .max(800, { message: "errors.organization.exitReason.descriptionTooLong" }),
+    )
 
 export const exitReasonIdParamSchema = z.object({
     exitReasonId: objectIdSchema,
@@ -60,13 +70,13 @@ export const exitReasonCreateSchema = z.object({
     companyId: objectIdSchema,
     branchId: objectIdSchema,
     code: codeSchema,
-    name: textSchema(2, 180),
-    description: textSchema(0, 800).optional(),
+    name: nameSchema,
+    description: descriptionSchema.optional().default(""),
     status: z.enum(["ACTIVE", "INACTIVE"]).optional().default("ACTIVE"),
 })
 
 export const exitReasonUpdateSchema = exitReasonCreateSchema
     .partial()
     .refine((value) => Object.keys(value).length > 0, {
-        message: "At least one field is required.",
+        message: "errors.organization.exitReason.updateRequired",
     })

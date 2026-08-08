@@ -26,40 +26,55 @@ function normalizeCode(value) {
         .toUpperCase()
 }
 
-function toId(value) {
-    return value?._id?.toString?.() || value?.id || value?.toString?.() || null
+function normalizeText(value) {
+    return String(value || "")
+        .trim()
+        .replace(/\s+/g, " ")
 }
 
-function getUserCompanyIds(user) {
-    return [
-        ...new Set(
-            (user?.roleAssignments || [])
-                .map((assignment) => assignment.companyId)
-                .filter(Boolean),
-        ),
-    ]
+function toId(value) {
+    return value?._id?.toString?.() || value?.id || value?.toString?.() || null
 }
 
 function getExitReasonScopeFilter(user) {
     if (user?.isRootAdmin) return {}
 
     const scopes = []
+
     for (const assignment of user?.roleAssignments || []) {
         if (!assignment.companyId) continue
-        if (assignment.allBranches) scopes.push({ companyId: assignment.companyId })
-        else if (assignment.branchIds?.length) {
-            scopes.push({ companyId: assignment.companyId, branchId: { $in: assignment.branchIds } })
+
+        if (assignment.allBranches) {
+            scopes.push({ companyId: assignment.companyId })
+            continue
+        }
+
+        if (assignment.branchIds?.length) {
+            scopes.push({
+                companyId: assignment.companyId,
+                branchId: { $in: assignment.branchIds },
+            })
         }
     }
+
     return scopes.length ? { $or: scopes } : { _id: { $in: [] } }
 }
 
 function assertScopeAllowed(user, companyId, branchId) {
     if (user?.isRootAdmin) return
-    const allowed = (user?.roleAssignments || []).some((assignment) =>
-        String(assignment.companyId || "") === String(companyId || "") &&
-        (assignment.allBranches || (assignment.branchIds || []).some((id) => String(id) === String(branchId || ""))),
-    )
+
+    const allowed = (user?.roleAssignments || []).some((assignment) => {
+        if (String(assignment.companyId || "") !== String(companyId || "")) {
+            return false
+        }
+
+        if (assignment.allBranches) return true
+
+        return (assignment.branchIds || []).some(
+            (id) => String(id) === String(branchId || ""),
+        )
+    })
+
     if (!allowed) {
         throw new AppError({
             statusCode: 403,
@@ -71,7 +86,6 @@ function assertScopeAllowed(user, companyId, branchId) {
 
 function buildSearchFilter(search) {
     const keyword = String(search || "").trim()
-
     if (!keyword) return {}
 
     const regex = new RegExp(escapeRegExp(keyword), "i")
@@ -95,13 +109,8 @@ function buildListFilter(query = {}, user) {
         filter.status = query.status
     }
 
-    if (query.companyId) {
-        filter.companyId = query.companyId
-    }
-
-    if (query.branchId) {
-        filter.branchId = query.branchId
-    }
+    if (query.companyId) filter.companyId = query.companyId
+    if (query.branchId) filter.branchId = query.branchId
 
     return filter
 }
@@ -116,8 +125,10 @@ function buildLookupFilter(query = {}, user) {
 }
 
 function serializeScope(document) {
+    if (!document) return null
+
     return {
-        id: document?._id?.toString?.() || document?.id || null,
+        id: toId(document),
         code: document?.code || "",
         name: document?.name || document?.displayName || document?.legalName || "",
         displayName: document?.displayName || document?.name || document?.legalName || "",
@@ -142,90 +153,124 @@ function serializeExitReason(document) {
     }
 }
 
+function duplicateCodeError() {
+    return new AppError({
+        statusCode: 409,
+        code: "EXIT_REASON_CODE_EXISTS",
+        messageKey: "errors.organization.exitReason.codeExists",
+        fields: {
+            code: ["errors.organization.exitReason.codeExists"],
+        },
+    })
+}
+
+function rethrowMongoDuplicate(error) {
+    if (error?.code === 11000) {
+        throw duplicateCodeError()
+    }
+
+    throw error
+}
+
+function clearExitReasonCaches() {
+    clearCacheByPrefix("exit-reason:")
+    clearCacheByPrefix("excome:")
+}
+
 async function validateScope(payload, user) {
     const companyId = payload.companyId || null
     const branchId = payload.branchId || null
 
     if (!companyId || !branchId) {
-        throw new AppError({ statusCode: 422, code: "EXIT_REASON_SCOPE_REQUIRED", messageKey: "errors.organization.exitReason.scopeRequired" })
+        throw new AppError({
+            statusCode: 422,
+            code: "EXIT_REASON_SCOPE_REQUIRED",
+            messageKey: "errors.organization.exitReason.scopeRequired",
+            fields: {
+                ...(!companyId
+                    ? { companyId: ["errors.organization.exitReason.scopeRequired"] }
+                    : {}),
+                ...(!branchId
+                    ? { branchId: ["errors.organization.exitReason.scopeRequired"] }
+                    : {}),
+            },
+        })
     }
+
     assertScopeAllowed(user, companyId, branchId)
 
-    if (companyId) {
-        ensureObjectId(companyId, "EXIT_REASON_COMPANY_INVALID_ID", "errors.organization.company.invalidId")
+    ensureObjectId(
+        companyId,
+        "EXIT_REASON_COMPANY_INVALID_ID",
+        "errors.organization.company.invalidId",
+    )
 
-        const company = await Company.findOne({
+    ensureObjectId(
+        branchId,
+        "EXIT_REASON_BRANCH_INVALID_ID",
+        "errors.organization.branch.invalidId",
+    )
+
+    const [company, branch] = await Promise.all([
+        Company.findOne({
             _id: companyId,
             status: { $ne: "ARCHIVED" },
-        }).lean()
-
-        if (!company) {
-            throw new AppError({
-                statusCode: 404,
-                code: "EXIT_REASON_COMPANY_NOT_FOUND",
-                messageKey: "errors.organization.company.notFound",
-                fields: { companyId: ["errors.organization.company.notFound"] },
-            })
-        }
-    }
-
-    if (branchId) {
-        ensureObjectId(branchId, "EXIT_REASON_BRANCH_INVALID_ID", "errors.organization.branch.invalidId")
-
-        if (!companyId) {
-            throw new AppError({
-                statusCode: 422,
-                code: "EXIT_REASON_COMPANY_REQUIRED_FOR_BRANCH",
-                messageKey: "errors.organization.exitReason.companyRequiredForBranch",
-                fields: { companyId: ["errors.organization.exitReason.companyRequiredForBranch"] },
-            })
-        }
-
-        const branch = await Branch.findOne({
+        })
+            .select("_id")
+            .lean(),
+        Branch.findOne({
             _id: branchId,
             companyId,
             status: { $ne: "ARCHIVED" },
-        }).lean()
+        })
+            .select("_id")
+            .lean(),
+    ])
 
-        if (!branch) {
-            throw new AppError({
-                statusCode: 404,
-                code: "EXIT_REASON_BRANCH_NOT_FOUND",
-                messageKey: "errors.organization.branch.notFound",
-                fields: { branchId: ["errors.organization.branch.notFound"] },
-            })
-        }
+    if (!company) {
+        throw new AppError({
+            statusCode: 404,
+            code: "EXIT_REASON_COMPANY_NOT_FOUND",
+            messageKey: "errors.organization.exitReason.companyNotFound",
+            fields: {
+                companyId: ["errors.organization.exitReason.companyNotFound"],
+            },
+        })
+    }
+
+    if (!branch) {
+        throw new AppError({
+            statusCode: 404,
+            code: "EXIT_REASON_BRANCH_NOT_FOUND",
+            messageKey: "errors.organization.exitReason.branchNotFound",
+            fields: {
+                branchId: ["errors.organization.exitReason.branchNotFound"],
+            },
+        })
     }
 }
 
 async function ensureUniqueCode(payload, ignoreId = null) {
     const existing = await ExitReason.findOne({
-        companyId: payload.companyId || null,
-        branchId: payload.branchId || null,
+        companyId: payload.companyId,
+        branchId: payload.branchId,
         code: normalizeCode(payload.code),
         ...(ignoreId ? { _id: { $ne: ignoreId } } : {}),
-    }).lean()
+    })
+        .select("_id")
+        .lean()
 
-    if (existing) {
-        throw new AppError({
-            statusCode: 409,
-            code: "EXIT_REASON_CODE_EXISTS",
-            messageKey: "errors.organization.exitReason.codeExists",
-            fields: { code: ["errors.organization.exitReason.codeExists"] },
-        })
-    }
+    if (existing) throw duplicateCodeError()
 }
 
 export async function listExitReasons({ query, user }) {
     const cacheKey = `exit-reason:list:${user?.accountId || "anonymous"}:${JSON.stringify(query)}`
     const cached = getCache(cacheKey)
-
     if (cached) return cached
 
     const page = query.page
     const limit = query.limit
     const skip = (page - 1) * limit
-
     const filter = buildListFilter(query, user)
 
     const [items, total] = await Promise.all([
@@ -255,7 +300,6 @@ export async function listExitReasons({ query, user }) {
 export async function lookupExitReasons({ query, user }) {
     const cacheKey = `exit-reason:lookup:${user?.accountId || "anonymous"}:${JSON.stringify(query)}`
     const cached = getCache(cacheKey)
-
     if (cached) return cached
 
     const items = await ExitReason.find(buildLookupFilter(query, user))
@@ -264,11 +308,19 @@ export async function lookupExitReasons({ query, user }) {
         .sort({ name: 1, code: 1 })
         .lean()
 
-    return setCache(cacheKey, { items: items.map(serializeExitReason) }, 60_000)
+    return setCache(
+        cacheKey,
+        { items: items.map(serializeExitReason) },
+        60_000,
+    )
 }
 
 export async function getExitReasonById({ exitReasonId, user }) {
-    ensureObjectId(exitReasonId, "EXIT_REASON_INVALID_ID", "errors.organization.exitReason.invalidId")
+    ensureObjectId(
+        exitReasonId,
+        "EXIT_REASON_INVALID_ID",
+        "errors.organization.exitReason.invalidId",
+    )
 
     const exitReason = await ExitReason.findOne({
         _id: exitReasonId,
@@ -290,27 +342,45 @@ export async function getExitReasonById({ exitReasonId, user }) {
 }
 
 export async function createExitReason({ payload, user }) {
-    await validateScope(payload, user)
-    await ensureUniqueCode(payload)
-
-    const exitReason = await ExitReason.create({
+    const cleanPayload = {
         ...payload,
-        companyId: payload.companyId || null,
-        branchId: payload.branchId || null,
+        companyId: payload.companyId,
+        branchId: payload.branchId,
         code: normalizeCode(payload.code),
+        name: normalizeText(payload.name),
+        description: normalizeText(payload.description),
         status: payload.status || "ACTIVE",
-        createdByAccountId: user.accountId,
-        updatedByAccountId: user.accountId,
+    }
+
+    await validateScope(cleanPayload, user)
+    await ensureUniqueCode(cleanPayload)
+
+    let exitReason
+
+    try {
+        exitReason = await ExitReason.create({
+            ...cleanPayload,
+            createdByAccountId: user.accountId,
+            updatedByAccountId: user.accountId,
+        })
+    } catch (error) {
+        rethrowMongoDuplicate(error)
+    }
+
+    clearExitReasonCaches()
+
+    return getExitReasonById({
+        exitReasonId: exitReason._id,
+        user,
     })
-
-    clearCacheByPrefix("exit-reason:")
-    clearCacheByPrefix("hr-dashboard:")
-
-    return getExitReasonById({ exitReasonId: exitReason._id, user })
 }
 
 export async function updateExitReason({ exitReasonId, payload, user }) {
-    ensureObjectId(exitReasonId, "EXIT_REASON_INVALID_ID", "errors.organization.exitReason.invalidId")
+    ensureObjectId(
+        exitReasonId,
+        "EXIT_REASON_INVALID_ID",
+        "errors.organization.exitReason.invalidId",
+    )
 
     const existing = await ExitReason.findOne({
         _id: exitReasonId,
@@ -334,38 +404,69 @@ export async function updateExitReason({ exitReasonId, payload, user }) {
     }
 
     const nextPayload = {
-        ...existing,
-        ...payload,
-        companyId: Object.prototype.hasOwnProperty.call(payload, "companyId") ? payload.companyId || null : existing.companyId,
-        branchId: Object.prototype.hasOwnProperty.call(payload, "branchId") ? payload.branchId || null : existing.branchId,
-        code: payload.code ? normalizeCode(payload.code) : existing.code,
+        companyId: Object.prototype.hasOwnProperty.call(payload, "companyId")
+            ? payload.companyId
+            : existing.companyId,
+        branchId: Object.prototype.hasOwnProperty.call(payload, "branchId")
+            ? payload.branchId
+            : existing.branchId,
+        code: Object.prototype.hasOwnProperty.call(payload, "code")
+            ? normalizeCode(payload.code)
+            : existing.code,
+        name: Object.prototype.hasOwnProperty.call(payload, "name")
+            ? normalizeText(payload.name)
+            : existing.name,
+        description: Object.prototype.hasOwnProperty.call(payload, "description")
+            ? normalizeText(payload.description)
+            : existing.description,
+        status: Object.prototype.hasOwnProperty.call(payload, "status")
+            ? payload.status
+            : existing.status,
     }
 
     await validateScope(nextPayload, user)
     await ensureUniqueCode(nextPayload, existing._id)
 
-    const updated = await ExitReason.findByIdAndUpdate(
-        existing._id,
-        {
-            $set: {
-                ...payload,
-                companyId: nextPayload.companyId || null,
-                branchId: nextPayload.branchId || null,
-                code: nextPayload.code,
-                updatedByAccountId: user.accountId,
+    let updated
+
+    try {
+        updated = await ExitReason.findByIdAndUpdate(
+            existing._id,
+            {
+                $set: {
+                    companyId: nextPayload.companyId,
+                    branchId: nextPayload.branchId,
+                    code: nextPayload.code,
+                    name: nextPayload.name,
+                    description: nextPayload.description,
+                    status: nextPayload.status,
+                    updatedByAccountId: user.accountId,
+                },
             },
-        },
-        { new: true, runValidators: true, context: "query" },
-    ).lean()
+            {
+                new: true,
+                runValidators: true,
+                context: "query",
+            },
+        ).lean()
+    } catch (error) {
+        rethrowMongoDuplicate(error)
+    }
 
-    clearCacheByPrefix("exit-reason:")
-    clearCacheByPrefix("hr-dashboard:")
+    clearExitReasonCaches()
 
-    return getExitReasonById({ exitReasonId: updated._id, user })
+    return getExitReasonById({
+        exitReasonId: updated._id,
+        user,
+    })
 }
 
 export async function archiveExitReason({ exitReasonId, user }) {
-    ensureObjectId(exitReasonId, "EXIT_REASON_INVALID_ID", "errors.organization.exitReason.invalidId")
+    ensureObjectId(
+        exitReasonId,
+        "EXIT_REASON_INVALID_ID",
+        "errors.organization.exitReason.invalidId",
+    )
 
     const existing = await ExitReason.findOne({
         _id: exitReasonId,
@@ -380,6 +481,10 @@ export async function archiveExitReason({ exitReasonId, user }) {
         })
     }
 
+    if (existing.status === "ARCHIVED") {
+        return getExitReasonById({ exitReasonId: existing._id, user })
+    }
+
     const updated = await ExitReason.findByIdAndUpdate(
         existing._id,
         {
@@ -388,11 +493,17 @@ export async function archiveExitReason({ exitReasonId, user }) {
                 updatedByAccountId: user.accountId,
             },
         },
-        { new: true, runValidators: true, context: "query" },
+        {
+            new: true,
+            runValidators: true,
+            context: "query",
+        },
     ).lean()
 
-    clearCacheByPrefix("exit-reason:")
-    clearCacheByPrefix("hr-dashboard:")
+    clearExitReasonCaches()
 
-    return getExitReasonById({ exitReasonId: updated._id, user })
+    return getExitReasonById({
+        exitReasonId: updated._id,
+        user,
+    })
 }

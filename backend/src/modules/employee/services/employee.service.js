@@ -18,7 +18,7 @@ import Province from "../../location/models/Province.js"
 import District from "../../location/models/District.js"
 import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
-import RecruitmentChannel from "../../recruitmentChannel/models/RecruitmentChannel.js"
+import RecruitmentChannel from "../../recruitmentChannel/models/recruitmentChannel.js"
 import ExitReason from "../../exitReason/models/ExitReason.js"
 import EmployeeType from "../../employeeType/models/EmployeeType.js"
 

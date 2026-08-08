@@ -1,6 +1,9 @@
 import { Router } from "express"
 
-import { requireAuthentication, requirePermission } from "../../access/middleware/auth.middleware.js"
+import {
+    requireAuthentication,
+    requirePermission,
+} from "../../access/middleware/auth.middleware.js"
 import { AppError } from "../../../shared/errors/AppError.js"
 
 import {
@@ -52,7 +55,10 @@ router.get(
     async (req, res, next) => {
         try {
             const query = parseRequest(exitReasonListQuerySchema, req.query)
-            const result = await listExitReasons({ query, user: req.auth.user })
+            const result = await listExitReasons({
+                query,
+                user: req.auth.user,
+            })
 
             res.status(200).json({ success: true, data: result })
         } catch (error) {
@@ -67,7 +73,10 @@ router.get(
     async (req, res, next) => {
         try {
             const query = parseRequest(exitReasonLookupQuerySchema, req.query)
-            const result = await lookupExitReasons({ query, user: req.auth.user })
+            const result = await lookupExitReasons({
+                query,
+                user: req.auth.user,
+            })
 
             res.status(200).json({ success: true, data: result })
         } catch (error) {
@@ -82,7 +91,10 @@ router.post(
     async (req, res, next) => {
         try {
             const payload = parseRequest(exitReasonCreateSchema, req.body)
-            const exitReason = await createExitReason({ payload, user: req.auth.user })
+            const exitReason = await createExitReason({
+                payload,
+                user: req.auth.user,
+            })
 
             res.status(201).json({
                 success: true,

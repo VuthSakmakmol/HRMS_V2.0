@@ -17,15 +17,13 @@ const exitReasonSchema = new Schema(
         companyId: {
             type: Schema.Types.ObjectId,
             ref: "Company",
-            default: null,
+            required: true,
         },
-
         branchId: {
             type: Schema.Types.ObjectId,
             ref: "Branch",
-            default: null,
+            required: true,
         },
-
         code: {
             type: String,
             required: true,
@@ -35,7 +33,6 @@ const exitReasonSchema = new Schema(
             match: /^[A-Z0-9_-]+$/,
             set: normalizeCode,
         },
-
         name: {
             type: String,
             required: true,
@@ -44,7 +41,6 @@ const exitReasonSchema = new Schema(
             maxlength: 180,
             set: normalizeText,
         },
-
         description: {
             type: String,
             trim: true,
@@ -52,20 +48,17 @@ const exitReasonSchema = new Schema(
             set: normalizeText,
             default: "",
         },
-
         status: {
             type: String,
             enum: ["ACTIVE", "INACTIVE", "ARCHIVED"],
             default: "ACTIVE",
             required: true,
         },
-
         createdByAccountId: {
             type: Schema.Types.ObjectId,
             ref: "Account",
             default: null,
         },
-
         updatedByAccountId: {
             type: Schema.Types.ObjectId,
             ref: "Account",
@@ -83,10 +76,12 @@ exitReasonSchema.index(
     { companyId: 1, branchId: 1, code: 1 },
     { unique: true, name: "uq_exit_reason_scope_code" },
 )
+
 exitReasonSchema.index(
     { companyId: 1, branchId: 1, status: 1, name: 1 },
     { name: "idx_exit_reason_lookup" },
 )
+
 exitReasonSchema.index(
     { code: "text", name: "text", description: "text" },
     { name: "idx_exit_reason_search_text" },
@@ -101,6 +96,24 @@ exitReasonSchema.set("toJSON", {
     },
 })
 
-const ExitReason = mongoose.models.ExitReason || mongoose.model("ExitReason", exitReasonSchema)
+// Older Employee code used to register a schema-less ExitReason fallback.
+// If that stale model is already cached by Mongoose, replace it with the real
+// schema before list/populate/update operations run.
+const registeredExitReason = mongoose.models.ExitReason
+if (
+    registeredExitReason &&
+    (
+        !registeredExitReason.schema.path("companyId") ||
+        !registeredExitReason.schema.path("branchId") ||
+        !registeredExitReason.schema.path("code") ||
+        !registeredExitReason.schema.path("name")
+    )
+) {
+    mongoose.deleteModel("ExitReason")
+}
+
+const ExitReason =
+    mongoose.models.ExitReason ||
+    mongoose.model("ExitReason", exitReasonSchema)
 
 export default ExitReason
