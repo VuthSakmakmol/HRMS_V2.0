@@ -107,6 +107,10 @@ const totalChartData = computed(() => ({
             data: props.rows.map((row) => Number(row.previousRate || 0)),
             backgroundColor: "rgba(148, 163, 184, 0.78)",
             borderColor: "#64748B",
+            valueLabel: true,
+            valueLabelSuffix: "%",
+            valueLabelDecimals: 1,
+            valueLabelShowZero: true,
         },
         {
             type: "bar",
@@ -114,6 +118,10 @@ const totalChartData = computed(() => ({
             data: props.rows.map((row) => Number(row.currentRate || 0)),
             backgroundColor: "rgba(37, 99, 235, 0.82)",
             borderColor: "#1D4ED8",
+            valueLabel: true,
+            valueLabelSuffix: "%",
+            valueLabelDecimals: 1,
+            valueLabelShowZero: true,
         },
         {
             type: "line",

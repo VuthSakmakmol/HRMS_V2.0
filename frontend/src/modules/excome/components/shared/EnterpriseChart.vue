@@ -110,6 +110,96 @@ function withDefaultDatasetStyle(dataset, index) {
 }
 
 
+
+function formatPermanentValueLabel(dataset, rawValue) {
+  const value = Number(rawValue);
+  if (!Number.isFinite(value)) return null;
+
+  const decimals = Number.isInteger(dataset.valueLabelDecimals)
+    ? Math.min(Math.max(dataset.valueLabelDecimals, 0), 4)
+    : props.percent
+      ? 1
+      : 0;
+  const suffix = dataset.valueLabelSuffix ?? (props.percent ? "%" : "");
+  const prefix = dataset.valueLabelPrefix ?? "";
+
+  const formatted = props.percent || suffix === "%"
+    ? value.toFixed(decimals)
+    : value.toLocaleString(undefined, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      });
+
+  return `${prefix}${formatted}${suffix}`;
+}
+
+/*
+ * Draw important dataset values permanently on the chart. Datasets opt in
+ * with `valueLabel: true`, so other Excome charts remain unchanged. This is
+ * used by the Attendance Total chart to keep previous/current percentages
+ * visible without requiring a hover. Zero is a real value and can also be
+ * displayed, which makes month-to-month comparison unambiguous.
+ */
+const permanentValueLabelsPlugin = {
+  id: "excomePermanentValueLabels",
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    if (!chartArea) return;
+
+    chart.data.datasets.forEach((dataset, datasetIndex) => {
+      if (!dataset.valueLabel) return;
+
+      const meta = chart.getDatasetMeta(datasetIndex);
+      if (meta.hidden) return;
+
+      meta.data.forEach((element, index) => {
+        const rawValue = dataset.data?.[index];
+        if (rawValue === null || rawValue === undefined || rawValue === "") return;
+
+        const numericValue = Number(rawValue);
+        if (!Number.isFinite(numericValue)) return;
+        if (numericValue === 0 && dataset.valueLabelShowZero === false) return;
+
+        const text = formatPermanentValueLabel(dataset, numericValue);
+        if (!text) return;
+
+        const position = element.tooltipPosition();
+        const isLine = (dataset.type || props.type) === "line";
+        let x = position.x;
+        let y = position.y;
+
+        if (isLine) {
+          y = Math.max(chartArea.top + 10, Math.min(y - 12, chartArea.bottom - 10));
+        } else if (numericValue === 0) {
+          // A zero-height bar has no visible top. Keep its 0.0% label just
+          // above the baseline, at the exact x-position of that dataset bar.
+          y = chartArea.bottom - 11;
+        } else if (numericValue > 0) {
+          y = Math.max(position.y - 10, chartArea.top + 10);
+        } else {
+          y = Math.min(position.y + 12, chartArea.bottom - 8);
+        }
+
+        ctx.save();
+        ctx.font = "600 10px Arial, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        // A small white backing keeps fixed percentages readable over grid
+        // lines and beside the second attendance series.
+        const textWidth = ctx.measureText(text).width;
+        const boxWidth = textWidth + 6;
+        const boxHeight = 13;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.90)";
+        ctx.fillRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
+        ctx.fillStyle = dataset.valueLabelColor || dataset.borderColor || "#334155";
+        ctx.fillText(text, x, y);
+        ctx.restore();
+      });
+    });
+  },
+};
+
 const selectedMonthPlugin = {
   id: "excomeSelectedMonth",
   afterDatasetsDraw(chart) {
@@ -147,11 +237,18 @@ const selectedMonthPlugin = {
   },
 };
 
-const chartPlugins = computed(() =>
-  Number.isInteger(props.selectedIndex) && props.selectedIndex >= 0
-    ? [selectedMonthPlugin]
-    : [],
-);
+const chartPlugins = computed(() => {
+  const plugins = [];
+  const hasPermanentLabels = Array.isArray(props.data?.datasets)
+    && props.data.datasets.some((dataset) => dataset?.valueLabel);
+
+  if (hasPermanentLabels) plugins.push(permanentValueLabelsPlugin);
+  if (Number.isInteger(props.selectedIndex) && props.selectedIndex >= 0) {
+    plugins.push(selectedMonthPlugin);
+  }
+
+  return plugins;
+});
 
 const chartData = computed(() => ({
   ...props.data,
@@ -180,6 +277,14 @@ const options = computed(() => ({
     intersect: false,
   },
   indexAxis: props.horizontal ? "y" : "x",
+  layout: {
+    padding: {
+      top: Array.isArray(props.data?.datasets)
+        && props.data.datasets.some((dataset) => dataset?.valueLabel)
+        ? 18
+        : 0,
+    },
+  },
   plugins: {
     title: {
       display: Boolean(props.title),

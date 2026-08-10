@@ -7,6 +7,12 @@ export const EMPLOYEE_TYPE_POSITION_ASSIGNMENT_MODES = Object.freeze([
     "SPECIFIC_POSITIONS",
 ])
 
+export const EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS = Object.freeze([
+    "DIRECT",
+    "INDIRECT",
+    "OTHER",
+])
+
 function normalizeCode(value) {
     if (typeof value !== "string") {
         return value
@@ -51,6 +57,13 @@ const employeeTypeChildSchema = new Schema(
             minlength: 2,
             maxlength: 80,
             set: normalizeCode,
+        },
+
+        laborClassification: {
+            type: String,
+            enum: EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS,
+            default: "OTHER",
+            required: true,
         },
 
         positionAssignmentMode: {
@@ -113,6 +126,13 @@ const employeeTypeSchema = new Schema(
             minlength: 2,
             maxlength: 80,
             set: normalizeCode,
+        },
+
+        laborClassification: {
+            type: String,
+            enum: EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS,
+            default: "OTHER",
+            required: true,
         },
 
         positionAssignmentMode: {

@@ -1,5 +1,5 @@
 <script setup>
-import ExitReasonChart from "./ExitReasonChart.vue"
+import ExitReasonTable from "./ExitReasonTable.vue"
 import PeriodOfServiceChart from "./PeriodOfServiceChart.vue"
 
 defineProps({
@@ -21,7 +21,7 @@ defineProps({
         </div>
 
         <div class="exit-analysis-grid">
-            <ExitReasonChart :data="data.exitReasons || {}" />
+            <ExitReasonTable :data="data.exitReasons || {}" />
             <PeriodOfServiceChart :data="data.servicePeriods || {}" />
         </div>
     </section>
@@ -46,14 +46,8 @@ defineProps({
 
 .exit-analysis-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
     padding: 0.5rem 0;
-}
-
-@media (max-width: 980px) {
-    .exit-analysis-grid {
-        grid-template-columns: minmax(0, 1fr);
-    }
 }
 </style>

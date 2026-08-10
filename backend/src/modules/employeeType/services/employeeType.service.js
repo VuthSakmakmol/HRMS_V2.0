@@ -230,6 +230,7 @@ function serializeEmployeeTypeChild(child) {
         code: child.code,
         name: child.name,
         dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
+        laborClassification: child.laborClassification || "OTHER",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: populatedPositions.length
@@ -301,6 +302,7 @@ function serializeEmployeeType(employeeType) {
         code: raw.code,
         name: raw.name,
         dashboardCategory: raw.dashboardCategory || "UNSPECIFIED",
+        laborClassification: raw.laborClassification || "OTHER",
         assignmentMode: children.length > 0 ? "CHILD" : "DIRECT",
         positionAssignmentMode:
             raw.positionAssignmentMode || "SPECIFIC_POSITIONS",
@@ -341,6 +343,7 @@ function buildEmployeeTypeUpdatePayload(payload, accountId) {
         "code",
         "name",
         "dashboardCategory",
+        "laborClassification",
         "positionAssignmentMode",
         "positionIds",
         "children",
@@ -381,6 +384,7 @@ function normalizeChildGroups(children = []) {
         code: normalizeCode(child.code || child.name),
         name: child.name,
         dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
+        laborClassification: child.laborClassification || "OTHER",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: [...new Set(child.positionIds || [])],
@@ -542,6 +546,7 @@ function normalizeAssignmentPayload(payload) {
     }
 
     if ((normalized.children || []).length > 0) {
+        normalized.laborClassification = "OTHER"
         normalized.positionIds = []
         normalized.positionAssignmentMode = "SPECIFIC_POSITIONS"
     }

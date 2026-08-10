@@ -22,10 +22,14 @@ const TEMPLATE_HEADERS = [
     "positionCodes",
     "status",
     "description",
+    "laborClassification",
+    "childLaborClassification",
 ]
 
+const LEGACY_REQUIRED_HEADERS = TEMPLATE_HEADERS.slice(0, 13)
 const STATUS_VALUES = ["ACTIVE", "INACTIVE"]
 const POSITION_ASSIGNMENT_MODES = ["ALL_POSITIONS", "SPECIFIC_POSITIONS"]
+const LABOR_CLASSIFICATIONS = ["DIRECT", "INDIRECT", "OTHER"]
 
 function normalizeCode(value) {
     return String(value || "")
@@ -70,6 +74,16 @@ function normalizeStatus(value) {
     return status
 }
 
+function normalizeLaborClassification(value) {
+    const normalized = normalizeCode(value || "OTHER")
+
+    if (["NOT_COUNTED", "NOTCOUNTED", "NONE", "NA", "N_A"].includes(normalized)) {
+        return "OTHER"
+    }
+
+    return LABOR_CLASSIFICATIONS.includes(normalized) ? normalized : null
+}
+
 function splitCodes(value) {
     return String(value || "")
         .split(",")
@@ -106,11 +120,11 @@ function getRowObject(row) {
 
 function validateHeaderRow(worksheet) {
     const headerRow = worksheet.getRow(1)
-    const actualHeaders = TEMPLATE_HEADERS.map((_, index) =>
+    const actualHeaders = LEGACY_REQUIRED_HEADERS.map((_, index) =>
         normalizeText(getCellValue(headerRow, index + 1)),
     )
 
-    const isValid = TEMPLATE_HEADERS.every(
+    const isValid = LEGACY_REQUIRED_HEADERS.every(
         (header, index) => actualHeaders[index] === header,
     )
 
@@ -157,6 +171,8 @@ function buildWorkbookBase(title) {
         { header: "positionCodes", key: "positionCodes", width: 42 },
         { header: "status", key: "status", width: 14 },
         { header: "description", key: "description", width: 46 },
+        { header: "laborClassification", key: "laborClassification", width: 22 },
+        { header: "childLaborClassification", key: "childLaborClassification", width: 26 },
     ]
 
     const headerRow = worksheet.getRow(1)
@@ -200,6 +216,8 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
             positionCodes: "SEWER",
             status: "ACTIVE",
             description: "Blue collar sewer positions.",
+            laborClassification: "OTHER",
+            childLaborClassification: "DIRECT",
         },
         {
             companyCode: "TRAX",
@@ -215,6 +233,8 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
             positionCodes: "CUTTER,QC,PACKING",
             status: "ACTIVE",
             description: "Blue collar non-sewer positions.",
+            laborClassification: "OTHER",
+            childLaborClassification: "INDIRECT",
         },
         {
             companyCode: "TRAX",
@@ -230,6 +250,8 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
             positionCodes: "",
             status: "ACTIVE",
             description: "White collar, office, management, or all allowed positions.",
+            laborClassification: "INDIRECT",
+            childLaborClassification: "",
         },
     ])
 
@@ -253,6 +275,8 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
         { field: "childPositionAssignmentMode", required: "When child used", rule: "ALL_POSITIONS or SPECIFIC_POSITIONS. Multiple children should use SPECIFIC_POSITIONS." },
         { field: "positionCodes", required: "When SPECIFIC_POSITIONS", rule: "Comma-separated position codes. Empty is allowed only for ALL_POSITIONS." },
         { field: "status", required: "No", rule: "ACTIVE or INACTIVE. Empty defaults ACTIVE." },
+        { field: "laborClassification", required: "No", rule: "DIRECT, INDIRECT, or OTHER. Used when the employee type has no child groups. Empty defaults OTHER." },
+        { field: "childLaborClassification", required: "No", rule: "DIRECT, INDIRECT, or OTHER for the child group. Empty defaults OTHER." },
     ])
 
     return workbook
@@ -307,6 +331,12 @@ export async function parseEmployeeTypeImportWorkbook(buffer) {
         const positionCodes = splitCodes(rowObject.positionCodes)
         const status = normalizeStatus(rowObject.status)
         const description = normalizeText(rowObject.description)
+        const laborClassification = normalizeLaborClassification(
+            rowObject.laborClassification,
+        )
+        const childLaborClassification = childCode
+            ? normalizeLaborClassification(rowObject.childLaborClassification)
+            : null
 
         if (!companyCode) {
             errors.push(buildImportError(rowNumber, "companyCode", "errors.organization.employeeTypeImport.companyCodeRequired"))
@@ -356,6 +386,14 @@ export async function parseEmployeeTypeImportWorkbook(buffer) {
             errors.push(buildImportError(rowNumber, "status", "errors.organization.employeeTypeImport.statusInvalid"))
         }
 
+        if (!laborClassification) {
+            errors.push(buildImportError(rowNumber, "laborClassification", "errors.organization.employeeTypeImport.laborClassificationInvalid"))
+        }
+
+        if (childCode && !childLaborClassification) {
+            errors.push(buildImportError(rowNumber, "childLaborClassification", "errors.organization.employeeTypeImport.laborClassificationInvalid"))
+        }
+
         rows.push({
             rowNumber,
             companyCode,
@@ -371,6 +409,8 @@ export async function parseEmployeeTypeImportWorkbook(buffer) {
             positionCodes,
             status: status || "ACTIVE",
             description,
+            laborClassification: laborClassification || "OTHER",
+            childLaborClassification: childLaborClassification || "OTHER",
         })
     })
 
@@ -437,6 +477,7 @@ function groupRows(rows) {
                 employeeTypeCode: row.employeeTypeCode,
                 employeeTypeName: row.employeeTypeName,
                 dashboardCategory: row.dashboardCategory,
+                laborClassification: row.laborClassification || "OTHER",
                 positionAssignmentMode: row.positionAssignmentMode,
                 status: row.status,
                 description: row.description,
@@ -455,6 +496,7 @@ function groupRows(rows) {
                     code: row.childCode,
                     name: row.childName,
                     dashboardCategory: row.childDashboardCategory,
+                    laborClassification: row.childLaborClassification || "OTHER",
                     positionAssignmentMode: row.childPositionAssignmentMode,
                     rowNumbers: [],
                     positionCodes: [],
@@ -576,6 +618,7 @@ export async function importEmployeeTypesFromRows({
             code: child.code,
             name: child.name,
             dashboardCategory: child.dashboardCategory,
+            laborClassification: child.laborClassification || "OTHER",
             positionAssignmentMode: child.positionAssignmentMode,
             positionIds: child.positionAssignmentMode === "ALL_POSITIONS"
                 ? allActivePositions.map((position) => position._id)
@@ -608,6 +651,9 @@ export async function importEmployeeTypesFromRows({
             code: group.employeeTypeCode,
             name: group.employeeTypeName,
             dashboardCategory: group.dashboardCategory,
+            laborClassification: children.length > 0
+                ? "OTHER"
+                : group.laborClassification || "OTHER",
             positionAssignmentMode: children.length > 0
                 ? "SPECIFIC_POSITIONS"
                 : group.positionAssignmentMode,
@@ -680,6 +726,8 @@ export async function buildEmployeeTypeExportWorkbook({ employeeTypes }) {
                             : (child.positions || []).map((position) => position.code).join(","),
                     status: employeeType.status,
                     description: employeeType.description || "",
+                    laborClassification: employeeType.laborClassification || "OTHER",
+                    childLaborClassification: child.laborClassification || "OTHER",
                 })
             }
 
@@ -703,6 +751,8 @@ export async function buildEmployeeTypeExportWorkbook({ employeeTypes }) {
                     : (employeeType.positions || []).map((position) => position.code).join(","),
             status: employeeType.status,
             description: employeeType.description || "",
+            laborClassification: employeeType.laborClassification || "OTHER",
+            childLaborClassification: "",
         })
     }
 

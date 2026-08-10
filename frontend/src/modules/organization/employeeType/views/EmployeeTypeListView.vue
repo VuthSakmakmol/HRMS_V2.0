@@ -400,6 +400,31 @@ function categoryLabel(value) {
     return found?.label || String(value || "—").toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")
 }
 
+
+function laborClassificationLabel(value) {
+    const labels = {
+        DIRECT: "organization.employeeType.laborDirect",
+        INDIRECT: "organization.employeeType.laborIndirect",
+        OTHER: "organization.employeeType.laborOther",
+    }
+
+    return labels[value] ? t(labels[value]) : value || t("organization.employeeType.laborOther")
+}
+
+function laborClassificationSeverity(value) {
+    if (value === "DIRECT") return "success"
+    if (value === "INDIRECT") return "info"
+    return "secondary"
+}
+
+function laborClassificationSummary(row) {
+    if (!row?.children?.length) {
+        return [row?.laborClassification || "OTHER"]
+    }
+
+    return [...new Set(row.children.map((child) => child.laborClassification || "OTHER"))]
+}
+
 function formatDate(value) {
     if (!value) {
         return "—"
@@ -632,6 +657,17 @@ onMounted(load)
             />
         </template>
 
+        <template #cell-laborClassification="{ row }">
+            <div class="employee-type-labor-tags">
+                <Tag
+                    v-for="value in laborClassificationSummary(row)"
+                    :key="value"
+                    :value="laborClassificationLabel(value)"
+                    :severity="laborClassificationSeverity(value)"
+                />
+            </div>
+        </template>
+
         <template #cell-structure="{ row }">
             {{
                 row.children?.length
@@ -714,3 +750,7 @@ onMounted(load)
         @close="closeImportDialog"
     />
 </template>
+
+<style scoped>
+.employee-type-labor-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+</style>

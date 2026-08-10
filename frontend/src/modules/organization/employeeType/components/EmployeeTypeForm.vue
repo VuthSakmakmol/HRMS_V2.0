@@ -3,6 +3,7 @@ import Button from "primevue/button"
 import InputText from "primevue/inputtext"
 import MultiSelect from "primevue/multiselect"
 import Select from "primevue/select"
+import SelectButton from "primevue/selectbutton"
 import Textarea from "primevue/textarea"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
@@ -67,6 +68,21 @@ const statusOptions = computed(() => [
     {
         label: t("organization.employeeType.statusInactive"),
         value: "INACTIVE",
+    },
+])
+
+const laborClassificationOptions = computed(() => [
+    {
+        label: t("organization.employeeType.laborDirect"),
+        value: "DIRECT",
+    },
+    {
+        label: t("organization.employeeType.laborIndirect"),
+        value: "INDIRECT",
+    },
+    {
+        label: t("organization.employeeType.laborOther"),
+        value: "OTHER",
     },
 ])
 
@@ -299,6 +315,33 @@ function positionsForChild(currentIndex) {
 
                 <label
                     v-if="form.structureMode === 'DIRECT'"
+                    class="enterprise-form-field enterprise-form-field--full"
+                >
+                    <span>
+                        {{ t("organization.employeeType.laborClassification") }}
+                    </span>
+
+                    <SelectButton
+                        v-model="form.laborClassification"
+                        :options="laborClassificationOptions"
+                        option-label="label"
+                        option-value="value"
+                        :disabled="disabled"
+                        :allow-empty="false"
+                        @change="clearFieldError('laborClassification')"
+                    />
+
+                    <small class="employee-type-form__help">
+                        {{ t("organization.employeeType.laborClassificationHelp") }}
+                    </small>
+
+                    <small v-if="message('laborClassification')">
+                        {{ message("laborClassification") }}
+                    </small>
+                </label>
+
+                <label
+                    v-if="form.structureMode === 'DIRECT'"
                     class="enterprise-form-field"
                 >
                     <span>
@@ -420,6 +463,25 @@ function positionsForChild(currentIndex) {
                                     :disabled="disabled"
                                     maxlength="160"
                                 />
+                            </label>
+
+                            <label class="enterprise-form-field enterprise-form-field--full">
+                                <span>
+                                    {{ t("organization.employeeType.laborClassification") }} *
+                                </span>
+
+                                <SelectButton
+                                    v-model="child.laborClassification"
+                                    :options="laborClassificationOptions"
+                                    option-label="label"
+                                    option-value="value"
+                                    :disabled="disabled"
+                                    :allow-empty="false"
+                                />
+
+                                <small class="employee-type-form__help">
+                                    {{ t("organization.employeeType.childLaborClassificationHelp") }}
+                                </small>
                             </label>
 
                             <label class="enterprise-form-field">
@@ -641,5 +703,10 @@ function positionsForChild(currentIndex) {
         align-items: stretch;
         flex-direction: column;
     }
+}
+
+.employee-type-form__help {
+    color: var(--p-text-muted-color, #64748b);
+    line-height: 1.35;
 }
 </style>

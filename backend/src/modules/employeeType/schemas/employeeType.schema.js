@@ -3,6 +3,7 @@ import { z } from "zod"
 const EMPLOYEE_TYPE_STATUSES = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 const EMPLOYEE_TYPE_UPDATE_STATUSES = ["ACTIVE", "INACTIVE"]
 const POSITION_ASSIGNMENT_MODES = ["ALL_POSITIONS", "SPECIFIC_POSITIONS"]
+const LABOR_CLASSIFICATIONS = ["DIRECT", "INDIRECT", "OTHER"]
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
     message: "Invalid MongoDB ObjectId.",
@@ -77,10 +78,22 @@ const dashboardCategorySchema = z
             .toUpperCase(),
     )
 
+const laborClassificationSchema = z
+    .string()
+    .optional()
+    .transform((value) =>
+        String(value || "OTHER")
+            .trim()
+            .replace(/[\s-]+/g, "_")
+            .toUpperCase(),
+    )
+    .pipe(z.enum(LABOR_CLASSIFICATIONS))
+
 const employeeTypeChildSchema = z.object({
     code: normalizedCodeSchema.optional(),
     name: normalizedTextSchema(2, 120),
     dashboardCategory: dashboardCategorySchema,
+    laborClassification: laborClassificationSchema.default("OTHER"),
     positionAssignmentMode: positionAssignmentModeSchema.default(
         "SPECIFIC_POSITIONS",
     ),
@@ -98,6 +111,7 @@ function normalizeChildren(children = []) {
                 .toUpperCase()
                 .replace(/[^A-Z0-9_-]/g, ""),
         dashboardCategory: child.dashboardCategory,
+        laborClassification: child.laborClassification || "OTHER",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: [...new Set(child.positionIds || [])],
@@ -235,6 +249,7 @@ export const employeeTypeCreateSchema = z
         code: normalizedCodeSchema,
         name: normalizedTextSchema(2, 160),
         dashboardCategory: dashboardCategorySchema,
+        laborClassification: laborClassificationSchema.default("OTHER"),
         positionAssignmentMode: positionAssignmentModeSchema.default(
             "SPECIFIC_POSITIONS",
         ),
@@ -257,6 +272,7 @@ export const employeeTypeUpdateSchema = z
         code: normalizedCodeSchema.optional(),
         name: normalizedTextSchema(2, 160).optional(),
         dashboardCategory: dashboardCategorySchema.optional(),
+        laborClassification: laborClassificationSchema.optional(),
         positionAssignmentMode: positionAssignmentModeSchema.optional(),
         positionIds: updatePositionIdsSchema,
         children: z

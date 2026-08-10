@@ -2196,20 +2196,6 @@ function buildGeneralWorkforceCategoryBreakdown({
     }
 }
 
-function findPeriodRow(rows = [], periodKey) {
-    return rows.find((row) => row.key === periodKey) || null
-}
-
-function getBudgetValue(row) {
-    if (!row) return 0
-
-    const budget = Number(row.budget) || 0
-    const roadmap = Number(row.roadmap) || 0
-
-    return budget > 0 ? budget : roadmap
-}
-
-
 function getExitReasonLabel(employee, exitReasonById) {
     const exitReasonId = employee.exitReasonId?.toString?.() || employee.exitReasonId || null
 
@@ -2248,30 +2234,74 @@ function serviceBucketFromYears(years) {
     return "Y10_20Y"
 }
 
-function buildExitReasonRows({ exitEmployees, exitReasons }) {
+function buildExitReasonRows({ exitEmployees, exitReasons, periods = [] }) {
     const exitReasonById = new Map(
         exitReasons.map((reason) => [reason._id.toString(), reason]),
     )
-    const countByLabel = new Map()
+    const periodKeys = periods.map((period) => period.key)
+    const rowsByLabel = new Map()
 
+    function ensureRow(label) {
+        if (!rowsByLabel.has(label)) {
+            rowsByLabel.set(label, {
+                label,
+                monthly: Object.fromEntries(periodKeys.map((key) => [key, 0])),
+                count: 0,
+                rate: 0,
+            })
+        }
+
+        return rowsByLabel.get(label)
+    }
+
+    // Keep configured reasons available as stable rows. The frontend hides rows
+    // whose yearly total is zero, so old/unused reasons do not make the table noisy.
     for (const reason of exitReasons) {
-        countByLabel.set(reason.name || reason.code || "Unknown", 0)
+        ensureRow(reason.name || reason.code || "Unknown")
     }
 
     for (const employee of exitEmployees) {
+        const resignDate = employee.resignDate ? new Date(employee.resignDate) : null
+
+        if (!resignDate || Number.isNaN(resignDate.getTime())) continue
+
+        const periodKey = `${resignDate.getUTCFullYear()}-${String(
+            resignDate.getUTCMonth() + 1,
+        ).padStart(2, "0")}`
+
+        // Ignore dates outside the periods represented by this dashboard response.
+        if (!periodKeys.includes(periodKey)) continue
+
         const label = getExitReasonLabel(employee, exitReasonById)
-        countByLabel.set(label, (countByLabel.get(label) || 0) + 1)
+        const row = ensureRow(label)
+
+        row.monthly[periodKey] = (row.monthly[periodKey] || 0) + 1
+        row.count += 1
     }
 
     const total = exitEmployees.length
 
-    return [...countByLabel.entries()]
-        .map(([label, count]) => ({
-            label,
-            count,
-            rate: total > 0 ? round((count / total) * 100, 2) : 0,
+    return [...rowsByLabel.values()]
+        .map((row) => ({
+            ...row,
+            rate: total > 0 ? round((row.count / total) * 100, 2) : 0,
         }))
-        .sort((a, b) => b.rate - a.rate || b.count - a.count || a.label.localeCompare(b.label))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+function buildExitReasonTotals({ rows = [], periods = [] }) {
+    const monthly = Object.fromEntries(periods.map((period) => [period.key, 0]))
+
+    for (const row of rows) {
+        for (const period of periods) {
+            monthly[period.key] += Number(row.monthly?.[period.key] || 0)
+        }
+    }
+
+    return {
+        monthly,
+        count: rows.reduce((sum, row) => sum + Number(row.count || 0), 0),
+    }
 }
 
 function buildServicePeriodRows(exitEmployees = []) {
@@ -2313,18 +2343,44 @@ function buildServicePeriodRows(exitEmployees = []) {
     }))
 }
 
-function buildExitAnalysisDashboard({ employees, exitReasons, startDate, endDate, selectedYear, selectedLabel }) {
+function buildExitAnalysisDashboard({
+    employees,
+    exitReasons,
+    startDate,
+    endDate,
+    selectedYear,
+    selectedLabel,
+    periods = [],
+}) {
     const exitEmployees = employees.filter((employee) =>
         isExitEmployee(employee, startDate, endDate),
     )
+    const reasonRows = buildExitReasonRows({
+        exitEmployees,
+        exitReasons,
+        periods,
+    })
+    const reasonTotals = buildExitReasonTotals({
+        rows: reasonRows,
+        periods,
+    })
 
     return {
         selectedLabel,
         selectedYear,
         totalExits: exitEmployees.length,
         exitReasons: {
-            title: `Exit Reasons-${selectedLabel} ${selectedYear}`,
-            rows: buildExitReasonRows({ exitEmployees, exitReasons }),
+            title: "RESIGN by Reason",
+            selectedLabel,
+            selectedYear,
+            months: periods.map((period) => ({
+                key: period.key,
+                label: period.label,
+                year: period.year,
+                month: period.month,
+            })),
+            rows: reasonRows,
+            totals: reasonTotals,
         },
         servicePeriods: {
             title: `Period of Service-${selectedLabel}- ${selectedYear}`,
@@ -2333,25 +2389,128 @@ function buildExitAnalysisDashboard({ employees, exitReasons, startDate, endDate
     }
 }
 
+const LABOR_CLASSIFICATION = Object.freeze({
+    DIRECT: "DIRECT",
+    INDIRECT: "INDIRECT",
+    OTHER: "OTHER",
+})
+
+function classifyEmployeeTypeOptionLabor(option = {}) {
+    // getEmployeeTypeOptionForEmployee() intentionally returns null when an
+    // employee has no Employee Type (or references an old/missing type).
+    // Default parameters only protect undefined, not an explicit null value,
+    // so this must be null-safe. Unmapped employees are simply OTHER.
+    const classification = String(option?.laborClassification || "OTHER")
+        .trim()
+        .toUpperCase()
+
+    if (classification === LABOR_CLASSIFICATION.DIRECT) {
+        return LABOR_CLASSIFICATION.DIRECT
+    }
+
+    if (classification === LABOR_CLASSIFICATION.INDIRECT) {
+        return LABOR_CLASSIFICATION.INDIRECT
+    }
+
+    return LABOR_CLASSIFICATION.OTHER
+}
+
+function getEmployeeLaborClassification(employee = {}, lookups = {}) {
+    const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
+
+    return classifyEmployeeTypeOptionLabor(employeeTypeOption)
+}
+
+function buildEmployeeTypePositionLaborMap(lookups = {}) {
+    const classificationByPositionId = new Map()
+    const options = Array.isArray(lookups.employeeTypes)
+        ? lookups.employeeTypes
+        : []
+
+    // Child groups are the source of truth when an Employee Type uses children.
+    // Direct Employee Types use their parent classification.
+    const safeOptions = options.filter(Boolean)
+    const orderedOptions = [
+        ...safeOptions.filter((option) => option.type === "CHILD"),
+        ...safeOptions.filter(
+            (option) => option.type !== "CHILD" && !option.hasChildren,
+        ),
+    ]
+
+    for (const option of orderedOptions) {
+        const classification = classifyEmployeeTypeOptionLabor(option)
+
+        for (const positionId of option.positionIds || []) {
+            const key = String(positionId || "")
+
+            if (!key || classificationByPositionId.has(key)) continue
+
+            classificationByPositionId.set(key, classification)
+        }
+    }
+
+    return classificationByPositionId
+}
+
 function buildIndirectDirectRatio({
-    totalSummary,
-    selectedSummary,
-    totalManpower,
-    selectedManpower,
-    selectedPeriodKey,
+    employees,
+    plans,
+    selectedDate,
+    selectedPeriod,
+    lookups,
 }) {
-    const directActual = Number(selectedSummary.totalEmployees) || 0
-    const totalActual = Number(totalSummary.totalEmployees) || 0
-    const indirectActual = Math.max(totalActual - directActual, 0)
+    let directActual = 0
+    let indirectActual = 0
+    let unclassifiedActual = 0
+
+    for (const employee of employees || []) {
+        if (!employeeWasActiveOn(employee, selectedDate)) continue
+
+        const classification = getEmployeeLaborClassification(employee, lookups)
+
+        if (classification === LABOR_CLASSIFICATION.DIRECT) {
+            directActual += 1
+        } else if (classification === LABOR_CLASSIFICATION.INDIRECT) {
+            indirectActual += 1
+        } else {
+            unclassifiedActual += 1
+        }
+    }
+
     const actualRatio = directActual > 0
         ? round(indirectActual / directActual, 2)
         : 0
 
-    const totalPeriod = findPeriodRow(totalManpower, selectedPeriodKey)
-    const selectedPeriod = findPeriodRow(selectedManpower, selectedPeriodKey)
-    const directBudget = getBudgetValue(selectedPeriod)
-    const totalBudget = getBudgetValue(totalPeriod)
-    const indirectBudget = Math.max(totalBudget - directBudget, 0)
+    const selectedYear = Number(selectedPeriod?.year)
+    const selectedMonth = Number(selectedPeriod?.month)
+    const classificationByPositionId = buildEmployeeTypePositionLaborMap(lookups)
+
+    let directBudget = 0
+    let indirectBudget = 0
+    let unclassifiedBudget = 0
+
+    for (const plan of plans || []) {
+        if (
+            Number(plan.year) !== selectedYear ||
+            Number(plan.month) !== selectedMonth
+        ) {
+            continue
+        }
+
+        const budget = Number(plan.targetBudget) || 0
+        const classification = classificationByPositionId.get(
+            String(plan.positionId || ""),
+        )
+
+        if (classification === LABOR_CLASSIFICATION.DIRECT) {
+            directBudget += budget
+        } else if (classification === LABOR_CLASSIFICATION.INDIRECT) {
+            indirectBudget += budget
+        } else {
+            unclassifiedBudget += budget
+        }
+    }
+
     const budgetRatio = directBudget > 0
         ? round(indirectBudget / directBudget, 2)
         : 0
@@ -2361,19 +2520,20 @@ function buildIndirectDirectRatio({
         budgetRatio,
         directActual,
         indirectActual,
+        unclassifiedActual,
         directBudget,
         indirectBudget,
+        unclassifiedBudget,
     }
 }
 
 function buildGeneralData({
     totalEmployees,
     selectedEmployees,
+    selectedPlans,
     selectedDate,
     selectedLabel,
     selectedPeriod,
-    totalManpower,
-    selectedManpower,
     lookups,
 }) {
     const totalSummary = summarizeEmployeesForGeneralData({
@@ -2384,8 +2544,6 @@ function buildGeneralData({
         employees: selectedEmployees,
         selectedDate,
     })
-    const selectedPeriodKey = selectedPeriod?.key || null
-
     return {
         // Keep old fields for backward compatibility while the UI is being changed.
         totalEmployees: selectedSummary.totalEmployees,
@@ -2401,11 +2559,11 @@ function buildGeneralData({
         total: totalSummary,
         selected: selectedSummary,
         indirectDirect: buildIndirectDirectRatio({
-            totalSummary,
-            selectedSummary,
-            totalManpower,
-            selectedManpower,
-            selectedPeriodKey,
+            employees: selectedEmployees,
+            plans: selectedPlans,
+            selectedDate,
+            selectedPeriod,
+            lookups,
         }),
         workforceCategory: buildGeneralWorkforceCategoryBreakdown({
             employees: selectedEmployees,
@@ -2492,6 +2650,7 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
             employeeTypeId: parentId,
             employeeTypeChildCode: null,
             dashboardCategory: employeeType.dashboardCategory || "CUSTOM",
+            laborClassification: employeeType.laborClassification || "OTHER",
             positionAssignmentMode: parentPositionMode,
             positionIds: parentPositionIds,
             hasChildren,
@@ -2517,6 +2676,7 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
                 employeeTypeId: parentId,
                 employeeTypeChildCode: child.code,
                 dashboardCategory: child.dashboardCategory || "CUSTOM",
+                laborClassification: child.laborClassification || "OTHER",
                 positionAssignmentMode: childPositionMode,
                 positionIds: childPositionIds,
                 hasChildren: false,
@@ -2709,11 +2869,13 @@ export async function getExcomeLookups({ query }) {
                     "companyId",
                     "branchId",
                     "dashboardCategory",
+                    "laborClassification",
                     "positionAssignmentMode",
                     "positionIds",
                     "children.code",
                     "children.name",
                     "children.dashboardCategory",
+                    "children.laborClassification",
                     "children.positionAssignmentMode",
                     "children.positionIds",
                 ])
@@ -2842,11 +3004,6 @@ export async function getExcome({ query }) {
         fallbackRate: DEFAULT_TURNOVER_TARGET_RATE,
     })
     const manpower = buildManpowerSeries({ employees, plans, periods })
-    const totalManpower = buildManpowerSeries({
-        employees: totalGeneralEmployees,
-        plans: totalGeneralPlans,
-        periods,
-    })
     const selectedEmployeeTypeLabel = getSelectedEmployeeTypeLabel({
         query: cleanQuery,
         lookups,
@@ -2902,11 +3059,10 @@ export async function getExcome({ query }) {
         general: buildGeneralData({
             totalEmployees: totalGeneralEmployees,
             selectedEmployees: employees,
+            selectedPlans: plans,
             selectedDate: endDate,
             selectedLabel: selectedMetricLabel,
             selectedPeriod,
-            totalManpower,
-            selectedManpower: manpower,
             lookups,
         }),
         manpower,
@@ -2925,6 +3081,7 @@ export async function getExcome({ query }) {
             endDate,
             selectedYear,
             selectedLabel: selectedMetricLabel,
+            periods,
         }),
         turnover: turnoverComparison,
         movement: buildMovementSeries({ movements, periods, query: cleanQuery }),

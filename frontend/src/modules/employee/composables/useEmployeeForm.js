@@ -43,7 +43,11 @@ export function useEmployeeForm() {
     async function save() {
         saving.value = true; errors.value = {}
         try {
-            const payload = structuredClone(form)
+            // `form` is a Vue reactive Proxy. Browser structuredClone() cannot
+            // clone Vue proxies and throws DataCloneError before the API request
+            // is sent. Convert the reactive form into the same plain JSON shape
+            // that will be submitted to the backend.
+            const payload = JSON.parse(JSON.stringify(form))
             delete payload.sourceOfHiring
             delete payload.remark
             delete payload.employeeTypeChildCode

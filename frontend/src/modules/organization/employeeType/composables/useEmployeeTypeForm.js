@@ -14,6 +14,7 @@ function emptyForm() {
         name: "",
         structureMode: "DIRECT",
         dashboardCategory: "",
+        laborClassification: "OTHER",
         positionAssignmentMode: "SPECIFIC_POSITIONS",
         positionIds: [],
         children: [],
@@ -66,6 +67,7 @@ export function useEmployeeTypeForm() {
             name: row.name || "",
             structureMode: row.children?.length ? "CHILD" : "DIRECT",
             dashboardCategory: row.dashboardCategory || "",
+            laborClassification: row.laborClassification || "OTHER",
             positionAssignmentMode:
                 row.positionAssignmentMode || "SPECIFIC_POSITIONS",
             positionIds: (row.positionIds || []).map(
@@ -76,6 +78,7 @@ export function useEmployeeTypeForm() {
                 code: child.code || "",
                 name: child.name || "",
                 dashboardCategory: child.dashboardCategory || "",
+                laborClassification: child.laborClassification || "OTHER",
                 positionAssignmentMode:
                     child.positionAssignmentMode || "SPECIFIC_POSITIONS",
                 positionIds: (child.positionIds || []).map(
@@ -94,6 +97,7 @@ export function useEmployeeTypeForm() {
             code: "",
             name: "",
             dashboardCategory: "",
+            laborClassification: "OTHER",
             positionAssignmentMode: "SPECIFIC_POSITIONS",
             positionIds: [],
         })
@@ -114,6 +118,10 @@ export function useEmployeeTypeForm() {
             code: normalizeCode(form.code),
             name: form.name.trim(),
             dashboardCategory: normalizeCode(form.dashboardCategory),
+            laborClassification:
+                form.structureMode === "DIRECT"
+                    ? form.laborClassification || "OTHER"
+                    : "OTHER",
             positionAssignmentMode:
                 form.structureMode === "DIRECT"
                     ? form.positionAssignmentMode
@@ -131,6 +139,8 @@ export function useEmployeeTypeForm() {
                           dashboardCategory: normalizeCode(
                               child.dashboardCategory,
                           ),
+                          laborClassification:
+                              child.laborClassification || "OTHER",
                           positionAssignmentMode:
                               child.positionAssignmentMode,
                           positionIds:
