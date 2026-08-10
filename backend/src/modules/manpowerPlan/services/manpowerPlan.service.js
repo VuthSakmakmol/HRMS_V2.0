@@ -436,6 +436,7 @@ export async function createManpowerPlan({ payload, user }) {
         })
 
         clearCacheByPrefix("manpowerPlan:list:")
+    clearCacheByPrefix("excome:")
         return getManpowerPlanById({ manpowerPlanId: plan._id, user })
     } catch (error) {
         handleDuplicate(error)
@@ -479,6 +480,7 @@ export async function updateManpowerPlan({ manpowerPlanId, payload, user }) {
         ).lean()
 
         clearCacheByPrefix("manpowerPlan:list:")
+    clearCacheByPrefix("excome:")
         return getManpowerPlanById({ manpowerPlanId: updated._id, user })
     } catch (error) {
         handleDuplicate(error)
@@ -513,6 +515,7 @@ export async function archiveManpowerPlan({ manpowerPlanId, user }) {
     ).lean()
 
     clearCacheByPrefix("manpowerPlan:list:")
+    clearCacheByPrefix("excome:")
     return getManpowerPlanById({ manpowerPlanId: archived._id, user })
 }
 

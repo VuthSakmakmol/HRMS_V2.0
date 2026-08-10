@@ -345,7 +345,7 @@ function handleDuplicateError(error) {
 
 function clearRecruitmentChannelCaches() {
     clearCacheByPrefix("recruitment-channel:")
-    clearCacheByPrefix("excome:data:")
+    clearCacheByPrefix("excome:")
     clearCacheByPrefix("hr-dashboard:data:")
     clearCacheByPrefix("hr-dashboard:lookups:")
 }

@@ -43,6 +43,10 @@ export const excomeQuerySchema = z
         employeeTypeId: objectIdSchema.optional(),
         employeeTypeChildCode: employeeTypeChildCodeSchema,
         employeeTypeFilterKey: employeeTypeFilterKeySchema,
+        forceRefresh: z
+            .enum(["true", "false"])
+            .transform((value) => value === "true")
+            .optional(),
     })
     .superRefine((value, context) => {
         const startDate = new Date(`${value.startDate}T00:00:00.000Z`)

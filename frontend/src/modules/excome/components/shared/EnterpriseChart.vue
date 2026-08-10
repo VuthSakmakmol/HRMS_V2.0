@@ -164,13 +164,15 @@ const chartData = computed(() => ({
 const options = computed(() => ({
   responsive: true,
   maintainAspectRatio: false,
+  // Keep a tiny transition, but avoid hundreds of milliseconds of chart
+  // animation every time a dashboard filter changes.
   animation: {
-    duration: 380,
+    duration: 120,
     easing: "easeOutQuart",
   },
   transitions: {
     active: {
-      animation: { duration: 180 },
+      animation: { duration: 80 },
     },
   },
   interaction: {

@@ -255,6 +255,7 @@ export async function importHrDashboardTargets({ rows, parseErrors, workspace, u
     }
     clearCacheByPrefix("hrDashboardTarget:list:")
     clearCacheByPrefix("hr-dashboard:data:")
+        clearCacheByPrefix("excome:")
 
     return {
         totalRows: rows.length,

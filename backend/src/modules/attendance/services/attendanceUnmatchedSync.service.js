@@ -28,6 +28,7 @@ function buildIssueFilter({ companyId, branchId, employeeCodes }) {
 function clearAttendanceCaches() {
     clearCacheByPrefix("attendance:")
     clearCacheByPrefix("hr-dashboard:")
+    clearCacheByPrefix("excome:")
 }
 
 /**

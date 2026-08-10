@@ -795,6 +795,7 @@ export async function importShiftsFromRows({
     }
 
     clearCacheByPrefix("shift:list:")
+    clearCacheByPrefix("excome:")
 
     return summary
 }

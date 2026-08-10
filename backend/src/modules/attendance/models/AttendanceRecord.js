@@ -125,6 +125,10 @@ attendanceRecordSchema.index(
     { name: "idx_attendance_filters_v2" },
 )
 attendanceRecordSchema.index(
+    { companyId: 1, branchId: 1, attendanceDate: 1, employeeId: 1 },
+    { name: "idx_attendance_scope_date_employee" },
+)
+attendanceRecordSchema.index(
     { issueCodes: 1, attendanceDate: 1 },
     { name: "idx_attendance_issues" },
 )

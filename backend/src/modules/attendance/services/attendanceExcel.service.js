@@ -4,7 +4,12 @@ import mongoose from "mongoose"
 import Employee from "../../employee/models/Employee.js"
 import Shift from "../../shift/models/Shift.js"
 import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
-import { invalidateAttendanceCaches, upsertAttendanceRecord } from "./attendance.service.js"
+import AttendancePolicy from "../models/AttendancePolicy.js"
+import AttendanceRecord from "../models/AttendanceRecord.js"
+import { invalidateAttendanceCaches } from "./attendance.service.js"
+import { calculateAttendanceResult } from "./attendanceCalculation.service.js"
+import { startOfBusinessDay, toBusinessDateKey } from "../utils/attendanceDate.util.js"
+import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const HEADERS = ["Record Date", "Employee No", "Time1", "Time2", "Vacation"]
 const VACATION_OPTIONS = [
@@ -131,86 +136,409 @@ export async function parseAttendanceWorkbook(buffer) {
     return { rows, errors }
 }
 
-async function resolveEmployeeShift(row, workspace) {
-    const employee = await Employee.findOne({ employeeCode: row.payload.employeeCode.trim().toUpperCase(), recordStatus: "ACTIVE", companyId: workspace.companyId, branchId: workspace.branchId }).lean()
-    if (!employee) return { employee: null, shift: null }
-    const shift = await Shift.findOne({ _id: employee.shiftId, status: "ACTIVE" }).lean()
-    return { employee, shift }
+function normalizedEmployeeCode(value) {
+    return String(value || "").trim().toUpperCase()
 }
 
-async function saveImportIssue({ row, user, workspace, importBatchId }) {
-    await AttendanceImportIssue.findOneAndUpdate(
-        { companyId: workspace.companyId, branchId: workspace.branchId, employeeCode: row.payload.employeeCode.trim().toUpperCase(), attendanceDate: row.payload.attendanceDate, status: "NO_EMPLOYEE_MATCH" },
-        { $set: { importBatchId, sourceRow: row.rowNumber, firstInAt: row.payload.time1At, lastOutAt: row.payload.time2At, leaveCode: row.payload.leaveCode || null, createdByAccountId: user.accountId }, $setOnInsert: { companyId: workspace.companyId, branchId: workspace.branchId, employeeCode: row.payload.employeeCode, attendanceDate: row.payload.attendanceDate, status: "NO_EMPLOYEE_MATCH" } },
-        { upsert: true, runValidators: true },
+function attendanceKey(employeeId, attendanceDate) {
+    return `${String(employeeId)}|${toBusinessDateKey(attendanceDate)}`
+}
+
+function policySnapshot(policy) {
+    if (!policy) return {}
+    return {
+        policyId: policy._id,
+        name: policy.name,
+        code: policy.code,
+        graceInMinutes: policy.graceInMinutes,
+        graceOutMinutes: policy.graceOutMinutes,
+        minimumWorkedMinutes: policy.minimumWorkedMinutes,
+        lateRoundUnitMinutes: policy.lateRoundUnitMinutes,
+        lateRoundMethod: policy.lateRoundMethod,
+        earlyLeaveRoundUnitMinutes: policy.earlyLeaveRoundUnitMinutes,
+        earlyLeaveRoundMethod: policy.earlyLeaveRoundMethod,
+        autoGenerateAbsent: policy.autoGenerateAbsent,
+        treatSundayAsRestDay: policy.treatSundayAsRestDay,
+    }
+}
+
+function hasConfirmedHrCorrection(record) {
+    return record?.lockStatus === "HR_VERIFIED" || (
+        record?.verificationStatus === "CORRECTED" &&
+        record?.correction?.reason &&
+        record.correction.reason !== "Manual correction"
     )
 }
 
-async function importOneSourceRow({ row, user, workspace, shift }) {
-    const common = { employeeCode: row.payload.employeeCode, ...workspace, note: row.payload.note || "" }
-    if (!isOvernightShift(shift)) {
-        return [await upsertAttendanceRecord({ payload: { ...common, attendanceDate: row.payload.attendanceDate, firstInAt: row.payload.time1At, lastOutAt: row.payload.time2At, leaveCode: row.payload.leaveCode }, user, source: "EXCEL_IMPORT", invalidateCache: false })]
-    }
-    const records = []
-    // Payroll overnight rule:
-    // Time1 on date D = OUT for the shift that started on D-1.
-    if (row.payload.time1At) {
-        records.push(await upsertAttendanceRecord({ payload: { ...common, attendanceDate: addDays(row.payload.attendanceDate, -1), lastOutAt: row.payload.time1At }, user, source: "EXCEL_IMPORT", invalidateCache: false }))
-    }
-    // Time2 on date D = IN for the shift starting on D.
-    if (row.payload.time2At || row.payload.leaveCode) {
-        records.push(await upsertAttendanceRecord({ payload: { ...common, attendanceDate: row.payload.attendanceDate, firstInAt: row.payload.time2At, leaveCode: row.payload.leaveCode }, user, source: "EXCEL_IMPORT", invalidateCache: false }))
-    }
-    return records
+function assertRecordUnlocked(record) {
+    return !["PAYROLL_LOCKED", "FINALIZED"].includes(record?.lockStatus)
 }
 
+function buildImportMutations(row, employee, shift) {
+    const common = {
+        sourceRow: row.rowNumber,
+        employee,
+        shift,
+        leaveCode: row.payload.leaveCode || null,
+        note: row.payload.note || "",
+    }
+
+    if (!isOvernightShift(shift)) {
+        return [{
+            ...common,
+            attendanceDate: startOfBusinessDay(toBusinessDateKey(row.payload.attendanceDate)),
+            firstInAt: row.payload.time1At || null,
+            lastOutAt: row.payload.time2At || null,
+        }]
+    }
+
+    const mutations = []
+    if (row.payload.time1At) {
+        mutations.push({
+            ...common,
+            attendanceDate: startOfBusinessDay(toBusinessDateKey(addDays(row.payload.attendanceDate, -1))),
+            firstInAt: null,
+            lastOutAt: row.payload.time1At,
+            leaveCode: null,
+        })
+    }
+    if (row.payload.time2At || row.payload.leaveCode) {
+        mutations.push({
+            ...common,
+            attendanceDate: startOfBusinessDay(toBusinessDateKey(row.payload.attendanceDate)),
+            firstInAt: row.payload.time2At || null,
+            lastOutAt: null,
+        })
+    }
+    return mutations
+}
+
+async function loadPoliciesForWorkspace(workspace) {
+    return AttendancePolicy.find({
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+        status: "ACTIVE",
+    })
+        .sort({ effectiveFrom: -1, updatedAt: -1 })
+        .lean()
+}
+
+function policyForDate(policies, attendanceDate) {
+    const time = new Date(attendanceDate).getTime()
+    return policies.find((policy) => {
+        const from = policy.effectiveFrom ? new Date(policy.effectiveFrom).getTime() : -Infinity
+        const to = policy.effectiveTo ? new Date(policy.effectiveTo).getTime() : Infinity
+        return from <= time && to >= time
+    }) || null
+}
+
+function toBulkValues({ mutation, existing, user, policy }) {
+    const preserveFirstIn = mutation.firstInAt || existing?.firstInAt || null
+    const preserveLastOut = mutation.lastOutAt || existing?.lastOutAt || null
+    const calculated = calculateAttendanceResult({
+        workDate: toBusinessDateKey(mutation.attendanceDate),
+        shift: mutation.shift,
+        policy,
+        dayType: existing?.dayType || "WORKING_DAY",
+        correctedTimes: {
+            firstInAt: preserveFirstIn,
+            lastOutAt: preserveLastOut,
+        },
+    })
+
+    if (!calculated) return null
+
+    const employee = mutation.employee
+    return {
+        employeeCode: employee.employeeCode,
+        companyId: employee.companyId,
+        branchId: employee.branchId,
+        departmentId: employee.departmentId,
+        positionId: employee.positionId,
+        lineId: employee.lineId,
+        shiftId: employee.shiftId,
+        source: "EXCEL_IMPORT",
+        leaveCode: mutation.leaveCode || existing?.leaveCode || null,
+        note: mutation.note || existing?.note || "",
+        policySnapshot: policySnapshot(policy),
+        calculationVersion: "ATTENDANCE_ENGINE_V2",
+        updatedByAccountId: user.accountId,
+        ...calculated,
+        verificationStatus: calculated.verificationStatus,
+        lockStatus: existing?.lockStatus || "OPEN",
+        correction: {
+            correctedByAccountId: null,
+            correctedAt: null,
+            reason: "",
+            previousValues: null,
+        },
+    }
+}
+
+async function bulkWriteInChunks(Model, operations, chunkSize = 2000) {
+    for (let index = 0; index < operations.length; index += chunkSize) {
+        await Model.bulkWrite(operations.slice(index, index + chunkSize), { ordered: false })
+    }
+}
+
+function countSummaryRecord(summary, current) {
+    if (!current) return
+    if (current.status === "ABSENT" && !current.leaveCode) summary.absentCount += 1
+    if (current.leaveCode === "AL") summary.annualLeaveCount += 1
+    if (current.leaveCode === "ML") summary.maternityLeaveCount += 1
+    if (current.leaveCode === "SL") summary.sickLeaveCount += 1
+    if (current.leaveCode === "UL") summary.unpaidLeaveCount += 1
+    if (current.status === "MISSING_IN") summary.missingInCount += 1
+    if (current.status === "MISSING_OUT") summary.missingOutCount += 1
+}
+
+/**
+ * High-throughput attendance import.
+ *
+ * The old importer queried Employee -> Shift -> Attendance -> Policy and then
+ * updated Attendance once per source row. For a 3,500-row payroll file that
+ * caused tens of thousands of MongoDB round trips. This version performs the
+ * same attendance rules with batched lookups and bulkWrite operations.
+ */
 export async function importAttendanceRows({ rows, parseErrors, user, workspace, onProgress }) {
     const importBatchId = new mongoose.Types.ObjectId()
-    const summary = { importBatchId: importBatchId.toString(), totalRows: rows.length + parseErrors.length, successCount: 0, absentCount: 0, annualLeaveCount: 0, maternityLeaveCount: 0, sickLeaveCount: 0, unpaidLeaveCount: 0, missingInCount: 0, missingOutCount: 0, unmatchedCount: 0, errorCount: parseErrors.length, errors: [...parseErrors], issues: [] }
-    let completedRows = 0
-    const groups = new Map()
-    for (const row of rows) {
-        const key = row.payload.employeeCode.trim().toUpperCase()
-        if (!groups.has(key)) groups.set(key, [])
-        groups.get(key).push(row)
+    const summary = {
+        importBatchId: importBatchId.toString(),
+        totalRows: rows.length + parseErrors.length,
+        successCount: 0,
+        absentCount: 0,
+        annualLeaveCount: 0,
+        maternityLeaveCount: 0,
+        sickLeaveCount: 0,
+        unpaidLeaveCount: 0,
+        missingInCount: 0,
+        missingOutCount: 0,
+        unmatchedCount: 0,
+        errorCount: parseErrors.length,
+        errors: [...parseErrors],
+        issues: [],
     }
-    for (const group of groups.values()) group.sort((a, b) => new Date(a.payload.attendanceDate) - new Date(b.payload.attendanceDate))
-    const queue = [...groups.values()]; let cursor = 0
-    const worker = async () => {
-        while (cursor < queue.length) {
-            const group = queue[cursor++]
-            for (const row of group) {
-                try {
-                    const { employee, shift } = await resolveEmployeeShift(row, workspace)
-                    if (!employee) {
-                        await saveImportIssue({ row, user, workspace, importBatchId })
-                        summary.unmatchedCount += 1
-                        summary.issues.push({ row: row.rowNumber, code: "NO_EMPLOYEE_MATCH", employeeCode: row.payload.employeeCode, message: `Employee No ${row.payload.employeeCode} was not found. The row was saved to Unmatched Attendance.` })
-                    } else if (!shift) {
-                        throw Object.assign(new Error("Employee has no active shift assignment."), { code: "ATTENDANCE_SHIFT_NOT_FOUND" })
-                    } else {
-                        const records = await importOneSourceRow({ row, user, workspace, shift })
-                        summary.successCount += 1
-                        const current = records.at(-1)
-                        if (current?.status === "ABSENT" && !current.leaveCode) summary.absentCount += 1
-                        if (current?.leaveCode === "AL") summary.annualLeaveCount += 1
-                        if (current?.leaveCode === "ML") summary.maternityLeaveCount += 1
-                        if (current?.leaveCode === "SL") summary.sickLeaveCount += 1
-                        if (current?.leaveCode === "UL") summary.unpaidLeaveCount += 1
-                        if (current?.status === "MISSING_IN") summary.missingInCount += 1
-                        if (current?.status === "MISSING_OUT") summary.missingOutCount += 1
-                    }
-                } catch (error) {
-                    summary.errorCount += 1
-                    summary.errors.push({ row: row.rowNumber, code: error.code || "IMPORT_FAILED", message: error.code === "ATTENDANCE_RECORD_LOCKED" ? "Attendance is payroll-locked or finalized." : error.message || "Attendance row could not be imported." })
-                } finally {
-                    completedRows += 1
-                    onProgress?.({ phase: "SAVING_ROWS", percent: 35 + Math.round((completedRows / Math.max(rows.length, 1)) * 60), processedRows: completedRows, totalRows: summary.totalRows })
-                }
+
+    if (!workspace?.companyId || !workspace?.branchId) {
+        throw new Error("Company and branch workspace are required for attendance import.")
+    }
+    assertAttendanceScope(user, workspace.companyId, workspace.branchId)
+    if (!rows.length) return summary
+
+    onProgress?.({
+        phase: "LOADING_MASTER_DATA",
+        percent: 35,
+        processedRows: 0,
+        totalRows: summary.totalRows,
+    })
+
+    const employeeCodes = [...new Set(rows.map((row) => normalizedEmployeeCode(row.payload.employeeCode)).filter(Boolean))]
+    const employees = await Employee.find({
+        employeeCode: { $in: employeeCodes },
+        recordStatus: "ACTIVE",
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+    }).lean()
+    const employeeByCode = new Map(employees.map((employee) => [normalizedEmployeeCode(employee.employeeCode), employee]))
+
+    const shiftIds = [...new Set(employees.map((employee) => String(employee.shiftId || "")).filter(Boolean))]
+    const shifts = shiftIds.length
+        ? await Shift.find({ _id: { $in: shiftIds }, status: "ACTIVE" }).lean()
+        : []
+    const shiftById = new Map(shifts.map((shift) => [String(shift._id), shift]))
+    const policies = await loadPoliciesForWorkspace(workspace)
+
+    onProgress?.({
+        phase: "MATCHING_EMPLOYEES",
+        percent: 45,
+        processedRows: 0,
+        totalRows: summary.totalRows,
+    })
+
+    const issueOperations = []
+    const validRows = []
+    const mutations = []
+
+    for (const row of rows) {
+        const code = normalizedEmployeeCode(row.payload.employeeCode)
+        const employee = employeeByCode.get(code)
+        if (!employee) {
+            summary.unmatchedCount += 1
+            summary.issues.push({
+                row: row.rowNumber,
+                code: "NO_EMPLOYEE_MATCH",
+                employeeCode: row.payload.employeeCode,
+                message: `Employee No ${row.payload.employeeCode} was not found. The row was saved to Unmatched Attendance.`,
+            })
+            issueOperations.push({
+                updateOne: {
+                    filter: {
+                        companyId: workspace.companyId,
+                        branchId: workspace.branchId,
+                        employeeCode: code,
+                        attendanceDate: row.payload.attendanceDate,
+                        status: "NO_EMPLOYEE_MATCH",
+                    },
+                    update: {
+                        $set: {
+                            importBatchId,
+                            sourceRow: row.rowNumber,
+                            firstInAt: row.payload.time1At,
+                            lastOutAt: row.payload.time2At,
+                            leaveCode: row.payload.leaveCode || null,
+                            createdByAccountId: user.accountId,
+                        },
+                        $setOnInsert: {
+                            companyId: workspace.companyId,
+                            branchId: workspace.branchId,
+                            employeeCode: code,
+                            attendanceDate: row.payload.attendanceDate,
+                            status: "NO_EMPLOYEE_MATCH",
+                        },
+                    },
+                    upsert: true,
+                },
+            })
+            continue
+        }
+
+        const shift = shiftById.get(String(employee.shiftId || ""))
+        if (!shift) {
+            summary.errorCount += 1
+            summary.errors.push({
+                row: row.rowNumber,
+                code: "ATTENDANCE_SHIFT_NOT_FOUND",
+                message: "Employee has no active shift assignment.",
+            })
+            continue
+        }
+
+        const rowMutations = buildImportMutations(row, employee, shift)
+        validRows.push({ row, mutations: rowMutations })
+        mutations.push(...rowMutations)
+    }
+
+    if (issueOperations.length) {
+        await bulkWriteInChunks(AttendanceImportIssue, issueOperations)
+    }
+
+    if (!mutations.length) {
+        summary.successCount += validRows.length
+        onProgress?.({
+            phase: "COMPLETED",
+            percent: 100,
+            processedRows: rows.length,
+            totalRows: summary.totalRows,
+        })
+        return summary
+    }
+
+    onProgress?.({
+        phase: "LOADING_EXISTING_ATTENDANCE",
+        percent: 55,
+        processedRows: 0,
+        totalRows: summary.totalRows,
+    })
+
+    const employeeIds = [...new Set(mutations.map((mutation) => String(mutation.employee._id)))]
+    const attendanceDates = [...new Map(mutations.map((mutation) => [toBusinessDateKey(mutation.attendanceDate), mutation.attendanceDate])).values()]
+    const existingRecords = await AttendanceRecord.find({
+        employeeId: { $in: employeeIds },
+        attendanceDate: { $in: attendanceDates },
+    }).lean()
+    const stateByKey = new Map(existingRecords.map((record) => [attendanceKey(record.employeeId, record.attendanceDate), record]))
+
+    const attendanceOperationByKey = new Map()
+    let processedRows = 0
+
+    for (const item of validRows) {
+        let rowFailed = false
+        let current = null
+
+        for (const mutation of item.mutations) {
+            const key = attendanceKey(mutation.employee._id, mutation.attendanceDate)
+            const existing = stateByKey.get(key) || null
+
+            if (!assertRecordUnlocked(existing)) {
+                summary.errorCount += 1
+                summary.errors.push({
+                    row: item.row.rowNumber,
+                    code: "ATTENDANCE_RECORD_LOCKED",
+                    message: "Attendance is payroll-locked or finalized.",
+                })
+                rowFailed = true
+                break
             }
+
+            if (hasConfirmedHrCorrection(existing)) {
+                current = existing
+                continue
+            }
+
+            const policy = policyForDate(policies, mutation.attendanceDate)
+            const values = toBulkValues({ mutation, existing, user, policy })
+            if (!values) continue
+
+            attendanceOperationByKey.set(key, {
+                updateOne: {
+                    filter: {
+                        employeeId: mutation.employee._id,
+                        attendanceDate: mutation.attendanceDate,
+                    },
+                    update: {
+                        $set: values,
+                        $setOnInsert: {
+                            employeeId: mutation.employee._id,
+                            attendanceDate: mutation.attendanceDate,
+                            createdByAccountId: user.accountId,
+                        },
+                    },
+                    upsert: true,
+                },
+            })
+
+            current = {
+                ...existing,
+                ...values,
+                employeeId: mutation.employee._id,
+                attendanceDate: mutation.attendanceDate,
+            }
+            stateByKey.set(key, current)
+        }
+
+        if (!rowFailed) {
+            summary.successCount += 1
+            countSummaryRecord(summary, current)
+        }
+
+        processedRows += 1
+        if (processedRows % 250 === 0 || processedRows === validRows.length) {
+            onProgress?.({
+                phase: "BUILDING_BATCH",
+                percent: 55 + Math.round((processedRows / Math.max(validRows.length, 1)) * 20),
+                processedRows,
+                totalRows: summary.totalRows,
+            })
         }
     }
-    await Promise.all(Array.from({ length: Math.min(12, Math.max(1, queue.length)) }, worker))
-    if (rows.length) invalidateAttendanceCaches()
+
+    onProgress?.({
+        phase: "SAVING_BATCH",
+        percent: 80,
+        processedRows,
+        totalRows: summary.totalRows,
+    })
+    const attendanceOperations = [...attendanceOperationByKey.values()]
+    if (attendanceOperations.length) {
+        await bulkWriteInChunks(AttendanceRecord, attendanceOperations)
+    }
+
+    invalidateAttendanceCaches()
+    onProgress?.({
+        phase: "COMPLETED",
+        percent: 100,
+        processedRows: rows.length,
+        totalRows: summary.totalRows,
+    })
     return summary
 }

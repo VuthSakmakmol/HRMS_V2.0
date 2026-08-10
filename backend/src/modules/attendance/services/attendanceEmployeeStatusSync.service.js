@@ -164,6 +164,7 @@ function clearEmployeeStatusCaches() {
     clearCacheByPrefix("employeeMovement:list:")
     clearCacheByPrefix("employeeType:")
     clearCacheByPrefix("hr-dashboard:")
+    clearCacheByPrefix("excome:")
     clearCacheByPrefix("manpower-plan:")
     clearCacheByPrefix("attendance:")
 }

@@ -833,6 +833,7 @@ export async function importPositionsFromRows({
     }
 
     clearCacheByPrefix("position:list:")
+    clearCacheByPrefix("excome:")
 
     return summary
 }

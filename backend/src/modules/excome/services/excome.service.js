@@ -15,6 +15,7 @@ import Company from "../../organization/models/Company.js"
 import Department from "../../organization/models/Department.js"
 import Position from "../../organization/models/Position.js"
 import Shift from "../../shift/models/Shift.js"
+import { buildExcomeAttendanceAnalytics } from "./excomeAttendanceAnalytics.service.js"
 
 const MONTH_LABELS = Object.freeze([
     "Jan",
@@ -426,7 +427,11 @@ function employeeWasActiveOn(employee, date) {
 }
 
 async function loadEmployees(query) {
-    return Employee.find({
+    const cacheKey = `excome:source:employees:${JSON.stringify(normalizedQuery(query))}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await Employee.find({
         ...buildDimensionMatch(query),
         recordStatus: { $ne: "ARCHIVED" },
     })
@@ -451,6 +456,32 @@ async function loadEmployees(query) {
             "resignReason",
         ])
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
+}
+
+function sameId(left, right) {
+    if (!right) return true
+    return String(left || "") === String(right)
+}
+
+function filterEmployeesForQuery(employees = [], query = {}) {
+    const filter = normalizedQuery(query)
+
+    return employees.filter((employee) => {
+        for (const field of FILTER_FIELDS) {
+            if (filter[field] && !sameId(employee[field], filter[field])) return false
+        }
+
+        if (
+            filter.employeeTypeChildCode &&
+            String(employee.employeeTypeChildCode || "") !== String(filter.employeeTypeChildCode)
+        ) {
+            return false
+        }
+
+        return true
+    })
 }
 
 async function loadPlans(query, periods) {
@@ -465,7 +496,14 @@ async function loadPlans(query, periods) {
         dimensionMatch.positionId = { $in: positionIds }
     }
 
-    return ManpowerPlan.find({
+    const cacheKey = `excome:source:plans:${JSON.stringify({
+        query: normalizedQuery(query),
+        periods: periods.map((period) => period.key),
+    })}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await ManpowerPlan.find({
         ...dimensionMatch,
         status: "ACTIVE",
         $or: periodConditions,
@@ -479,6 +517,8 @@ async function loadPlans(query, periods) {
             "targetRoadmap",
         ])
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
 }
 
 async function loadMovements(query, startDate, endDate) {
@@ -488,7 +528,15 @@ async function loadMovements(query, startDate, endDate) {
         FILTER_FIELDS.some((field) => normalizedQuery(query)[field]) ||
         Boolean(normalizedQuery(query).employeeTypeChildCode)
 
-    return EmployeeMovement.find({
+    const cacheKey = `excome:source:movements:${JSON.stringify({
+        query: normalizedQuery(query),
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+    })}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await EmployeeMovement.find({
         effectiveDate: { $gte: startDate, $lte: endDate },
         status: "ACTIVE",
         ...(hasDimensionFilter ? { $or: [fromMatch, toMatch] } : {}),
@@ -496,16 +544,30 @@ async function loadMovements(query, startDate, endDate) {
         .select([
             "movementType",
             "effectiveDate",
+            "from.companyId",
+            "from.branchId",
+            "from.departmentId",
+            "from.positionId",
+            "from.lineId",
+            "from.shiftId",
             "from.employeeTypeId",
             "from.employeeTypeChildId",
             "from.employeeTypeChildCode",
             "from.employeeTypeChildName",
+            "to.companyId",
+            "to.branchId",
+            "to.departmentId",
+            "to.positionId",
+            "to.lineId",
+            "to.shiftId",
             "to.employeeTypeId",
             "to.employeeTypeChildId",
             "to.employeeTypeChildCode",
             "to.employeeTypeChildName",
         ])
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
 }
 
 async function loadAttendanceRecords(query, startDate, endDate, employees) {
@@ -634,6 +696,36 @@ function movementMatchesEmployeeTypeFilter(snapshot = {}, filter = {}) {
     }
 
     return true
+}
+
+function movementSnapshotMatchesQuery(snapshot = {}, query = {}) {
+    const filter = normalizedQuery(query)
+
+    for (const field of FILTER_FIELDS) {
+        if (filter[field] && !sameId(snapshot[field], filter[field])) return false
+    }
+
+    if (
+        filter.employeeTypeChildCode &&
+        String(snapshot.employeeTypeChildCode || "") !== String(filter.employeeTypeChildCode)
+    ) {
+        return false
+    }
+
+    return true
+}
+
+function filterMovementsForQuery(movements = [], query = {}) {
+    const filter = normalizedQuery(query)
+    const hasFilter = FILTER_FIELDS.some((field) => Boolean(filter[field])) ||
+        Boolean(filter.employeeTypeChildCode)
+
+    if (!hasFilter) return movements
+
+    return movements.filter((movement) =>
+        movementSnapshotMatchesQuery(movement.from || {}, filter) ||
+        movementSnapshotMatchesQuery(movement.to || {}, filter),
+    )
 }
 
 function buildMovementSeries({ movements, periods, query }) {
@@ -855,7 +947,14 @@ async function loadRecruitmentChannels(query = {}) {
         match.$and = andConditions
     }
 
-    return RecruitmentChannel.find(match)
+    const cacheKey = `excome:source:recruitment:${JSON.stringify({
+        companyId: query.companyId || null,
+        branchId: query.branchId || null,
+    })}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await RecruitmentChannel.find(match)
         .select([
             "companyId",
             "branchId",
@@ -870,6 +969,8 @@ async function loadRecruitmentChannels(query = {}) {
         ])
         .sort({ sortOrder: 1, name: 1 })
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
 }
 
 
@@ -986,7 +1087,15 @@ async function loadDashboardTargets(query, year) {
         match.branchId = toObjectId(query.branchId)
     }
 
-    return HrDashboardTarget.find(match)
+    const cacheKey = `excome:source:targets:${JSON.stringify({
+        companyId: query.companyId || null,
+        branchId: query.branchId || null,
+        year,
+    })}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await HrDashboardTarget.find(match)
         .select([
             "companyId",
             "branchId",
@@ -1000,6 +1109,8 @@ async function loadDashboardTargets(query, year) {
             "updatedAt",
         ])
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
 }
 
 function createRecruitmentMonthRows(periods = []) {
@@ -2361,7 +2472,10 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
             ? "ALL_POSITIONS"
             : employeeType.positionAssignmentMode || "SPECIFIC_POSITIONS"
         const parentPositionIds = hasChildren
-            ? aggregateChildPositionIds(children)
+            ? normalizeIdList([
+                ...(employeeType.positionIds || []),
+                ...aggregateChildPositionIds(children),
+            ])
             : normalizeIdList(employeeType.positionIds || [])
 
         options.push({
@@ -2468,9 +2582,42 @@ function buildGeneralTotalQuery(query = {}) {
     }
 }
 
+function filterPlansForQuery(plans = [], query = {}, lookups = {}) {
+    const filter = normalizedQuery(query)
+    let allowedPositionIds = null
+
+    if (!filter.positionId && filter.employeeTypeId) {
+        const lookupKey = filter.employeeTypeChildCode
+            ? `CHILD:${filter.employeeTypeId}:${filter.employeeTypeChildCode}`
+            : `TYPE:${filter.employeeTypeId}`
+        const option = (lookups.employeeTypes || []).find((item) => item.key === lookupKey)
+
+        if (!option) return []
+
+        if (option.positionAssignmentMode !== "ALL_POSITIONS") {
+            allowedPositionIds = new Set((option.positionIds || []).map(String))
+            if (!allowedPositionIds.size) return []
+        }
+    }
+
+    return plans.filter((plan) => {
+        if (filter.departmentId && !sameId(plan.departmentId, filter.departmentId)) return false
+        if (filter.positionId && !sameId(plan.positionId, filter.positionId)) return false
+        if (allowedPositionIds && !allowedPositionIds.has(String(plan.positionId || ""))) return false
+        return true
+    })
+}
+
 
 async function loadExitReasons(query = {}) {
-    return ExitReason.find({
+    const cacheKey = `excome:source:exit-reasons:${JSON.stringify({
+        companyId: query.companyId || null,
+        branchId: query.branchId || null,
+    })}`
+    const cached = getCache(cacheKey)
+    if (cached) return cached
+
+    const rows = await ExitReason.find({
         status: "ACTIVE",
         $or: [
             { companyId: null, branchId: null },
@@ -2483,6 +2630,8 @@ async function loadExitReasons(query = {}) {
         .select(["code", "name", "shortName", "companyId", "branchId", "sortOrder"])
         .sort({ sortOrder: 1, name: 1 })
         .lean()
+
+    return setCache(cacheKey, rows, 120_000)
 }
 
 export async function getExcomeLookups({ query }) {
@@ -2585,7 +2734,7 @@ export async function getExcomeLookups({ query }) {
     return setCache(cacheKey, result, 60_000)
 }
 
-function buildDataReadiness({ employees, plans, attendanceRecords, recruitmentChannels, movements, dashboardTargets }) {
+function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recruitmentChannels, movements, dashboardTargets }) {
     const totalEmployees = employees.length
     const countMissing = (field) => employees.filter((employee) => !employee?.[field]).length
     const missingExitReason = employees.filter((employee) =>
@@ -2600,7 +2749,7 @@ function buildDataReadiness({ employees, plans, attendanceRecords, recruitmentCh
         { key: "department", label: "Department", ready: totalEmployees > 0 && countMissing("departmentId") === 0, count: countMissing("departmentId"), detail: `${countMissing("departmentId").toLocaleString()} employees missing department` },
         { key: "position", label: "Position", ready: totalEmployees > 0 && countMissing("positionId") === 0, count: countMissing("positionId"), detail: `${countMissing("positionId").toLocaleString()} employees missing position` },
         { key: "shift", label: "Shift", ready: totalEmployees > 0 && countMissing("shiftId") === 0, count: countMissing("shiftId"), detail: `${countMissing("shiftId").toLocaleString()} employees missing shift` },
-        { key: "attendance", label: "Attendance", ready: attendanceRecords.length > 0, count: attendanceRecords.length, detail: attendanceRecords.length ? `${attendanceRecords.length.toLocaleString()} attendance records in selected range` : "No attendance data in selected range" },
+        { key: "attendance", label: "Attendance", ready: attendanceRecordCount > 0, count: attendanceRecordCount, detail: attendanceRecordCount ? `${attendanceRecordCount.toLocaleString()} attendance records in selected range` : "No attendance data in selected range" },
         { key: "manpowerPlan", label: "Manpower Plan", ready: plans.length > 0, count: plans.length, detail: plans.length ? `${plans.length.toLocaleString()} active plan rows` : "Budget and roadmap are not configured" },
         { key: "recruitment", label: "Recruitment Channels", ready: recruitmentChannels.length > 0, count: recruitmentChannels.length, detail: recruitmentChannels.length ? `${recruitmentChannels.length.toLocaleString()} recruitment channels available` : "Recruitment channel data is missing" },
         { key: "movement", label: "Employee Movement", ready: movements.length > 0, count: movements.length, detail: movements.length ? `${movements.length.toLocaleString()} movement records in selected range` : "No employee movement history in selected range" },
@@ -2619,8 +2768,9 @@ function buildDataReadiness({ employees, plans, attendanceRecords, recruitmentCh
 
 export async function getExcome({ query }) {
     const cleanQuery = normalizedQuery(query)
-    const cacheKey = `excome:data:${JSON.stringify(cleanQuery)}`
-    const cachedResult = getCache(cacheKey)
+    const { forceRefresh = false, ...cacheableQuery } = cleanQuery
+    const cacheKey = `excome:data:${JSON.stringify(cacheableQuery)}`
+    const cachedResult = forceRefresh ? null : getCache(cacheKey)
 
     if (cachedResult) return cachedResult
 
@@ -2639,7 +2789,6 @@ export async function getExcome({ query }) {
         query: {
             companyId: cleanQuery.companyId,
             branchId: cleanQuery.branchId,
-            departmentId: cleanQuery.departmentId,
         },
     })
 
@@ -2647,47 +2796,37 @@ export async function getExcome({ query }) {
 
     const [
         lookups,
-        employees,
         totalGeneralEmployees,
-        plans,
         totalGeneralPlans,
-        movements,
         turnoverMovements,
         recruitmentChannels,
         dashboardTargets,
         exitReasons,
-        lines,
     ] = await Promise.all([
-            lookupsPromise,
-            loadEmployees(cleanQuery),
-            loadEmployees(totalGeneralQuery),
-            loadPlans(cleanQuery, periods),
-            loadPlans(totalGeneralQuery, periods),
-            loadMovements(cleanQuery, startDate, endDate),
-            loadMovements(cleanQuery, monthStart(startDate.getUTCFullYear() - 1, 1), monthEnd(startDate.getUTCFullYear(), 12)),
-            loadRecruitmentChannels(cleanQuery),
-            loadDashboardTargets(cleanQuery, startDate.getUTCFullYear()),
-            loadExitReasons(cleanQuery),
-            Line.find({
-                status: "ACTIVE",
-                ...(cleanQuery.companyId ? { companyId: toObjectId(cleanQuery.companyId) } : {}),
-                ...(cleanQuery.branchId ? { branchId: toObjectId(cleanQuery.branchId) } : {}),
-                ...(cleanQuery.departmentId ? { departmentId: toObjectId(cleanQuery.departmentId) } : {}),
-                ...(cleanQuery.lineId ? { _id: toObjectId(cleanQuery.lineId) } : {}),
-            })
-                .select(["code", "name"])
-                .lean(),
-        ])
-
-    const [attendanceRecords, attendanceComparisonRecords] = await Promise.all([
-        loadAttendanceRecords(cleanQuery, startDate, endDate, employees),
-        loadAttendanceRecords(
-            cleanQuery,
+        lookupsPromise,
+        loadEmployees(totalGeneralQuery),
+        loadPlans(totalGeneralQuery, periods),
+        loadMovements(
+            totalGeneralQuery,
             monthStart(selectedYear - 1, 1),
             monthEnd(selectedYear, 12),
-            employees,
         ),
+        loadRecruitmentChannels(cleanQuery),
+        loadDashboardTargets(cleanQuery, startDate.getUTCFullYear()),
+        loadExitReasons(cleanQuery),
     ])
+
+    // Employee Master for the company/branch is loaded once. Department,
+    // position, line, shift and employee-type filters are cheap in-memory
+    // operations over ~3,500 employees instead of a second MongoDB round-trip.
+    const employees = filterEmployeesForQuery(totalGeneralEmployees, cleanQuery)
+    const plans = filterPlansForQuery(totalGeneralPlans, cleanQuery, lookups)
+    const filteredTurnoverMovements = filterMovementsForQuery(turnoverMovements, cleanQuery)
+    const movements = filteredTurnoverMovements.filter((movement) => {
+        const date = new Date(movement.effectiveDate)
+        return date >= startDate && date <= endDate
+    })
+    const lines = lookups.lines || []
 
     const selectedPeriod = periods.find((period) => period.key === selectedPeriodKey) || periods.at(-1)
     const absenceTargetRates = buildDashboardTargetRates({
@@ -2702,7 +2841,6 @@ export async function getExcome({ query }) {
         query: cleanQuery,
         fallbackRate: DEFAULT_TURNOVER_TARGET_RATE,
     })
-    const attendanceMonthly = buildAttendanceSeries({ records: attendanceRecords, periods })
     const manpower = buildManpowerSeries({ employees, plans, periods })
     const totalManpower = buildManpowerSeries({
         employees: totalGeneralEmployees,
@@ -2717,24 +2855,23 @@ export async function getExcome({ query }) {
         query: cleanQuery,
         lookups,
     })
-    const attendanceAbsenceComparison = buildAttendanceAbsenceComparison({
-        records: attendanceComparisonRecords,
-        selectedYear,
-        selectedLabel: selectedMetricLabel,
-        targetRates: absenceTargetRates,
-    })
+    const [attendanceAnalytics] = await Promise.all([
+        buildExcomeAttendanceAnalytics({
+            query: cleanQuery,
+            employees,
+            selectedYear,
+            selectedLabel: selectedMetricLabel,
+            targetRates: absenceTargetRates,
+            departments: lookups.departments,
+            lines,
+        }),
+    ])
     const turnoverComparison = buildTurnoverComparison({
         employees,
-        movements: turnoverMovements,
+        movements: filteredTurnoverMovements,
         selectedYear,
         selectedLabel: selectedMetricLabel,
         targetRates: turnoverTargetRates,
-    })
-    const attendanceAbsenceTables = buildAttendanceAbsenceTables({
-        records: attendanceComparisonRecords,
-        periods,
-        selectedYear,
-        departments: lookups.departments,
     })
 
     const result = {
@@ -2753,10 +2890,11 @@ export async function getExcome({ query }) {
             employeeTypeFilterKey: cleanQuery.employeeTypeFilterKey || null,
             employeeTypeLabel: selectedEmployeeTypeLabel,
         },
+        lookups,
         readiness: buildDataReadiness({
             employees,
             plans,
-            attendanceRecords,
+            attendanceRecordCount: attendanceAnalytics.recordCount,
             recruitmentChannels,
             movements,
             dashboardTargets,
@@ -2779,14 +2917,7 @@ export async function getExcome({ query }) {
             startDate,
             endDate,
         }),
-        attendance: {
-            summary: buildAttendanceSummary(attendanceMonthly),
-            monthly: attendanceMonthly,
-            byLine: buildAttendanceLineSummary({ records: attendanceRecords, lines }),
-            absenceComparison: attendanceAbsenceComparison,
-            absenceOverall: attendanceAbsenceTables.overall,
-            topAbsentDepartments: attendanceAbsenceTables.topAbsentDepartments,
-        },
+        attendance: attendanceAnalytics.attendance,
         exitAnalysis: buildExitAnalysisDashboard({
             employees,
             exitReasons,
@@ -2799,5 +2930,5 @@ export async function getExcome({ query }) {
         movement: buildMovementSeries({ movements, periods, query: cleanQuery }),
     }
 
-    return setCache(cacheKey, result, 30_000)
+    return setCache(cacheKey, result, 120_000)
 }

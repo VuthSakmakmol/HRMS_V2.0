@@ -131,11 +131,11 @@ export async function exportAttendanceRecords(params = {}) {
 }
 
 export async function fetchAttendanceDailyReport(params = {}) {
-    const response = await apiClient.post(`${ATTENDANCE_ENDPOINT}/daily-report/jobs`, {}, {
+    const response = await apiClient.get(`${ATTENDANCE_ENDPOINT}/daily-report`, {
         params: withoutBlankParams(params),
         timeout: 0,
     })
-    return response.data.data.job
+    return response.data.data.report
 }
 
 export async function exportAttendanceDailyReport(params = {}) {

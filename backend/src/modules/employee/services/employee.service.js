@@ -909,6 +909,7 @@ export async function createEmployee({ payload, user }) {
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")
         clearCacheByPrefix("hr-dashboard:")
+        clearCacheByPrefix("excome:")
         await syncUnmatchedAttendanceForEmployee({ employee, user }).catch(() => null)
         return getEmployeeById({ employeeId: employee._id, user })
     } catch (error) {
@@ -954,6 +955,7 @@ export async function updateEmployee({ employeeId, payload, user }) {
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")
         clearCacheByPrefix("hr-dashboard:")
+        clearCacheByPrefix("excome:")
         await syncUnmatchedAttendanceForEmployee({ employee: updated, user }).catch(() => null)
         return getEmployeeById({ employeeId: updated._id, user })
     } catch (error) {
@@ -968,6 +970,7 @@ export async function archiveEmployee({ employeeId, user }) {
     const archived = await Employee.findByIdAndUpdate(existing._id, { $set: { recordStatus: "ARCHIVED", updatedByAccountId: user.accountId } }, { new: true, runValidators: true, context: "query" }).lean()
     clearCacheByPrefix("employee:list:")
     clearCacheByPrefix("hr-dashboard:")
+        clearCacheByPrefix("excome:")
     return getEmployeeById({ employeeId: archived._id, user })
 }
 

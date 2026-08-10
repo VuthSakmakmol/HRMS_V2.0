@@ -151,22 +151,16 @@ async function loadDashboard() {
     await dashboardStore.loadDashboard(filters.value)
 }
 
-async function loadLookups(scopeFilters = filters.value) {
-    await dashboardStore.loadLookups(scopeFilters)
-}
-
-async function handleScopeChange(nextFilters) {
+function handleScopeChange(nextFilters) {
+    // Company/branch lookups already contain every department/position/line
+    // needed by the filter bar. Filtering them locally avoids a network call.
     filters.value = normalizeFilters(nextFilters)
-    await loadLookups(filters.value)
 }
 
 async function resetFilters() {
     filters.value = createDefaultFilters()
 
-    await Promise.all([
-        loadLookups(filters.value),
-        dashboardStore.loadDashboard(filters.value),
-    ])
+    await dashboardStore.loadDashboard(filters.value)
 }
 
 watch(
@@ -184,10 +178,7 @@ watch(
             lineId: undefined,
         }
 
-        await Promise.all([
-            loadLookups(filters.value),
-            loadDashboard(),
-        ])
+        await loadDashboard()
     },
 )
 
@@ -199,10 +190,7 @@ onMounted(async () => {
         branchId: workspaceStore.branchId || undefined,
     })
 
-    await Promise.all([
-        loadLookups(filters.value),
-        loadDashboard(),
-    ])
+    await loadDashboard()
 })
 </script>
 
@@ -216,7 +204,7 @@ onMounted(async () => {
                 :lookup-loading="dashboardStore.lookupLoading"
                 @apply="loadDashboard"
                 @reset="resetFilters"
-                @refresh="loadDashboard"
+                @refresh="dashboardStore.refreshDashboard(filters)"
                 @scope-change="handleScopeChange"
             />
         </div>

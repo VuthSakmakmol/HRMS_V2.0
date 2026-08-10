@@ -51,10 +51,17 @@ router.get("/lookups", async (req, res, next) => {
 })
 
 router.get("/", async (req, res, next) => {
+    const startedAt = process.hrtime.bigint()
+
     try {
         const query = parseRequest(excomeQuerySchema, req.query)
         const dashboard = await getExcome({ query })
+        const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000
 
+        // Visible in Chrome DevTools > Network. This makes it easy to verify
+        // the <1s dashboard target without adding debug UI to production pages.
+        res.setHeader("Server-Timing", `excome;dur=${durationMs.toFixed(1)}`)
+        res.setHeader("X-Excome-Server-Ms", durationMs.toFixed(1))
         res.status(200).json({
             success: true,
             data: {

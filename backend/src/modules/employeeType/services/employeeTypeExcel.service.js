@@ -641,6 +641,7 @@ export async function importEmployeeTypesFromRows({
     clearCacheByPrefix("employeeType:")
     clearCacheByPrefix("employee:list:")
     clearCacheByPrefix("hr-dashboard:")
+    clearCacheByPrefix("excome:")
 
     return { totalRows: rows.length, created, updated, skipped, errors }
 }

@@ -549,6 +549,7 @@ export async function importLinesFromRows({
     })
 
     clearCacheByPrefix("line:list:")
+    clearCacheByPrefix("excome:")
 
     return summary
 }

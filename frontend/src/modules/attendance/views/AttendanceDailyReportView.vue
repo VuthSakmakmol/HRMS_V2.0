@@ -442,11 +442,11 @@ async function load() {
     Object.assign(progress, { percent: 0, phase: "QUEUED", processedRows: 0, totalRows: 0 })
     error.value = ""
     try {
-        const queued = await fetchAttendanceDailyReport(params())
-        const completed = await waitForReportJob(queued.jobId, false)
-        report.value = completed.result.report
+        Object.assign(progress, { percent: 25, phase: "LOADING_DATA", processedRows: 0, totalRows: 0 })
+        report.value = await fetchAttendanceDailyReport(params())
+        Object.assign(progress, { percent: 100, phase: "COMPLETED", processedRows: 1, totalRows: 1 })
         collapsedDepartments.value = new Set()
-        await refreshEmailStatus()
+        void refreshEmailStatus()
     } catch (requestError) {
         error.value = errorMessage(requestError)
         toast.add({ severity: "error", summary: "Report failed", detail: error.value, life: 5000 })
@@ -504,7 +504,8 @@ const progressText = computed(() => {
     const labels = {
         QUEUED: "Waiting to start",
         PREPARING: "Preparing report",
-        LOADING_DATA: "Loaded attendance and employee data",
+        LOADING_DATA: "Loading employee and report data",
+        AGGREGATING_ATTENDANCE: "Aggregating attendance",
         CALCULATING_SUMMARY: "Calculating daily totals",
         CALCULATING_DEPARTMENTS: "Calculating departments",
         BUILDING_EXCEL: "Building Excel file",

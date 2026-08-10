@@ -702,6 +702,7 @@ export async function createPosition({ payload, user }) {
         })
 
         clearCacheByPrefix("position:list:")
+    clearCacheByPrefix("excome:")
 
         return await getPositionById({
             positionId: position._id.toString(),
@@ -785,6 +786,7 @@ export async function updatePosition({ positionId, payload, user }) {
         }
 
         clearCacheByPrefix("position:list:")
+    clearCacheByPrefix("excome:")
 
         return serializePosition(position)
     } catch (error) {
@@ -861,6 +863,7 @@ export async function archivePosition({ positionId, user }) {
     }
 
     clearCacheByPrefix("position:list:")
+    clearCacheByPrefix("excome:")
 
     return serializePosition(position)
 }
