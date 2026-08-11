@@ -193,6 +193,12 @@ export const PERMISSION_REGISTRY = Object.freeze([
         "IMPORT",
         "EXPORT",
     ]),
+    ...permissionGroup("REPORT.WORKFORCE_RATIO", [
+        "VIEW",
+        "CREATE",
+        "UPDATE",
+        "ARCHIVE",
+    ]),
     ...permissionGroup("ORGANIZATION.EXIT_REASON", [
         "VIEW",
         "CREATE",

@@ -31,6 +31,7 @@ import attendanceRoutes from "./modules/attendance/routes/attendance.routes.js"
 import recruitmentChannelRoutes from "./modules/recruitmentChannel/routes/recruitmentChannel.routes.js"
 import hrDashboardTargetRoutes from "./modules/hrDashboardTarget/routes/hrDashboardTarget.routes.js"
 import exitReasonRoutes from "./modules/exitReason/routes/exitReason.routes.js"
+import workforceRatioRoutes from "./modules/workforceRatio/routes/workforceRatio.routes.js"
 
 import { AppError } from "./shared/errors/AppError.js"
 import { errorHandler } from "./shared/middleware/errorHandler.js"
@@ -133,6 +134,10 @@ app.use("/api/v1/reports/manpower-plans", manpowerPlanRoutes)
 app.use(
     "/api/v1/reports/hr-dashboard-targets",
     hrDashboardTargetRoutes,
+)
+app.use(
+    "/api/v1/reports/workforce-ratio-setups",
+    workforceRatioRoutes,
 )
 
 /*

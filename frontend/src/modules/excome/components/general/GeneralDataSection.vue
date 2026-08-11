@@ -41,6 +41,22 @@ function formatInteger(value) {
     return new Intl.NumberFormat().format(Math.round(number))
 }
 
+function formatPercent(value) {
+    const number = Number(value)
+
+    if (!Number.isFinite(number)) return "0.00%"
+
+    return `${number.toFixed(2)}%`
+}
+
+function formatRatio(value) {
+    const number = Number(value)
+
+    if (!Number.isFinite(number)) return "—"
+
+    return number.toFixed(2)
+}
+
 
 const selectedLabel = computed(() => {
     return props.data.selectedLabel ||
@@ -48,6 +64,7 @@ const selectedLabel = computed(() => {
         safeT("excome.general.selected", "Selected")
 })
 
+const workforceRatio = computed(() => props.data.workforceRatio || {})
 
 const cards = computed(() => [
     {
@@ -71,14 +88,19 @@ const cards = computed(() => [
         suffix: safeT("excome.units.years", "years"),
     },
     {
-        key: "headcount",
-        icon: "pi pi-id-card",
-        label: safeT("excome.general.headcount", "Headcount"),
-        firstLabel: safeT("excome.general.total", "Total"),
-        firstValue: formatInteger(props.data.total?.totalEmployees),
-        secondLabel: selectedLabel.value,
-        secondValue: formatInteger(props.data.selected?.totalEmployees),
-        suffix: "",
+        key: "indirectDirectRatio",
+        icon: "pi pi-sitemap",
+        label: safeT(
+            "excome.general.indirectDirectRatio",
+            "Indirect / Direct Ratio",
+        ),
+        firstLabel: workforceRatio.value.currentPeriodLabel ||
+            safeT("excome.general.currentRatio", "Current"),
+        firstValue: formatRatio(workforceRatio.value.indirectDirectRatio),
+        secondLabel: workforceRatio.value.budgetYear
+            ? `${safeT("excome.general.budget", "Budget")} ${workforceRatio.value.budgetYear}`
+            : safeT("excome.general.budget", "Budget"),
+        secondValue: formatRatio(workforceRatio.value.budgetRatio),
     },
 ])
 
@@ -108,6 +130,13 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                     aria-hidden="true"
                 />
                 <span>{{ card.label }}</span>
+                <small
+                    v-if="card.meta"
+                    class="general-metric-card__meta"
+                    :title="card.meta"
+                >
+                    {{ card.meta }}
+                </small>
             </div>
 
             <div class="general-metric-card__divider" />
@@ -126,10 +155,10 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                     </strong>
 
                     <small
-                        v-if="card.suffix"
+                        v-if="card.firstSuffix || card.suffix"
                         class="general-metric-card__suffix"
                     >
-                        {{ card.suffix }}
+                        {{ card.firstSuffix || card.suffix }}
                     </small>
                 </div>
 
@@ -146,10 +175,10 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                     </strong>
 
                     <small
-                        v-if="card.suffix"
+                        v-if="card.secondSuffix || card.suffix"
                         class="general-metric-card__suffix"
                     >
-                        {{ card.suffix }}
+                        {{ card.secondSuffix || card.suffix }}
                     </small>
                 </div>
             </div>
@@ -260,6 +289,18 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
     font-size: 0.54rem;
     font-weight: 900;
     line-height: 1.08;
+}
+
+.general-metric-card__meta {
+    display: block;
+    max-width: 4.1rem;
+    color: #64748b;
+    font-size: 0.44rem;
+    font-weight: 700;
+    line-height: 1.08;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .general-metric-card__divider {

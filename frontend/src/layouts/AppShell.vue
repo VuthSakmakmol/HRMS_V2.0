@@ -256,6 +256,15 @@ const navGroups = computed(() => {
                 },
 
                 {
+                    labelKey: "nav.workforceRatioSetup",
+                    icon: "pi pi-sitemap",
+                    to: {
+                        name: "report-workforce-ratio-setup",
+                    },
+                    permissionCode: "REPORT.WORKFORCE_RATIO.VIEW",
+                },
+
+                {
                     labelKey: "nav.exitReasons",
                     icon: "pi pi-sign-out",
                     to: { name: "organization-exit-reasons" },

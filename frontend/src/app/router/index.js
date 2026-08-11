@@ -244,6 +244,17 @@ const router = createRouter({
                 },
 
                 {
+                    path: "reports/workforce-ratio-setup",
+                    name: "report-workforce-ratio-setup",
+                    component: () =>
+                        import("@/modules/workforceRatio/views/WorkforceRatioSetupView.vue"),
+                    meta: {
+                        titleKey: "nav.workforceRatioSetup",
+                        permissionCode: "REPORT.WORKFORCE_RATIO.VIEW",
+                    },
+                },
+
+                {
                     path: "organization/exit-reasons",
                     name: "organization-exit-reasons",
                     component: () => import("@/modules/exitReason/views/ExitReasonListView.vue"),

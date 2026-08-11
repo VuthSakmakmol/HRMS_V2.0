@@ -10,6 +10,7 @@ import ExitReason from "../../exitReason/models/ExitReason.js"
 import Line from "../../line/models/Line.js"
 import ManpowerPlan from "../../manpowerPlan/models/ManpowerPlan.js"
 import HrDashboardTarget from "../../hrDashboardTarget/models/HrDashboardTarget.js"
+import WorkforceRatioSetup from "../../workforceRatio/models/WorkforceRatioSetup.js"
 import Branch from "../../organization/models/Branch.js"
 import Company from "../../organization/models/Company.js"
 import Department from "../../organization/models/Department.js"
@@ -460,6 +461,19 @@ function filterEmployeesForQuery(employees = [], query = {}) {
 
         return true
     })
+}
+
+async function loadWorkforceRatioSetups(query = {}) {
+    const filter = { status: "ACTIVE" }
+
+    if (query.companyId) filter.companyId = query.companyId
+    if (query.branchId) filter.branchId = query.branchId
+
+    return WorkforceRatioSetup.find(filter)
+        .select(
+            "companyId branchId directEmployeeTypeIds indirectEmployeeTypeIds budgetYear budgetRatio status",
+        )
+        .lean()
 }
 
 async function loadPlans(query, periods) {
@@ -2328,6 +2342,130 @@ function buildExitAnalysisDashboard({
     }
 }
 
+function buildWorkforceRatioSummary({ employees = [], setups = [], selectedDate }) {
+    const activeEmployees = (employees || []).filter((employee) =>
+        employeeWasActiveOn(employee, selectedDate),
+    )
+
+    const directEmployeeTypeIds = new Set()
+    const indirectEmployeeTypeIds = new Set()
+
+    for (const setup of setups || []) {
+        for (const employeeTypeId of setup.directEmployeeTypeIds || []) {
+            const id = toOptionalStringId(employeeTypeId)
+            if (id) directEmployeeTypeIds.add(id)
+        }
+
+        for (const employeeTypeId of setup.indirectEmployeeTypeIds || []) {
+            const id = toOptionalStringId(employeeTypeId)
+            if (id) indirectEmployeeTypeIds.add(id)
+        }
+    }
+
+    let directCount = 0
+    let indirectCount = 0
+    let unclassifiedCount = 0
+
+    for (const employee of activeEmployees) {
+        const employeeTypeId = toOptionalStringId(employee.employeeTypeId)
+
+        if (employeeTypeId && directEmployeeTypeIds.has(employeeTypeId)) {
+            directCount += 1
+            continue
+        }
+
+        if (employeeTypeId && indirectEmployeeTypeIds.has(employeeTypeId)) {
+            indirectCount += 1
+            continue
+        }
+
+        // Never guess. Any employee type that is not explicitly configured in
+        // either side remains unclassified for this KPI.
+        unclassifiedCount += 1
+    }
+
+    const classifiedTotal = directCount + indirectCount
+    const directPercent = classifiedTotal > 0
+        ? round((directCount / classifiedTotal) * 100, 2)
+        : 0
+    const indirectPercent = classifiedTotal > 0
+        ? round((indirectCount / classifiedTotal) * 100, 2)
+        : 0
+    const indirectDirectRatio = directCount > 0
+        ? round(indirectCount / directCount, 2)
+        : null
+
+    const selectedYear = selectedDate instanceof Date && !Number.isNaN(selectedDate.getTime())
+        ? selectedDate.getUTCFullYear()
+        : new Date().getUTCFullYear()
+    const selectedMonth = selectedDate instanceof Date && !Number.isNaN(selectedDate.getTime())
+        ? selectedDate.getUTCMonth()
+        : new Date().getUTCMonth()
+    const monthNames = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    const currentPeriodLabel = `${monthNames[selectedMonth]} '${String(selectedYear).slice(-2)}`
+
+    // Normally there is one setup because Workforce Ratio Setup is unique by
+    // Company + Branch. If Excome is ever opened at a multi-branch scope, only
+    // show a budget when the relevant setups agree; never guess between
+    // different branch budgets.
+    const budgetCandidates = (setups || [])
+        .map((setup) => ({
+            year: Number(setup.budgetYear),
+            ratio: Number(setup.budgetRatio),
+        }))
+        .filter((item) =>
+            Number.isInteger(item.year) &&
+            item.year >= 2000 &&
+            item.year <= 2100 &&
+            Number.isFinite(item.ratio) &&
+            item.ratio > 0,
+        )
+
+    const selectedYearCandidates = budgetCandidates.filter(
+        (item) => item.year === selectedYear,
+    )
+    const preferredCandidates = selectedYearCandidates.length > 0
+        ? selectedYearCandidates
+        : budgetCandidates
+
+    let budgetYear = null
+    let budgetRatio = null
+
+    if (preferredCandidates.length > 0) {
+        const uniqueBudgets = new Set(
+            preferredCandidates.map((item) => `${item.year}:${item.ratio}`),
+        )
+
+        if (uniqueBudgets.size === 1) {
+            budgetYear = preferredCandidates[0].year
+            budgetRatio = round(preferredCandidates[0].ratio, 2)
+        }
+    }
+
+    return {
+        configured: (setups || []).length > 0,
+        setupCount: (setups || []).length,
+        activeEmployeeCount: activeEmployees.length,
+        classifiedTotal,
+        unclassifiedCount,
+        direct: {
+            count: directCount,
+            percent: directPercent,
+        },
+        indirect: {
+            count: indirectCount,
+            percent: indirectPercent,
+        },
+        indirectDirectRatio,
+        currentPeriodLabel,
+        budgetYear,
+        budgetRatio,
+        budgetConfigured: Number.isFinite(Number(budgetRatio)),
+    }
+}
 function buildGeneralData({
     totalEmployees,
     selectedEmployees,
@@ -2336,6 +2474,7 @@ function buildGeneralData({
     selectedLabel,
     selectedPeriod,
     lookups,
+    workforceRatio,
 }) {
     const totalSummary = summarizeEmployeesForGeneralData({
         employees: totalEmployees,
@@ -2359,6 +2498,13 @@ function buildGeneralData({
             : "Budget",
         total: totalSummary,
         selected: selectedSummary,
+        workforceRatio: workforceRatio || {
+            configured: false,
+            direct: { count: 0, percent: 0 },
+            indirect: { count: 0, percent: 0 },
+            indirectDirectRatio: null,
+            unclassifiedCount: 0,
+        },
         workforceCategory: buildGeneralWorkforceCategoryBreakdown({
             employees: selectedEmployees,
             selectedDate,
@@ -2712,7 +2858,7 @@ export async function getExcomeLookups({ query }) {
     return setCache(cacheKey, result, 60_000)
 }
 
-function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recruitmentChannels, dashboardTargets }) {
+function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recruitmentChannels, dashboardTargets, workforceRatioSetupCount = 0 }) {
     const totalEmployees = employees.length
     const countMissing = (field) => employees.filter((employee) => !employee?.[field]).length
     const missingExitReason = employees.filter((employee) =>
@@ -2738,6 +2884,7 @@ function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recru
         { key: "shift", label: "Shift", ready: totalEmployees > 0 && countMissing("shiftId") === 0, count: countMissing("shiftId"), detail: `${countMissing("shiftId").toLocaleString()} employees missing shift` },
         { key: "attendance", label: "Attendance", ready: attendanceRecordCount > 0, count: attendanceRecordCount, detail: attendanceRecordCount ? `${attendanceRecordCount.toLocaleString()} attendance records in selected range` : "No attendance data in selected range" },
         { key: "manpowerPlan", label: "Manpower Plan", ready: plans.length > 0, count: plans.length, detail: plans.length ? `${plans.length.toLocaleString()} active plan rows` : "Budget and roadmap are not configured" },
+        { key: "workforceRatio", label: "Workforce Ratio", ready: workforceRatioSetupCount > 0, count: workforceRatioSetupCount, detail: workforceRatioSetupCount > 0 ? `${workforceRatioSetupCount.toLocaleString()} active ratio setup${workforceRatioSetupCount === 1 ? "" : "s"}` : "Direct / Indirect ratio setup is not configured" },
         { key: "recruitment", label: "Recruitment Channels", ready: recruitmentChannels.length > 0, count: recruitmentChannels.length, detail: recruitmentChannels.length ? `${recruitmentChannels.length.toLocaleString()} recruitment channels available` : "Recruitment channel data is missing" },
         { key: "movement", label: "Employee Movement", ready: movementDateCount > 0, count: movementDateCount, detail: movementDateCount ? `${movementDateCount.toLocaleString()} join/resign dates available from Employee Master` : "No join/resign dates available for movement" },
         { key: "exitReason", label: "Exit Reasons", ready: missingExitReason === 0, count: missingExitReason, detail: `${missingExitReason.toLocaleString()} exited employees missing exit reason` },
@@ -2788,6 +2935,7 @@ export async function getExcome({ query }) {
         recruitmentChannels,
         dashboardTargets,
         exitReasons,
+        workforceRatioSetups,
     ] = await Promise.all([
         lookupsPromise,
         loadEmployees(totalGeneralQuery),
@@ -2795,6 +2943,10 @@ export async function getExcome({ query }) {
         loadRecruitmentChannels(cleanQuery),
         loadDashboardTargets(cleanQuery, startDate.getUTCFullYear()),
         loadExitReasons(cleanQuery),
+        loadWorkforceRatioSetups({
+            companyId: cleanQuery.companyId,
+            branchId: cleanQuery.branchId,
+        }),
     ])
 
     // Employee Master for the company/branch is loaded once. Department,
@@ -2825,6 +2977,13 @@ export async function getExcome({ query }) {
     const selectedMetricLabel = getSelectedMetricLabel({
         query: cleanQuery,
         lookups,
+    })
+    const workforceRatio = buildWorkforceRatioSummary({
+        // Ratio intentionally follows Company / Branch only. It does not use
+        // Employee Type, Child, Department, Position, Line or Shift filters.
+        employees: totalGeneralEmployees,
+        setups: workforceRatioSetups,
+        selectedDate: selectedEndDate,
     })
     const [attendanceAnalytics] = await Promise.all([
         buildExcomeAttendanceAnalytics({
@@ -2868,6 +3027,7 @@ export async function getExcome({ query }) {
             attendanceRecordCount: attendanceAnalytics.recordCount,
             recruitmentChannels,
             dashboardTargets,
+            workforceRatioSetupCount: workforceRatioSetups.length,
         }),
         general: buildGeneralData({
             totalEmployees: totalGeneralEmployees,
@@ -2877,6 +3037,7 @@ export async function getExcome({ query }) {
             selectedLabel: selectedMetricLabel,
             selectedPeriod,
             lookups,
+            workforceRatio,
         }),
         manpower,
         recruitment: buildRecruitmentChannelDashboard({
@@ -2898,7 +3059,7 @@ export async function getExcome({ query }) {
             selectedExitReasonId: cleanQuery.exitReasonId || null,
             periods,
         }),
-        turnover: turnoverComparison    ,
+        turnover: turnoverComparison,
         movement: buildMovementSeries({ employees, periods }),
     }
 
