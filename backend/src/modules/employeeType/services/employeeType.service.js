@@ -126,6 +126,7 @@ function buildEmployeeTypeSearchFilter(search) {
         $or: [
             { code: searchRegex },
             { name: searchRegex },
+            { positionDisplayName: searchRegex },
             { description: searchRegex },
             { "children.code": searchRegex },
             { "children.name": searchRegex },
@@ -229,8 +230,6 @@ function serializeEmployeeTypeChild(child) {
         id: child._id?.toString?.() || child.id || child.code,
         code: child.code,
         name: child.name,
-        dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
-        laborClassification: child.laborClassification || "OTHER",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: populatedPositions.length
@@ -301,8 +300,7 @@ function serializeEmployeeType(employeeType) {
         branch: populatedBranch,
         code: raw.code,
         name: raw.name,
-        dashboardCategory: raw.dashboardCategory || "UNSPECIFIED",
-        laborClassification: raw.laborClassification || "OTHER",
+        positionDisplayName: raw.positionDisplayName || "",
         assignmentMode: children.length > 0 ? "CHILD" : "DIRECT",
         positionAssignmentMode:
             raw.positionAssignmentMode || "SPECIFIC_POSITIONS",
@@ -342,8 +340,7 @@ function buildEmployeeTypeUpdatePayload(payload, accountId) {
         "branchId",
         "code",
         "name",
-        "dashboardCategory",
-        "laborClassification",
+        "positionDisplayName",
         "positionAssignmentMode",
         "positionIds",
         "children",
@@ -403,9 +400,7 @@ function normalizeChildGroups(children = [], existingChildren = []) {
             ...(preservedId ? { _id: preservedId } : {}),
             code: normalizeCode(child.code || child.name),
             name: child.name,
-            dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
-            laborClassification: child.laborClassification || "OTHER",
-            positionAssignmentMode:
+                    positionAssignmentMode:
                 child.positionAssignmentMode || "SPECIFIC_POSITIONS",
             positionIds: [...new Set(child.positionIds || [])],
         }
@@ -737,7 +732,6 @@ function normalizeAssignmentPayload(payload, { existingChildren = [] } = {}) {
     }
 
     if ((normalized.children || []).length > 0) {
-        normalized.laborClassification = "OTHER"
         normalized.positionIds = []
         normalized.positionAssignmentMode = "SPECIFIC_POSITIONS"
     }
@@ -1050,23 +1044,6 @@ function populateEmployeeTypeQuery(query) {
         })
 }
 
-function applyDashboardCategoryFilter(filter, dashboardCategory) {
-    if (!dashboardCategory || dashboardCategory === "ALL") {
-        return
-    }
-
-    if (!filter.$and) {
-        filter.$and = []
-    }
-
-    filter.$and.push({
-        $or: [
-            { dashboardCategory },
-            { "children.dashboardCategory": dashboardCategory },
-        ],
-    })
-}
-
 function clearEmployeeTypeRelatedCaches() {
     clearCacheByPrefix("employeeType:")
     clearCacheByPrefix("employee:list:")
@@ -1104,8 +1081,6 @@ export async function listEmployeeTypes({ query, user }) {
     if (query.status !== "ALL") {
         filter.status = query.status
     }
-
-    applyDashboardCategoryFilter(filter, query.dashboardCategory)
 
     if (query.positionId) {
         ensureValidObjectId(
@@ -1564,15 +1539,3 @@ export async function archiveEmployeeType({ employeeTypeId, user }) {
     }
 }
 
-export async function listEmployeeTypeDashboardCategories({ user }) {
-    const scope = getEmployeeTypeScopeFilter(user)
-    const rows = await EmployeeType.aggregate([
-        { $match: { ...scope, status: { $ne: "ARCHIVED" } } },
-        { $project: { categories: { $setUnion: [[{ $ifNull: ["$dashboardCategory", ""] }], { $map: { input: { $ifNull: ["$children", []] }, as: "child", in: { $ifNull: ["$$child.dashboardCategory", ""] } } }] } } },
-        { $unwind: "$categories" },
-        { $match: { categories: { $nin: ["", null] } } },
-        { $group: { _id: "$categories" } },
-        { $sort: { _id: 1 } },
-    ])
-    return rows.map((row) => ({ value: row._id, label: String(row._id).toLowerCase().split("_").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") }))
-}

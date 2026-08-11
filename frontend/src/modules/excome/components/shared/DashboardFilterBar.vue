@@ -45,9 +45,18 @@ const employeeTypeOptions = computed(() =>
     ),
 )
 
-const employeeTypeParentOptions = computed(() =>
-    employeeTypeOptions.value.filter((item) => item.type === "TYPE"),
-)
+const ALL_EMPLOYEE_TYPES_VALUE = "__ALL_EMPLOYEE_TYPES__"
+
+const employeeTypeParentOptions = computed(() => [
+    {
+        employeeTypeId: ALL_EMPLOYEE_TYPES_VALUE,
+        key: "ALL_EMPLOYEE_TYPES",
+        type: "ALL",
+        name: t("excome.filters.allEmployeeTypes"),
+        label: t("excome.filters.allEmployeeTypes"),
+    },
+    ...employeeTypeOptions.value.filter((item) => item.type === "TYPE"),
+])
 
 const selectedEmployeeTypeOption = computed(() => {
     if (!props.modelValue.employeeTypeFilterKey) return null
@@ -58,7 +67,7 @@ const selectedEmployeeTypeOption = computed(() => {
 })
 
 const selectedEmployeeTypeId = computed(() =>
-    selectedEmployeeTypeOption.value?.employeeTypeId || null,
+    selectedEmployeeTypeOption.value?.employeeTypeId || ALL_EMPLOYEE_TYPES_VALUE,
 )
 
 const employeeTypeChildOptions = computed(() =>
@@ -190,9 +199,12 @@ function updateField(field, value, dependentFields = []) {
 }
 
 function updateEmployeeType(employeeTypeId) {
+    const isAll =
+        !employeeTypeId || employeeTypeId === ALL_EMPLOYEE_TYPES_VALUE
+
     updateField(
         "employeeTypeFilterKey",
-        employeeTypeId ? `TYPE:${employeeTypeId}` : undefined,
+        isAll ? undefined : `TYPE:${employeeTypeId}`,
         ["departmentId", "positionId", "lineId"],
     )
 }
@@ -257,7 +269,6 @@ function updateEmployeeTypeChild(childKey) {
                 :option-label="optionLabel"
                 option-value="employeeTypeId"
                 :placeholder="t('excome.filters.allEmployeeTypes')"
-                show-clear
                 filter
                 :loading="lookupLoading"
                 @update:model-value="updateEmployeeType"

@@ -41,15 +41,6 @@ function formatInteger(value) {
     return new Intl.NumberFormat().format(Math.round(number))
 }
 
-function formatRatio(value) {
-    const number = Number(value)
-
-    if (!Number.isFinite(number)) {
-        return "0.00"
-    }
-
-    return number.toFixed(2)
-}
 
 const selectedLabel = computed(() => {
     return props.data.selectedLabel ||
@@ -57,9 +48,6 @@ const selectedLabel = computed(() => {
         safeT("excome.general.selected", "Selected")
 })
 
-const budgetLabel = computed(() =>
-    props.data.budgetLabel || safeT("excome.general.budget", "Budget"),
-)
 
 const cards = computed(() => [
     {
@@ -83,13 +71,13 @@ const cards = computed(() => [
         suffix: safeT("excome.units.years", "years"),
     },
     {
-        key: "indirectDirectRatio",
-        icon: "pi pi-sitemap",
-        label: safeT("excome.general.indirectDirectRatio", "Indirect / Direct Ratio"),
-        firstLabel: safeT("excome.general.actual", "Actual"),
-        firstValue: formatRatio(props.data.indirectDirect?.actualRatio),
-        secondLabel: budgetLabel.value,
-        secondValue: formatRatio(props.data.indirectDirect?.budgetRatio),
+        key: "headcount",
+        icon: "pi pi-id-card",
+        label: safeT("excome.general.headcount", "Headcount"),
+        firstLabel: safeT("excome.general.total", "Total"),
+        firstValue: formatInteger(props.data.total?.totalEmployees),
+        secondLabel: selectedLabel.value,
+        secondValue: formatInteger(props.data.selected?.totalEmployees),
         suffix: "",
     },
 ])
@@ -178,7 +166,7 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                             {{ safeT("excome.general.category", "Category") }}
                         </th>
                         <th class="general-workforce-table__department">
-                            {{ safeT("excome.general.department", "Department") }}
+                            {{ safeT("excome.general.positions", "Positions") }}
                         </th>
                         <th class="general-workforce-table__count">
                             {{ workforceCategory.monthLabel || safeT("excome.general.selectedMonth", "Selected") }}
@@ -190,15 +178,12 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                     <tr
                         v-for="row in workforceRows"
                         :key="row.key"
-                        :class="{
-                            'is-highlight': row.highlight,
-                        }"
                     >
                         <td :title="row.category">
                             {{ row.category }}
                         </td>
-                        <td :title="row.department">
-                            {{ row.department }}
+                        <td :title="row.positions">
+                            {{ row.positions }}
                         </td>
                         <td>{{ formatInteger(row.count) }}</td>
                     </tr>
@@ -211,6 +196,22 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
                     </tr>
                 </tbody>
             </table>
+
+            <div
+                v-if="Number(workforceCategory.unassignedCount || 0) > 0"
+                class="general-workforce-table__warning"
+            >
+                <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+                <span>
+                    {{
+                        safeT(
+                            "excome.general.unassignedEmployeeTypeWarning",
+                            "Some employees have no Employee Type and are not guessed from Position or Department.",
+                        )
+                    }}
+                    {{ formatInteger(workforceCategory.unassignedCount) }}
+                </span>
+            </div>
         </div>
     </section>
 </template>
@@ -477,4 +478,16 @@ const hasWorkforceRows = computed(() => workforceRows.value.length > 0)
         font-size: 1rem;
     }
 }
+.general-workforce-table__warning {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.6rem;
+    border-top: 1px solid #d7dce3;
+    color: #9a3412;
+    background: #fff7ed;
+    font-size: 0.72rem;
+    line-height: 1.35;
+}
+
 </style>

@@ -3,7 +3,6 @@ import { z } from "zod"
 const EMPLOYEE_TYPE_STATUSES = ["ACTIVE", "INACTIVE", "ARCHIVED"]
 const EMPLOYEE_TYPE_UPDATE_STATUSES = ["ACTIVE", "INACTIVE"]
 const POSITION_ASSIGNMENT_MODES = ["ALL_POSITIONS", "SPECIFIC_POSITIONS"]
-const LABOR_CLASSIFICATIONS = ["DIRECT", "INDIRECT", "OTHER"]
 
 const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
     message: "Invalid MongoDB ObjectId.",
@@ -66,35 +65,11 @@ const positionAssignmentModeSchema = z
     .transform(normalizePositionAssignmentMode)
     .pipe(z.enum(POSITION_ASSIGNMENT_MODES))
 
-const dashboardCategorySchema = z
-    .string()
-    .trim()
-    .min(2)
-    .max(80)
-    .transform((value) =>
-        value
-            .replace(/[\s-]+/g, "_")
-            .replace(/[^A-Za-z0-9_]/g, "")
-            .toUpperCase(),
-    )
-
-const laborClassificationSchema = z
-    .string()
-    .optional()
-    .transform((value) =>
-        String(value || "OTHER")
-            .trim()
-            .replace(/[\s-]+/g, "_")
-            .toUpperCase(),
-    )
-    .pipe(z.enum(LABOR_CLASSIFICATIONS))
-
 const employeeTypeChildSchema = z.object({
+    // Kept on update so an existing child keeps its MongoDB subdocument id.
     id: objectIdSchema.optional(),
     code: normalizedCodeSchema.optional(),
     name: normalizedTextSchema(2, 120),
-    dashboardCategory: dashboardCategorySchema,
-    laborClassification: laborClassificationSchema.default("OTHER"),
     positionAssignmentMode: positionAssignmentModeSchema.default(
         "SPECIFIC_POSITIONS",
     ),
@@ -111,8 +86,6 @@ function normalizeChildren(children = []) {
                 .replace(/\s+/g, "_")
                 .toUpperCase()
                 .replace(/[^A-Z0-9_-]/g, ""),
-        dashboardCategory: child.dashboardCategory,
-        laborClassification: child.laborClassification || "OTHER",
         positionAssignmentMode:
             child.positionAssignmentMode || "SPECIFIC_POSITIONS",
         positionIds: [...new Set(child.positionIds || [])],
@@ -135,19 +108,26 @@ function validateAssignmentMode(payload, context) {
         })
     }
 
-    if (!hasChildren && parentMode === "SPECIFIC_POSITIONS" && !hasDirectPositions) {
+    if (
+        !hasChildren &&
+        parentMode === "SPECIFIC_POSITIONS" &&
+        !hasDirectPositions
+    ) {
         context.addIssue({
             code: z.ZodIssueCode.custom,
             path: ["positionIds"],
             message:
-                "Choose at least one allowed position or change position assignment to all positions.",
+                "Choose at least one position or change position assignment to all positions.",
         })
     }
 
     if (hasChildren) {
         const allPositionChildIndexes = children
             .map((child, index) => ({ child, index }))
-            .filter(({ child }) => child.positionAssignmentMode === "ALL_POSITIONS")
+            .filter(
+                ({ child }) =>
+                    child.positionAssignmentMode === "ALL_POSITIONS",
+            )
 
         if (allPositionChildIndexes.length > 0 && children.length > 1) {
             for (const { index } of allPositionChildIndexes) {
@@ -196,7 +176,7 @@ function validateAssignmentMode(payload, context) {
                 code: z.ZodIssueCode.custom,
                 path: ["children", index, "positionIds"],
                 message:
-                    "Choose at least one allowed position or change child assignment to all positions.",
+                    "Choose at least one position or change child assignment to all positions.",
             })
         }
 
@@ -238,7 +218,6 @@ export const employeeTypeListQuerySchema = z.object({
     branchId: objectIdSchema.optional(),
     departmentId: objectIdSchema.optional(),
     positionId: objectIdSchema.optional(),
-    dashboardCategory: z.string().trim().max(80).optional().default("ALL"),
     status: z.enum(["ALL", ...EMPLOYEE_TYPE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
 })
@@ -249,8 +228,7 @@ export const employeeTypeCreateSchema = z
         branchId: objectIdSchema,
         code: normalizedCodeSchema,
         name: normalizedTextSchema(2, 160),
-        dashboardCategory: dashboardCategorySchema,
-        laborClassification: laborClassificationSchema.default("OTHER"),
+        positionDisplayName: optionalTextSchema(180),
         positionAssignmentMode: positionAssignmentModeSchema.default(
             "SPECIFIC_POSITIONS",
         ),
@@ -272,8 +250,7 @@ export const employeeTypeUpdateSchema = z
         branchId: objectIdSchema.optional(),
         code: normalizedCodeSchema.optional(),
         name: normalizedTextSchema(2, 160).optional(),
-        dashboardCategory: dashboardCategorySchema.optional(),
-        laborClassification: laborClassificationSchema.optional(),
+        positionDisplayName: optionalTextSchema(180),
         positionAssignmentMode: positionAssignmentModeSchema.optional(),
         positionIds: updatePositionIdsSchema,
         children: z
@@ -285,6 +262,7 @@ export const employeeTypeUpdateSchema = z
             ),
         description: optionalTextSchema(500),
         status: z.enum(EMPLOYEE_TYPE_UPDATE_STATUSES).optional(),
+        // Backward compatible only; reconciliation is automatic.
         confirmEmployeeReconciliation: z.boolean().optional().default(false),
     })
     .refine((value) => Object.keys(value).length > 0, {

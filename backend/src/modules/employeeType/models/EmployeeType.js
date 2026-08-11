@@ -7,12 +7,6 @@ export const EMPLOYEE_TYPE_POSITION_ASSIGNMENT_MODES = Object.freeze([
     "SPECIFIC_POSITIONS",
 ])
 
-export const EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS = Object.freeze([
-    "DIRECT",
-    "INDIRECT",
-    "OTHER",
-])
-
 function normalizeCode(value) {
     if (typeof value !== "string") {
         return value
@@ -48,22 +42,6 @@ const employeeTypeChildSchema = new Schema(
             minlength: 2,
             maxlength: 120,
             set: normalizeText,
-        },
-
-        dashboardCategory: {
-            type: String,
-            required: true,
-            trim: true,
-            minlength: 2,
-            maxlength: 80,
-            set: normalizeCode,
-        },
-
-        laborClassification: {
-            type: String,
-            enum: EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS,
-            default: "OTHER",
-            required: true,
         },
 
         positionAssignmentMode: {
@@ -119,20 +97,12 @@ const employeeTypeSchema = new Schema(
             set: normalizeText,
         },
 
-        dashboardCategory: {
+        positionDisplayName: {
             type: String,
-            required: true,
             trim: true,
-            minlength: 2,
-            maxlength: 80,
-            set: normalizeCode,
-        },
-
-        laborClassification: {
-            type: String,
-            enum: EMPLOYEE_TYPE_LABOR_CLASSIFICATIONS,
-            default: "OTHER",
-            required: true,
+            maxlength: 180,
+            set: normalizeText,
+            default: "",
         },
 
         positionAssignmentMode: {
@@ -212,15 +182,6 @@ employeeTypeSchema.index(
     },
 )
 
-employeeTypeSchema.index(
-    {
-        dashboardCategory: 1,
-        status: 1,
-    },
-    {
-        name: "idx_employee_type_dashboard_category_status",
-    },
-)
 
 employeeTypeSchema.index(
     {

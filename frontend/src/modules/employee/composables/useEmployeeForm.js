@@ -1,82 +1,202 @@
-import { computed, reactive, ref } from "vue"
-import { createEmployee, fetchEmployee, updateEmployee } from "../api/employee.api.js"
-import { EMPLOYEE_FORM_SECTIONS } from "../config/employee.form-sections.js"
+import { computed, reactive, ref } from "vue";
+import {
+  createEmployee,
+  fetchEmployee,
+  updateEmployee,
+} from "../api/employee.api.js";
+import { EMPLOYEE_FORM_SECTIONS } from "../config/employee.form-sections.js";
 
-const emptyAddress = () => ({ countryId: "", provinceId: "", districtId: "", communeId: "", villageId: "", detail: "" })
-const emptyDocuments = () => ({ idCardNo: "", idCardExpireDate: "", nssfNo: "", passportNo: "", passportExpireDate: "", visaExpireDate: "", medicalCheckNo: "", medicalCheckDate: "", workingBookNo: "" })
+const emptyAddress = () => ({
+  countryId: "",
+  provinceId: "",
+  districtId: "",
+  communeId: "",
+  villageId: "",
+  detail: "",
+});
+const emptyDocuments = () => ({
+  idCardNo: "",
+  idCardExpireDate: "",
+  nssfNo: "",
+  passportNo: "",
+  passportExpireDate: "",
+  visaExpireDate: "",
+  medicalCheckNo: "",
+  medicalCheckDate: "",
+  workingBookNo: "",
+});
 
 export function createEmptyEmployeeForm() {
-    return {
-        employeeCode: "", profileImageUrl: "", createAccount: true, defaultRoleId: null,
-        khmerFirstName: "", khmerLastName: "", englishFirstName: "", englishLastName: "", displayName: "",
-        gender: "UNKNOWN", dateOfBirth: "", email: "", phoneNumber: "", agentPhoneNumber: "", agentPerson: "", note: "",
-        maritalStatus: "UNKNOWN", spouseName: "", spouseContactNumber: "", education: "", religion: "", nationality: "",
-        birthAddress: emptyAddress(), permanentAddress: emptyAddress(),
-        companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "",
-        joinDate: "", employmentStatus: "WORKING", resignDate: "", resignReason: "", exitReasonId: null,
-        documents: emptyDocuments(), recruitmentChannelId: null, introducerEmployeeId: null,
-        machineSkills: { singleNeedle: 0, overlock: 0, coverstitch: 0, totalMachines: 0 },
-        approvalPolicyId: null, recordStatus: "ACTIVE",
-    }
+  return {
+    employeeCode: "",
+    profileImageUrl: "",
+    createAccount: true,
+    defaultRoleId: null,
+    khmerFirstName: "",
+    khmerLastName: "",
+    englishFirstName: "",
+    englishLastName: "",
+    displayName: "",
+    gender: "UNKNOWN",
+    dateOfBirth: "",
+    email: "",
+    phoneNumber: "",
+    agentPhoneNumber: "",
+    agentPerson: "",
+    note: "",
+    maritalStatus: "UNKNOWN",
+    spouseName: "",
+    spouseContactNumber: "",
+    education: "",
+    religion: "",
+    nationality: "",
+    birthAddress: emptyAddress(),
+    permanentAddress: emptyAddress(),
+    companyId: "",
+    branchId: "",
+    departmentId: "",
+    positionId: "",
+    lineId: "",
+    shiftId: "",
+    joinDate: "",
+    employmentStatus: "WORKING",
+    resignDate: "",
+    resignReason: "",
+    exitReasonId: null,
+    documents: emptyDocuments(),
+    recruitmentChannelId: null,
+    introducerEmployeeId: null,
+    machineSkills: {
+      singleNeedle: 0,
+      overlock: 0,
+      coverstitch: 0,
+      totalMachines: 0,
+    },
+    approvalPolicyId: null,
+    recordStatus: "ACTIVE",
+  };
 }
 
 export function useEmployeeForm() {
-    const visible = ref(false), saving = ref(false), loading = ref(false), mode = ref("create"), employeeId = ref(null), activeSection = ref(0), errors = ref({})
-    const form = reactive(createEmptyEmployeeForm())
-    const editing = computed(() => mode.value === "edit")
+  const visible = ref(false),
+    saving = ref(false),
+    loading = ref(false),
+    mode = ref("create"),
+    employeeId = ref(null),
+    activeSection = ref(0),
+    errors = ref({});
+  const form = reactive(createEmptyEmployeeForm());
+  const editing = computed(() => mode.value === "edit");
 
-    function assign(source = {}) {
-        const empty = createEmptyEmployeeForm()
-        Object.assign(form, empty, source)
-        for (const key of ["birthAddress", "permanentAddress"]) form[key] = { ...empty[key], ...(source[key] || {}) }
-        form.documents = { ...empty.documents, ...(source.documents || {}) }
-        form.machineSkills = { ...empty.machineSkills, ...(source.machineSkills || {}) }
+  function assign(source = {}) {
+    const empty = createEmptyEmployeeForm();
+    Object.assign(form, empty, source);
+    for (const key of ["birthAddress", "permanentAddress"])
+      form[key] = { ...empty[key], ...(source[key] || {}) };
+    form.documents = { ...empty.documents, ...(source.documents || {}) };
+    form.machineSkills = {
+      ...empty.machineSkills,
+      ...(source.machineSkills || {}),
+    };
+  }
+
+  function openCreate() {
+    mode.value = "create";
+    employeeId.value = null;
+    activeSection.value = 0;
+    errors.value = {};
+    assign();
+    visible.value = true;
+  }
+  async function openEdit(id) {
+    mode.value = "edit";
+    employeeId.value = id;
+    activeSection.value = 0;
+    errors.value = {};
+    visible.value = true;
+    loading.value = true;
+    try {
+      assign(await fetchEmployee(id));
+    } finally {
+      loading.value = false;
     }
+  }
+  function clearError(field) {
+    if (errors.value[field]) delete errors.value[field];
+  }
+  function next() {
+    if (activeSection.value < EMPLOYEE_FORM_SECTIONS.length - 1)
+      activeSection.value += 1;
+  }
+  function previous() {
+    if (activeSection.value > 0) activeSection.value -= 1;
+  }
 
-    function openCreate() { mode.value = "create"; employeeId.value = null; activeSection.value = 0; errors.value = {}; assign(); visible.value = true }
-    async function openEdit(id) { mode.value = "edit"; employeeId.value = id; activeSection.value = 0; errors.value = {}; visible.value = true; loading.value = true; try { assign(await fetchEmployee(id)) } finally { loading.value = false } }
-    function clearError(field) { if (errors.value[field]) delete errors.value[field] }
-    function next() { if (activeSection.value < EMPLOYEE_FORM_SECTIONS.length - 1) activeSection.value += 1 }
-    function previous() { if (activeSection.value > 0) activeSection.value -= 1 }
-
-    async function save() {
-        saving.value = true; errors.value = {}
-        try {
-            // `form` is a Vue reactive Proxy. Browser structuredClone() cannot
-            // clone Vue proxies and throws DataCloneError before the API request
-            // is sent. Convert the reactive form into the same plain JSON shape
-            // that will be submitted to the backend.
-            const payload = JSON.parse(JSON.stringify(form))
-            delete payload.sourceOfHiring
-            delete payload.remark
-            // Employee Type / Child are derived by the backend from Position.
-            // Never submit stale values loaded from an existing employee.
-            delete payload.employeeTypeId
-            delete payload.employeeTypeChildId
-            delete payload.employeeTypeChildCode
-            delete payload.employeeTypeChildName
-            delete payload.employeeType
-            delete payload.employeeTypeChild
-            delete payload.employeeTypeLabel
-            delete payload.employeeTypeReviewRequired
-            delete payload.employeeTypeReviewReason
-            if (payload.maritalStatus !== "MARRIED") {
-                payload.spouseName = ""
-                payload.spouseContactNumber = ""
-            }
-            if (!payload.resignDate) {
-                payload.exitReasonId = null
-                payload.resignReason = ""
-            }
-            if (editing.value) { delete payload.companyId; delete payload.branchId; delete payload.createAccount; delete payload.defaultRoleId }
-            const employee = editing.value ? await updateEmployee(employeeId.value, payload) : await createEmployee(payload)
-            visible.value = false
-            return employee
-        } catch (error) {
-            errors.value = error?.fields ?? error?.response?.data?.error?.fields ?? {}
-            throw error
-        } finally { saving.value = false }
+  async function save() {
+    saving.value = true;
+    errors.value = {};
+    try {
+      // `form` is a Vue reactive Proxy. Browser structuredClone() cannot
+      // clone Vue proxies and throws DataCloneError before the API request
+      // is sent. Convert the reactive form into the same plain JSON shape
+      // that will be submitted to the backend.
+      const payload = JSON.parse(JSON.stringify(form));
+      delete payload.sourceOfHiring;
+      delete payload.remark;
+      // Employee Type / Child are derived by the backend from Position.
+      // Never submit stale values loaded from an existing employee.
+      delete payload.employeeTypeId;
+      delete payload.employeeTypeChildId;
+      delete payload.employeeTypeChildCode;
+      delete payload.employeeTypeChildName;
+      delete payload.employeeType;
+      delete payload.employeeTypeChild;
+      delete payload.employeeTypeLabel;
+      delete payload.employeeTypeReviewRequired;
+      delete payload.employeeTypeReviewReason;
+      if (payload.maritalStatus !== "MARRIED") {
+        payload.spouseName = "";
+        payload.spouseContactNumber = "";
+      }
+      if (!payload.resignDate) {
+        payload.exitReasonId = null;
+        payload.resignReason = "";
+      }
+      if (editing.value) {
+        delete payload.companyId;
+        delete payload.branchId;
+        delete payload.createAccount;
+        delete payload.defaultRoleId;
+      }
+      const employee = editing.value
+        ? await updateEmployee(employeeId.value, payload)
+        : await createEmployee(payload);
+      visible.value = false;
+      return employee;
+    } catch (error) {
+      errors.value =
+        error?.fields ?? error?.response?.data?.error?.fields ?? {};
+      throw error;
+    } finally {
+      saving.value = false;
     }
+  }
 
-    return { visible, saving, loading, mode, editing, employeeId, activeSection, form, errors, openCreate, openEdit, clearError, next, previous, save }
+  return {
+    visible,
+    saving,
+    loading,
+    mode,
+    editing,
+    employeeId,
+    activeSection,
+    form,
+    errors,
+    openCreate,
+    openEdit,
+    clearError,
+    next,
+    previous,
+    save,
+  };
 }

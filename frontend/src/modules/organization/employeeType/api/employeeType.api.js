@@ -146,7 +146,6 @@ export async function lookupPositions(params = {}, signal) {
     return allItems
 }
 
-export async function lookupEmployeeTypeDashboardCategories(signal) { return unwrapData(await apiClient.get(`${ENDPOINT}/dashboard-categories`, { signal })).items ?? [] }
 export async function lookupEmployeeTypePositionAssignments(params = {}, signal) {
     const data = unwrapData(
         await apiClient.get(`${ENDPOINT}/position-assignments`, {

@@ -181,12 +181,6 @@ const ABSENCE_RATE_CODES = new Set(["UL", "SL", "SP", "AB", "AL", "ML"])
 const ABSENCE_RATE_EXCLUDING_ANNUAL_MATERNITY_CODES = new Set(["UL", "SL", "SP", "AB"])
 const TOP_ABSENT_DEPARTMENT_LIMIT = 15
 
-const GENERAL_WORKFORCE_CATEGORY_KEYS = Object.freeze({
-    DIRECT_LABOR: "DIRECT_LABOR",
-    INDIRECT_LABOR: "INDIRECT_LABOR",
-    RD_MARKETING: "RD_MARKETING",
-})
-
 
 function toObjectId(value) {
     return value ? new mongoose.Types.ObjectId(value) : undefined
@@ -2051,103 +2045,71 @@ function summarizeEmployeesForGeneralData({ employees, selectedDate }) {
     }
 }
 
-function getEmployeeTypeOptionForEmployee(employee = {}, lookups = {}) {
-    const employeeTypeId = toOptionalStringId(employee.employeeTypeId)
-
-    if (!employeeTypeId) return null
-
-    if (employee.employeeTypeChildCode) {
-        const childKey = `CHILD:${employeeTypeId}:${employee.employeeTypeChildCode}`
-        const childOption = lookups.employeeTypes?.find((item) => item.key === childKey)
-
-        if (childOption) return childOption
-    }
-
-    const parentKey = `TYPE:${employeeTypeId}`
-
-    return lookups.employeeTypes?.find((item) => item.key === parentKey) || null
-}
-
-function isRdMarketingEmployee(employee = {}, lookups = {}) {
-    const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
-
-    return (
-        String(employeeTypeOption?.dashboardCategory || "")
-            .trim()
-            .toUpperCase() === GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING
-    )
-}
-
-function isDirectLaborEmployee(employee = {}, lookups = {}) {
-    const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
-    const classification = String(
-        employeeTypeOption?.laborClassification || "OTHER",
-    )
-        .trim()
-        .toUpperCase()
-
-    return classification === "DIRECT"
-}
-
 function buildGeneralWorkforceCategoryBreakdown({
     employees,
     selectedDate,
     selectedPeriod,
     lookups,
 }) {
-    const activeEmployees = employees.filter((employee) =>
+    const activeEmployees = (employees || []).filter((employee) =>
         employeeWasActiveOn(employee, selectedDate),
     )
-    const counts = {
-        [GENERAL_WORKFORCE_CATEGORY_KEYS.DIRECT_LABOR]: 0,
-        [GENERAL_WORKFORCE_CATEGORY_KEYS.INDIRECT_LABOR]: 0,
-        [GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING]: 0,
-    }
+
+    const countByEmployeeTypeId = new Map()
 
     for (const employee of activeEmployees) {
-        if (isRdMarketingEmployee(employee, lookups)) {
-            counts[GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING] += 1
-            continue
-        }
+        const employeeTypeId = toOptionalStringId(employee.employeeTypeId)
 
-        if (isDirectLaborEmployee(employee, lookups)) {
-            counts[GENERAL_WORKFORCE_CATEGORY_KEYS.DIRECT_LABOR] += 1
-            continue
-        }
+        // Never guess a category from Position/Department/name. An employee
+        // without employeeTypeId is intentionally excluded from category rows
+        // and should be fixed by the Employee Type position synchronizer.
+        if (!employeeTypeId) continue
 
-        counts[GENERAL_WORKFORCE_CATEGORY_KEYS.INDIRECT_LABOR] += 1
+        countByEmployeeTypeId.set(
+            employeeTypeId,
+            (countByEmployeeTypeId.get(employeeTypeId) || 0) + 1,
+        )
     }
 
-    const rows = [
-        {
-            key: GENERAL_WORKFORCE_CATEGORY_KEYS.DIRECT_LABOR,
-            category: "Direct Labor (DL)",
-            department: "Sewer + Jumper",
-            count: counts[GENERAL_WORKFORCE_CATEGORY_KEYS.DIRECT_LABOR],
-            highlight: false,
-        },
-        {
-            key: GENERAL_WORKFORCE_CATEGORY_KEYS.INDIRECT_LABOR,
-            category: "Indirect Labor (IDL)",
-            department: "All except DL & Merchandising",
-            count: counts[GENERAL_WORKFORCE_CATEGORY_KEYS.INDIRECT_LABOR],
-            highlight: false,
-        },
-        {
-            key: GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING,
-            category: "RD& MKT",
-            department: "Merchandising",
-            count: counts[GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING],
-            highlight: true,
-        },
-    ]
+    const parentEmployeeTypes = (lookups.employeeTypes || [])
+        .filter((option) => option?.type === "TYPE")
+        .sort((a, b) =>
+            String(a.name || a.label || "").localeCompare(
+                String(b.name || b.label || ""),
+            ),
+        )
 
-    const total = rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0)
+    const rows = parentEmployeeTypes
+        .map((option) => {
+            const employeeTypeId = String(option.employeeTypeId || option.id || "")
+            const count = countByEmployeeTypeId.get(employeeTypeId) || 0
+
+            if (count <= 0) return null
+
+            return {
+                key: `EMPLOYEE_TYPE:${employeeTypeId}`,
+                employeeTypeId,
+                category: option.name || option.label || option.code || "Employee Type",
+                // This is intentionally user-maintained display text. Excome
+                // never expands or guesses the mapped Position names here.
+                positions: String(option.positionDisplayName || "").trim() || "—",
+                count,
+            }
+        })
+        .filter(Boolean)
+
+    const total = rows.reduce(
+        (sum, row) => sum + (Number(row.count) || 0),
+        0,
+    )
 
     return {
         monthLabel: selectedPeriod?.label || "Selected",
         rows,
         total,
+        unassignedCount: activeEmployees.filter(
+            (employee) => !toOptionalStringId(employee.employeeTypeId),
+        ).length,
     }
 }
 
@@ -2344,152 +2306,6 @@ function buildExitAnalysisDashboard({
     }
 }
 
-const LABOR_CLASSIFICATION = Object.freeze({
-    DIRECT: "DIRECT",
-    INDIRECT: "INDIRECT",
-    OTHER: "OTHER",
-})
-
-function classifyEmployeeTypeOptionLabor(option = {}) {
-    // getEmployeeTypeOptionForEmployee() intentionally returns null when an
-    // employee has no Employee Type (or references an old/missing type).
-    // Default parameters only protect undefined, not an explicit null value,
-    // so this must be null-safe. Unmapped employees are simply OTHER.
-    const classification = String(option?.laborClassification || "OTHER")
-        .trim()
-        .toUpperCase()
-
-    if (classification === LABOR_CLASSIFICATION.DIRECT) {
-        return LABOR_CLASSIFICATION.DIRECT
-    }
-
-    if (classification === LABOR_CLASSIFICATION.INDIRECT) {
-        return LABOR_CLASSIFICATION.INDIRECT
-    }
-
-    return LABOR_CLASSIFICATION.OTHER
-}
-
-function getEmployeeLaborClassification(employee = {}, lookups = {}) {
-    const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
-
-    return classifyEmployeeTypeOptionLabor(employeeTypeOption)
-}
-
-function buildEmployeeTypePositionLaborMap(lookups = {}) {
-    const classificationByPositionId = new Map()
-    const options = Array.isArray(lookups.employeeTypes)
-        ? lookups.employeeTypes
-        : []
-
-    // Child groups are the source of truth when an Employee Type uses children.
-    // Direct Employee Types use their parent classification.
-    const safeOptions = options.filter(Boolean)
-    const orderedOptions = [
-        ...safeOptions.filter((option) => option.type === "CHILD"),
-        ...safeOptions.filter(
-            (option) => option.type !== "CHILD" && !option.hasChildren,
-        ),
-    ]
-
-    const allPositionIds = (lookups.positions || [])
-        .map((position) => String(position.id || ""))
-        .filter(Boolean)
-
-    for (const option of orderedOptions) {
-        const classification = classifyEmployeeTypeOptionLabor(option)
-        const positionIds =
-            option.positionAssignmentMode === "ALL_POSITIONS"
-                ? allPositionIds
-                : option.positionIds || []
-
-        for (const positionId of positionIds) {
-            const key = String(positionId || "")
-
-            if (!key || classificationByPositionId.has(key)) continue
-
-            classificationByPositionId.set(key, classification)
-        }
-    }
-
-    return classificationByPositionId
-}
-
-function buildIndirectDirectRatio({
-    employees,
-    plans,
-    selectedDate,
-    selectedPeriod,
-    lookups,
-}) {
-    let directActual = 0
-    let indirectActual = 0
-    let unclassifiedActual = 0
-
-    for (const employee of employees || []) {
-        if (!employeeWasActiveOn(employee, selectedDate)) continue
-
-        const classification = getEmployeeLaborClassification(employee, lookups)
-
-        if (classification === LABOR_CLASSIFICATION.DIRECT) {
-            directActual += 1
-        } else if (classification === LABOR_CLASSIFICATION.INDIRECT) {
-            indirectActual += 1
-        } else {
-            unclassifiedActual += 1
-        }
-    }
-
-    const actualRatio = directActual > 0
-        ? round(indirectActual / directActual, 2)
-        : 0
-
-    const selectedYear = Number(selectedPeriod?.year)
-    const selectedMonth = Number(selectedPeriod?.month)
-    const classificationByPositionId = buildEmployeeTypePositionLaborMap(lookups)
-
-    let directBudget = 0
-    let indirectBudget = 0
-    let unclassifiedBudget = 0
-
-    for (const plan of plans || []) {
-        if (
-            Number(plan.year) !== selectedYear ||
-            Number(plan.month) !== selectedMonth
-        ) {
-            continue
-        }
-
-        const budget = Number(plan.targetBudget) || 0
-        const classification = classificationByPositionId.get(
-            String(plan.positionId || ""),
-        )
-
-        if (classification === LABOR_CLASSIFICATION.DIRECT) {
-            directBudget += budget
-        } else if (classification === LABOR_CLASSIFICATION.INDIRECT) {
-            indirectBudget += budget
-        } else {
-            unclassifiedBudget += budget
-        }
-    }
-
-    const budgetRatio = directBudget > 0
-        ? round(indirectBudget / directBudget, 2)
-        : 0
-
-    return {
-        actualRatio,
-        budgetRatio,
-        directActual,
-        indirectActual,
-        unclassifiedActual,
-        directBudget,
-        indirectBudget,
-        unclassifiedBudget,
-    }
-}
-
 function buildGeneralData({
     totalEmployees,
     selectedEmployees,
@@ -2521,13 +2337,6 @@ function buildGeneralData({
             : "Budget",
         total: totalSummary,
         selected: selectedSummary,
-        indirectDirect: buildIndirectDirectRatio({
-            employees: selectedEmployees,
-            plans: selectedPlans,
-            selectedDate,
-            selectedPeriod,
-            lookups,
-        }),
         workforceCategory: buildGeneralWorkforceCategoryBreakdown({
             employees: selectedEmployees,
             selectedDate,
@@ -2605,6 +2414,7 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
             type: "TYPE",
             code: employeeType.code,
             name: parentName,
+            positionDisplayName: employeeType.positionDisplayName || "",
             label: employeeType.code
                 ? `${employeeType.code} - ${parentName}`
                 : parentName,
@@ -2612,8 +2422,6 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
             branchId: employeeType.branchId?.toString?.() || null,
             employeeTypeId: parentId,
             employeeTypeChildCode: null,
-            dashboardCategory: employeeType.dashboardCategory || "CUSTOM",
-            laborClassification: employeeType.laborClassification || "OTHER",
             positionAssignmentMode: parentPositionMode,
             positionIds: parentPositionIds,
             hasChildren,
@@ -2638,8 +2446,6 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
                 branchId: employeeType.branchId?.toString?.() || null,
                 employeeTypeId: parentId,
                 employeeTypeChildCode: child.code,
-                dashboardCategory: child.dashboardCategory || "CUSTOM",
-                laborClassification: child.laborClassification || "OTHER",
                 positionAssignmentMode: childPositionMode,
                 positionIds: childPositionIds,
                 hasChildren: false,
@@ -2829,16 +2635,13 @@ export async function getExcomeLookups({ query }) {
                 .select([
                     "code",
                     "name",
+                    "positionDisplayName",
                     "companyId",
                     "branchId",
-                    "dashboardCategory",
-                    "laborClassification",
                     "positionAssignmentMode",
                     "positionIds",
                     "children.code",
                     "children.name",
-                    "children.dashboardCategory",
-                    "children.laborClassification",
                     "children.positionAssignmentMode",
                     "children.positionIds",
                 ])

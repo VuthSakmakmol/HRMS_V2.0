@@ -288,7 +288,13 @@ export default {
             total: "Total",
             selected: "Selected",
             actual: "Actual",
-            budget: "Budget"
+            budget: "Budget",
+            headcount: "Headcount",
+            category: "Employee Type",
+            positions: "Positions",
+            selectedMonth: "Selected",
+            grandTotal: "Grand Total",
+            unassignedEmployeeTypeWarning: "Employees with no Employee Type are excluded from this category table; Excome never guesses from Position or Department."
         },
         manpower: {
             item: "Item",
@@ -1203,7 +1209,14 @@ export default {
             validationErrors: "Validation Errors",
             rowNumber: "Row",
             field: "Field",
-            issue: "Issue"
+            issue: "Issue",
+            sourceOfTruthHelp: "Employee Type is the source of truth for Excome. Assign positions here; employees automatically inherit this Employee Type from their Position.",
+            nameExcomeHelp: "This Employee Type name is shown directly as the Excome category. No Direct/Indirect/RD&MKT classification is required.",
+            positionDisplayName: "Positions Display Name",
+            positionDisplayNamePlaceholder: "Example: Sewer + Sewer-Jumper",
+            positionDisplayNameHelp: "Type a short business-friendly label for Excome. This text is displayed instead of listing every mapped Position.",
+            positionsSourceHelp: "Any employee holding one of these positions is synchronized automatically into this Employee Type.",
+            childGroupsHelp: "Child groups are optional organization inside the Employee Type. Excome category always uses the parent Employee Type name."
         },
         location: {
             eyebrow: "Organization Setup",

@@ -22,7 +22,6 @@ import {
     exportEmployeeTypes,
     lookupPositions,
     lookupEmployeeTypePositionAssignments,
-    lookupEmployeeTypeDashboardCategories,
 } from "../api/employeeType.api.js"
 import EmployeeTypeArchiveDialog from "../components/EmployeeTypeArchiveDialog.vue"
 import EmployeeTypeFormDialog from "../components/EmployeeTypeFormDialog.vue"
@@ -31,10 +30,7 @@ import { useEmployeeTypeForm } from "../composables/useEmployeeTypeForm.js"
 import { useEmployeeTypeImport } from "../composables/useEmployeeTypeImport.js"
 import { useEmployeeTypeList } from "../composables/useEmployeeTypeList.js"
 import { createEmployeeTypeColumns } from "../config/employeeType.columns.js"
-import {
-    createDashboardCategoryOptions,
-    createEmployeeTypeStatusOptions,
-} from "../config/employeeType.filters.js"
+import { createEmployeeTypeStatusOptions } from "../config/employeeType.filters.js"
 import { EMPLOYEE_TYPE_PERMISSIONS } from "../config/employeeType.permissions.js"
 
 const { t } = useI18n()
@@ -78,7 +74,6 @@ const {
 const positions = ref([])
 const positionsLoading = ref(false)
 const positionAssignments = ref([])
-const dashboardCategories = ref([])
 const formVisible = ref(false)
 const archiveVisible = ref(false)
 const archiveCandidate = ref(null)
@@ -88,12 +83,10 @@ const downloadingTemplate = ref(false)
 
 const columns = computed(() => createEmployeeTypeColumns(t))
 const statusOptions = computed(() => createEmployeeTypeStatusOptions(t))
-const categoryOptions = computed(() => createDashboardCategoryOptions(t, dashboardCategories.value, true))
 
 const activeFilterCount = computed(() => {
     return [
         query.search?.trim(),
-        query.dashboardCategory !== "ALL",
         query.status !== "ALL",
     ].filter(Boolean).length
 })
@@ -139,22 +132,31 @@ const importErrorMessage = computed(() => {
 })
 
 function translatedError(caught) {
-    const key = caught?.response?.data?.error?.messageKey
+    const error = caught?.response?.data?.error || {}
+    const key = error.messageKey
 
     if (!key) {
         return t("errors.internal")
     }
 
     const value = t(key)
-    return value === key ? t("errors.internal") : value
-}
+    const base = value === key ? t("errors.internal") : value
 
-async function loadLookups() {
-    const categoryRows = await lookupEmployeeTypeDashboardCategories()
+    if (
+        error.code ===
+            "ORGANIZATION_EMPLOYEE_TYPE_POSITION_IN_USE_CANNOT_UNMAP" &&
+        Array.isArray(error.details?.positions)
+    ) {
+        const positions = error.details.positions
+            .map((item) =>
+                `${item.code || item.name || "Position"} (${Number(item.employeeCount || 0)} employee(s))`,
+            )
+            .join(", ")
 
-    dashboardCategories.value = Array.isArray(categoryRows)
-        ? categoryRows
-        : []
+        return positions ? `${base} ${positions}.` : base
+    }
+
+    return base
 }
 
 async function loadPositions({
@@ -237,10 +239,7 @@ async function load() {
     }
 
     try {
-        await Promise.all([
-            list.load(),
-            loadLookups(),
-        ])
+        await list.load()
     } catch (caught) {
         toast.add({
             severity: "error",
@@ -392,36 +391,6 @@ function statusLabel(status) {
     return labels[status] ? t(labels[status]) : status || "—"
 }
 
-function categoryLabel(value) {
-    const found = dashboardCategories.value.find((item) => item.value === value)
-    return found?.label || String(value || "—").toLowerCase().split("_").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ")
-}
-
-
-function laborClassificationLabel(value) {
-    const labels = {
-        DIRECT: "organization.employeeType.laborDirect",
-        INDIRECT: "organization.employeeType.laborIndirect",
-        OTHER: "organization.employeeType.laborOther",
-    }
-
-    return labels[value] ? t(labels[value]) : value || t("organization.employeeType.laborOther")
-}
-
-function laborClassificationSeverity(value) {
-    if (value === "DIRECT") return "success"
-    if (value === "INDIRECT") return "info"
-    return "secondary"
-}
-
-function laborClassificationSummary(row) {
-    if (!row?.children?.length) {
-        return [row?.laborClassification || "OTHER"]
-    }
-
-    return [...new Set(row.children.map((child) => child.laborClassification || "OTHER"))]
-}
-
 function formatDate(value) {
     if (!value) {
         return "—"
@@ -457,7 +426,6 @@ async function exportRows() {
     try {
         await exportEmployeeTypes({
             search: query.search || undefined,
-            dashboardCategory: query.dashboardCategory,
             status: query.status,
         })
     } catch (caught) {
@@ -597,17 +565,6 @@ onMounted(load)
                             </span>
                         </EnterpriseFilterField>
 
-                        <EnterpriseFilterField
-                            :label="t('organization.employeeType.dashboardCategory')"
-                        >
-                            <Select
-                                v-model="query.dashboardCategory"
-                                :options="categoryOptions"
-                                option-label="label"
-                                option-value="value"
-                            />
-                        </EnterpriseFilterField>
-
                         <EnterpriseFilterField :label="t('common.status')">
                             <Select
                                 v-model="query.status"
@@ -639,30 +596,16 @@ onMounted(load)
             {{ row.name }}
         </template>
 
+        <template #cell-positionDisplayName="{ row }">
+            {{ row.positionDisplayName || "—" }}
+        </template>
+
         <template #cell-company="{ row }">
             {{ row.company?.displayName || "—" }}
         </template>
 
         <template #cell-branch="{ row }">
             {{ row.branch?.name || "—" }}
-        </template>
-
-        <template #cell-dashboardCategory="{ row }">
-            <Tag
-                :value="categoryLabel(row.dashboardCategory)"
-                severity="info"
-            />
-        </template>
-
-        <template #cell-laborClassification="{ row }">
-            <div class="employee-type-labor-tags">
-                <Tag
-                    v-for="value in laborClassificationSummary(row)"
-                    :key="value"
-                    :value="laborClassificationLabel(value)"
-                    :severity="laborClassificationSeverity(value)"
-                />
-            </div>
         </template>
 
         <template #cell-structure="{ row }">
@@ -741,6 +684,3 @@ onMounted(load)
     />
 </template>
 
-<style scoped>
-.employee-type-labor-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-</style>

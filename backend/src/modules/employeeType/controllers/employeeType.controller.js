@@ -14,7 +14,6 @@ import {
     getEmployeeTypeById,
     listEmployeeTypes,
     listEmployeeTypePositionAssignments,
-    listEmployeeTypeDashboardCategories,
     updateEmployeeType,
 } from "../services/employeeType.service.js"
 import {
@@ -38,10 +37,6 @@ function setExcelHeaders(res, filename) {
     )
 }
 
-export async function listEmployeeTypeDashboardCategoriesController(req, res) {
-    const items = await listEmployeeTypeDashboardCategories({ user: req.auth.user })
-    return sendSuccess(req, res, { data: { items } })
-}
 
 export async function listEmployeeTypesController(req, res) {
     const result = await listEmployeeTypes({

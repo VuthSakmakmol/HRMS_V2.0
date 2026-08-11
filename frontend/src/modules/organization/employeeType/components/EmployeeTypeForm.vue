@@ -3,87 +3,33 @@ import Button from "primevue/button"
 import InputText from "primevue/inputtext"
 import MultiSelect from "primevue/multiselect"
 import Select from "primevue/select"
-import SelectButton from "primevue/selectbutton"
 import Textarea from "primevue/textarea"
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 
-import {
-    createPositionAssignmentModeOptions,
-} from "../config/employeeType.filters.js"
+import { createPositionAssignmentModeOptions } from "../config/employeeType.filters.js"
 
 const props = defineProps({
-    form: {
-        type: Object,
-        required: true,
-    },
-    errors: {
-        type: Object,
-        default: () => ({}),
-    },
-    companyName: {
-        type: String,
-        default: "—",
-    },
-    branchName: {
-        type: String,
-        default: "—",
-    },
-    positions: {
-        type: Array,
-        default: () => [],
-    },
-    positionsLoading: {
-        type: Boolean,
-        default: false,
-    },
-    disabled: {
-        type: Boolean,
-        default: false,
-    },
-    editing: {
-        type: Boolean,
-        default: false,
-    },
+    form: { type: Object, required: true },
+    errors: { type: Object, default: () => ({}) },
+    companyName: { type: String, default: "—" },
+    branchName: { type: String, default: "—" },
+    positions: { type: Array, default: () => [] },
+    positionsLoading: { type: Boolean, default: false },
+    disabled: { type: Boolean, default: false },
+    editing: { type: Boolean, default: false },
 })
 
-const emit = defineEmits([
-    "clear-error",
-    "add-child",
-    "remove-child",
-])
-
+const emit = defineEmits(["clear-error", "add-child", "remove-child"])
 const { t } = useI18n()
-
 
 const assignmentOptions = computed(() =>
     createPositionAssignmentModeOptions(t),
 )
 
 const statusOptions = computed(() => [
-    {
-        label: t("organization.employeeType.statusActive"),
-        value: "ACTIVE",
-    },
-    {
-        label: t("organization.employeeType.statusInactive"),
-        value: "INACTIVE",
-    },
-])
-
-const laborClassificationOptions = computed(() => [
-    {
-        label: t("organization.employeeType.laborDirect"),
-        value: "DIRECT",
-    },
-    {
-        label: t("organization.employeeType.laborIndirect"),
-        value: "INDIRECT",
-    },
-    {
-        label: t("organization.employeeType.laborOther"),
-        value: "OTHER",
-    },
+    { label: t("organization.employeeType.statusActive"), value: "ACTIVE" },
+    { label: t("organization.employeeType.statusInactive"), value: "INACTIVE" },
 ])
 
 const structureOptions = computed(() => [
@@ -98,34 +44,17 @@ const structureOptions = computed(() => [
 ])
 
 const companyPositions = computed(() => {
-    if (!props.form.companyId || !props.form.branchId) {
-        return []
-    }
-
-    /*
-     * The backend Position lookup is the source of truth and already applies
-     * Company + Branch + ACTIVE filters. Do not filter the returned rows again
-     * in the browser because lookup response shapes may differ between modules.
-     */
+    if (!props.form.companyId || !props.form.branchId) return []
     return props.positions
 })
 
 function message(field) {
     const value = props.errors?.[field]
+    if (!value) return ""
 
-    if (!value) {
-        return ""
-    }
-
-    const rawMessage = Array.isArray(value)
-        ? value[0]
-        : value
-
+    const rawMessage = Array.isArray(value) ? value[0] : value
     const translated = t(rawMessage)
-
-    return translated === rawMessage
-        ? rawMessage
-        : translated
+    return translated === rawMessage ? rawMessage : translated
 }
 
 function clearFieldError(field) {
@@ -137,9 +66,7 @@ function positionsForChild(currentIndex) {
     let anotherChildUsesAllPositions = false
 
     for (const [index, child] of (props.form.children || []).entries()) {
-        if (index === currentIndex) {
-            continue
-        }
+        if (index === currentIndex) continue
 
         if (child.positionAssignmentMode === "ALL_POSITIONS") {
             anotherChildUsesAllPositions = true
@@ -156,8 +83,7 @@ function positionsForChild(currentIndex) {
             anotherChildUsesAllPositions ||
             selectedByOtherChildren.has(String(position.id))
         const unavailable =
-            Boolean(position.assignedElsewhere) ||
-            selectedInAnotherChild
+            Boolean(position.assignedElsewhere) || selectedInAnotherChild
 
         return {
             ...position,
@@ -171,105 +97,74 @@ function positionsForChild(currentIndex) {
 </script>
 
 <template>
-    <form
-        class="employee-type-form"
-        @submit.prevent
-    >
+    <form class="employee-type-form" @submit.prevent>
         <section class="employee-type-form__section">
             <div class="employee-type-form__heading">
-                <h3>
-                    {{ t("organization.employeeType.basicInformation") }}
-                </h3>
+                <h3>{{ t("organization.employeeType.basicInformation") }}</h3>
+            </div>
+
+            <div class="employee-type-source-note">
+                <i class="pi pi-sitemap" aria-hidden="true" />
+                <span>{{ t("organization.employeeType.sourceOfTruthHelp") }}</span>
             </div>
 
             <div class="employee-type-form__grid">
                 <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>
-                        {{ t("organization.employeeType.company") }} *
-                    </span>
-
-                    <InputText
-                        :model-value="companyName"
-                        disabled
-                    />
-
-                    <small v-if="message('companyId')">
-                        {{ message("companyId") }}
-                    </small>
+                    <span>{{ t("organization.employeeType.company") }} *</span>
+                    <InputText :model-value="companyName" disabled />
+                    <small v-if="message('companyId')">{{ message("companyId") }}</small>
                 </label>
 
                 <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.employeeType.branch") }} *
-                    </span>
-
-                    <InputText
-                        :model-value="branchName"
-                        disabled
-                    />
-
-                    <small v-if="message('branchId')">
-                        {{ message("branchId") }}
-                    </small>
+                    <span>{{ t("organization.employeeType.branch") }} *</span>
+                    <InputText :model-value="branchName" disabled />
+                    <small v-if="message('branchId')">{{ message("branchId") }}</small>
                 </label>
 
                 <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.employeeType.code") }} *
-                    </span>
-
+                    <span>{{ t("organization.employeeType.code") }} *</span>
                     <InputText
                         v-model="form.code"
                         :disabled="disabled"
                         maxlength="30"
                         @input="clearFieldError('code')"
                     />
-
-                    <small v-if="message('code')">
-                        {{ message("code") }}
-                    </small>
+                    <small v-if="message('code')">{{ message("code") }}</small>
                 </label>
 
                 <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>
-                        {{ t("organization.employeeType.name") }} *
-                    </span>
-
+                    <span>{{ t("organization.employeeType.name") }} *</span>
                     <InputText
                         v-model="form.name"
                         :disabled="disabled"
                         maxlength="160"
                         @input="clearFieldError('name')"
                     />
-
-                    <small v-if="message('name')">
-                        {{ message("name") }}
+                    <small class="employee-type-form__help">
+                        {{ t("organization.employeeType.nameExcomeHelp") }}
                     </small>
+                    <small v-if="message('name')">{{ message("name") }}</small>
                 </label>
 
-                <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.employeeType.dashboardCategory") }}
-                    </span>
-
+                <label class="enterprise-form-field enterprise-form-field--full">
+                    <span>{{ t("organization.employeeType.positionDisplayName") }}</span>
                     <InputText
-                        v-model="form.dashboardCategory"
-                        :placeholder="t('organization.employeeType.dashboardCategoryPlaceholder')"
+                        v-model="form.positionDisplayName"
                         :disabled="disabled"
-                        maxlength="80"
-                        @input="clearFieldError('dashboardCategory')"
+                        maxlength="180"
+                        :placeholder="t('organization.employeeType.positionDisplayNamePlaceholder')"
+                        @input="clearFieldError('positionDisplayName')"
                     />
-
-                    <small v-if="message('dashboardCategory')">
-                        {{ message("dashboardCategory") }}
+                    <small class="employee-type-form__help">
+                        {{ t("organization.employeeType.positionDisplayNameHelp") }}
+                    </small>
+                    <small v-if="message('positionDisplayName')">
+                        {{ message("positionDisplayName") }}
                     </small>
                 </label>
 
                 <label class="enterprise-form-field">
-                    <span>
-                        {{ t("common.status") }}
-                    </span>
-
+                    <span>{{ t("common.status") }}</span>
                     <Select
                         v-model="form.status"
                         :options="statusOptions"
@@ -278,27 +173,19 @@ function positionsForChild(currentIndex) {
                         :disabled="disabled"
                         @change="clearFieldError('status')"
                     />
-
-                    <small v-if="message('status')">
-                        {{ message("status") }}
-                    </small>
+                    <small v-if="message('status')">{{ message("status") }}</small>
                 </label>
             </div>
         </section>
 
         <section class="employee-type-form__section">
             <div class="employee-type-form__heading">
-                <h3>
-                    {{ t("organization.employeeType.assignmentInformation") }}
-                </h3>
+                <h3>{{ t("organization.employeeType.assignmentInformation") }}</h3>
             </div>
 
             <div class="employee-type-form__grid">
                 <label class="enterprise-form-field">
-                    <span>
-                        {{ t("organization.employeeType.structure") }}
-                    </span>
-
+                    <span>{{ t("organization.employeeType.structure") }}</span>
                     <Select
                         v-model="form.structureMode"
                         :options="structureOptions"
@@ -307,47 +194,13 @@ function positionsForChild(currentIndex) {
                         :disabled="disabled"
                         @change="clearFieldError('structureMode')"
                     />
-
-                    <small v-if="message('structureMode')">
-                        {{ message("structureMode") }}
-                    </small>
-                </label>
-
-                <label
-                    v-if="form.structureMode === 'DIRECT'"
-                    class="enterprise-form-field enterprise-form-field--full"
-                >
-                    <span>
-                        {{ t("organization.employeeType.laborClassification") }}
-                    </span>
-
-                    <SelectButton
-                        v-model="form.laborClassification"
-                        :options="laborClassificationOptions"
-                        option-label="label"
-                        option-value="value"
-                        :disabled="disabled"
-                        :allow-empty="false"
-                        @change="clearFieldError('laborClassification')"
-                    />
-
-                    <small class="employee-type-form__help">
-                        {{ t("organization.employeeType.laborClassificationHelp") }}
-                    </small>
-
-                    <small v-if="message('laborClassification')">
-                        {{ message("laborClassification") }}
-                    </small>
                 </label>
 
                 <label
                     v-if="form.structureMode === 'DIRECT'"
                     class="enterprise-form-field"
                 >
-                    <span>
-                        {{ t("organization.employeeType.positionAssignmentMode") }}
-                    </span>
-
+                    <span>{{ t("organization.employeeType.positionAssignmentMode") }}</span>
                     <Select
                         v-model="form.positionAssignmentMode"
                         :options="assignmentOptions"
@@ -356,7 +209,6 @@ function positionsForChild(currentIndex) {
                         :disabled="disabled"
                         @change="clearFieldError('positionAssignmentMode')"
                     />
-
                     <small v-if="message('positionAssignmentMode')">
                         {{ message("positionAssignmentMode") }}
                     </small>
@@ -369,28 +221,25 @@ function positionsForChild(currentIndex) {
                     "
                     class="enterprise-form-field enterprise-form-field--full"
                 >
-                    <span>
-                        {{ t("organization.employeeType.positions") }} *
-                    </span>
-
+                    <span>{{ t("organization.employeeType.positions") }} *</span>
                     <MultiSelect
                         v-model="form.positionIds"
                         :options="companyPositions"
                         option-label="displayTitle"
                         option-disabled="assignedElsewhere"
-                        :loading="positionsLoading"
                         option-value="id"
                         filter
+                        :loading="positionsLoading"
                         :virtual-scroller-options="{ itemSize: 38 }"
                         :max-selected-labels="3"
                         display="chip"
                         :disabled="disabled || !form.companyId || !form.branchId"
                         @change="clearFieldError('positionIds')"
                     />
-
-                    <small v-if="message('positionIds')">
-                        {{ message("positionIds") }}
+                    <small class="employee-type-form__help">
+                        {{ t("organization.employeeType.positionsSourceHelp") }}
                     </small>
+                    <small v-if="message('positionIds')">{{ message("positionIds") }}</small>
                 </label>
 
                 <div
@@ -399,15 +248,9 @@ function positionsForChild(currentIndex) {
                 >
                     <div class="employee-type-children__header">
                         <div>
-                            <strong>
-                                {{ t("organization.employeeType.childGroups") }}
-                            </strong>
-
-                            <small>
-                                {{ t("organization.employeeType.childGroupsHelp") }}
-                            </small>
+                            <strong>{{ t("organization.employeeType.childGroups") }}</strong>
+                            <small>{{ t("organization.employeeType.childGroupsHelp") }}</small>
                         </div>
-
                         <Button
                             type="button"
                             size="small"
@@ -427,7 +270,6 @@ function positionsForChild(currentIndex) {
                             <strong>
                                 {{ t("organization.employeeType.childGroupNumber", { number: index + 1 }) }}
                             </strong>
-
                             <Button
                                 type="button"
                                 icon="pi pi-trash"
@@ -442,10 +284,7 @@ function positionsForChild(currentIndex) {
 
                         <div class="employee-type-child-card__grid">
                             <label class="enterprise-form-field">
-                                <span>
-                                    {{ t("organization.employeeType.childCode") }} *
-                                </span>
-
+                                <span>{{ t("organization.employeeType.childCode") }} *</span>
                                 <InputText
                                     v-model="child.code"
                                     :disabled="disabled"
@@ -454,54 +293,16 @@ function positionsForChild(currentIndex) {
                             </label>
 
                             <label class="enterprise-form-field">
-                                <span>
-                                    {{ t("organization.employeeType.childName") }} *
-                                </span>
-
+                                <span>{{ t("organization.employeeType.childName") }} *</span>
                                 <InputText
                                     v-model="child.name"
                                     :disabled="disabled"
-                                    maxlength="160"
-                                />
-                            </label>
-
-                            <label class="enterprise-form-field enterprise-form-field--full">
-                                <span>
-                                    {{ t("organization.employeeType.laborClassification") }} *
-                                </span>
-
-                                <SelectButton
-                                    v-model="child.laborClassification"
-                                    :options="laborClassificationOptions"
-                                    option-label="label"
-                                    option-value="value"
-                                    :disabled="disabled"
-                                    :allow-empty="false"
-                                />
-
-                                <small class="employee-type-form__help">
-                                    {{ t("organization.employeeType.childLaborClassificationHelp") }}
-                                </small>
-                            </label>
-
-                            <label class="enterprise-form-field">
-                                <span>
-                                    {{ t("organization.employeeType.dashboardCategory") }}
-                                </span>
-
-                                <InputText
-                                    v-model="child.dashboardCategory"
-                                    :placeholder="t('organization.employeeType.dashboardCategoryPlaceholder')"
-                                    :disabled="disabled"
-                                    maxlength="80"
+                                    maxlength="120"
                                 />
                             </label>
 
                             <label class="enterprise-form-field">
-                                <span>
-                                    {{ t("organization.employeeType.positionAssignmentMode") }}
-                                </span>
-
+                                <span>{{ t("organization.employeeType.positionAssignmentMode") }}</span>
                                 <Select
                                     v-model="child.positionAssignmentMode"
                                     :options="assignmentOptions"
@@ -515,10 +316,7 @@ function positionsForChild(currentIndex) {
                                 v-if="child.positionAssignmentMode === 'SPECIFIC_POSITIONS'"
                                 class="enterprise-form-field enterprise-form-field--full"
                             >
-                                <span>
-                                    {{ t("organization.employeeType.positions") }} *
-                                </span>
-
+                                <span>{{ t("organization.employeeType.positions") }} *</span>
                                 <MultiSelect
                                     v-model="child.positionIds"
                                     :options="positionsForChild(index)"
@@ -526,6 +324,7 @@ function positionsForChild(currentIndex) {
                                     option-disabled="unavailable"
                                     option-value="id"
                                     filter
+                                    :loading="positionsLoading"
                                     :virtual-scroller-options="{ itemSize: 38 }"
                                     :max-selected-labels="3"
                                     display="chip"
@@ -540,17 +339,11 @@ function positionsForChild(currentIndex) {
 
         <section class="employee-type-form__section">
             <div class="employee-type-form__heading">
-                <h3>
-                    {{ t("organization.employeeType.additionalInformation") }}
-                </h3>
+                <h3>{{ t("organization.employeeType.additionalInformation") }}</h3>
             </div>
-
             <div class="employee-type-form__grid">
                 <label class="enterprise-form-field enterprise-form-field--full">
-                    <span>
-                        {{ t("common.description") }}
-                    </span>
-
+                    <span>{{ t("common.description") }}</span>
                     <Textarea
                         v-model="form.description"
                         :disabled="disabled"
@@ -559,10 +352,7 @@ function positionsForChild(currentIndex) {
                         auto-resize
                         @input="clearFieldError('description')"
                     />
-
-                    <small v-if="message('description')">
-                        {{ message("description") }}
-                    </small>
+                    <small v-if="message('description')">{{ message("description") }}</small>
                 </label>
             </div>
         </section>
@@ -708,5 +498,24 @@ function positionsForChild(currentIndex) {
 .employee-type-form__help {
     color: var(--p-text-muted-color, #64748b);
     line-height: 1.35;
+}
+</style>
+
+<style scoped>
+.employee-type-source-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--p-content-border-color, #dbe3ee);
+    border-radius: 0.4rem;
+    background: var(--p-surface-50, #f8fafc);
+    color: var(--p-text-muted-color, #64748b);
+    font-size: 0.76rem;
+    line-height: 1.4;
+}
+
+.employee-type-source-note i {
+    margin-top: 0.08rem;
 }
 </style>

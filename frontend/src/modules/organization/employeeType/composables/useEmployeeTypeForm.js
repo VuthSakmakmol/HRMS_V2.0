@@ -12,9 +12,8 @@ function emptyForm() {
         branchId: "",
         code: "",
         name: "",
+        positionDisplayName: "",
         structureMode: "DIRECT",
-        dashboardCategory: "",
-        laborClassification: "OTHER",
         positionAssignmentMode: "SPECIFIC_POSITIONS",
         positionIds: [],
         children: [],
@@ -65,9 +64,8 @@ export function useEmployeeTypeForm() {
             branchId: row.branchId || row.branch?.id || "",
             code: row.code || "",
             name: row.name || "",
+            positionDisplayName: row.positionDisplayName || "",
             structureMode: row.children?.length ? "CHILD" : "DIRECT",
-            dashboardCategory: row.dashboardCategory || "",
-            laborClassification: row.laborClassification || "OTHER",
             positionAssignmentMode:
                 row.positionAssignmentMode || "SPECIFIC_POSITIONS",
             positionIds: (row.positionIds || []).map(
@@ -77,8 +75,6 @@ export function useEmployeeTypeForm() {
                 id: child.id,
                 code: child.code || "",
                 name: child.name || "",
-                dashboardCategory: child.dashboardCategory || "",
-                laborClassification: child.laborClassification || "OTHER",
                 positionAssignmentMode:
                     child.positionAssignmentMode || "SPECIFIC_POSITIONS",
                 positionIds: (child.positionIds || []).map(
@@ -86,18 +82,20 @@ export function useEmployeeTypeForm() {
                 ),
             })),
             description: row.description || "",
-            status: row.status === "ARCHIVED" ? "INACTIVE" : row.status || "ACTIVE",
+            status:
+                row.status === "ARCHIVED"
+                    ? "INACTIVE"
+                    : row.status || "ACTIVE",
         })
     }
 
     function addChild() {
         form.structureMode = "CHILD"
         form.positionIds = []
+        form.positionAssignmentMode = "SPECIFIC_POSITIONS"
         form.children.push({
             code: "",
             name: "",
-            dashboardCategory: "",
-            laborClassification: "OTHER",
             positionAssignmentMode: "SPECIFIC_POSITIONS",
             positionIds: [],
         })
@@ -117,11 +115,7 @@ export function useEmployeeTypeForm() {
             branchId: form.branchId,
             code: normalizeCode(form.code),
             name: form.name.trim(),
-            dashboardCategory: normalizeCode(form.dashboardCategory),
-            laborClassification:
-                form.structureMode === "DIRECT"
-                    ? form.laborClassification || "OTHER"
-                    : "OTHER",
+            positionDisplayName: form.positionDisplayName.trim(),
             positionAssignmentMode:
                 form.structureMode === "DIRECT"
                     ? form.positionAssignmentMode
@@ -137,11 +131,6 @@ export function useEmployeeTypeForm() {
                           id: child.id || undefined,
                           code: normalizeCode(child.code || child.name),
                           name: child.name.trim(),
-                          dashboardCategory: normalizeCode(
-                              child.dashboardCategory,
-                          ),
-                          laborClassification:
-                              child.laborClassification || "OTHER",
                           positionAssignmentMode:
                               child.positionAssignmentMode,
                           positionIds:
@@ -170,9 +159,6 @@ export function useEmployeeTypeForm() {
                 return await createEmployeeType(payload)
             }
 
-            // Employee synchronization is automatic in the backend. One save
-            // updates the Employee Type and every employee holding an affected
-            // position; HR never needs to edit employees one by one.
             return await updateEmployeeType(employeeTypeId.value, payload)
         } catch (caught) {
             Object.assign(
