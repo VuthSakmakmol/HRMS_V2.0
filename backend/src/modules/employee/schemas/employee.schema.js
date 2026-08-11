@@ -205,8 +205,6 @@ export const employeeCreateSchema = z.object({
     sourceOfHiring: optionalTextSchema(160),
     recruitmentChannelId: nullableObjectIdSchema.optional(),
     introducerEmployeeId: nullableObjectIdSchema.optional(),
-    employeeTypeId: nullableObjectIdSchema.optional(),
-    employeeTypeChildId: nullableObjectIdSchema.optional(),
     machineSkills: machineSkillsSchema,
     approvalPolicyId: nullableObjectIdSchema.optional(),
 

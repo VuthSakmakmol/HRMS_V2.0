@@ -6,7 +6,11 @@ import { AppError } from "../../../shared/errors/AppError.js"
 import Company from "../../organization/models/Company.js"
 import Position from "../../organization/models/Position.js"
 import EmployeeType from "../models/EmployeeType.js"
-import { listEmployeeTypes } from "./employeeType.service.js"
+import {
+    createEmployeeType,
+    listEmployeeTypes,
+    updateEmployeeType,
+} from "./employeeType.service.js"
 
 const TEMPLATE_HEADERS = [
     "companyCode",
@@ -665,9 +669,9 @@ export async function importEmployeeTypesFromRows({
         }
 
         if (!existingEmployeeType) {
-            await EmployeeType.create({
-                ...updatePayload,
-                createdByAccountId: user?.accountId || null,
+            await createEmployeeType({
+                payload: updatePayload,
+                user,
             })
             created += 1
             continue
@@ -679,8 +683,11 @@ export async function importEmployeeTypesFromRows({
             continue
         }
 
-        existingEmployeeType.set(updatePayload)
-        await existingEmployeeType.save()
+        await updateEmployeeType({
+            employeeTypeId: existingEmployeeType._id,
+            payload: updatePayload,
+            user,
+        })
         updated += 1
     }
 

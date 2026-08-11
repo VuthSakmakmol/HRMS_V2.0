@@ -20,7 +20,7 @@ import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
 import RecruitmentChannel from "../../recruitmentChannel/models/recruitmentChannel.js"
 import ExitReason from "../../exitReason/models/ExitReason.js"
-import EmployeeType from "../../employeeType/models/EmployeeType.js"
+import { resolveEmployeeTypeAssignmentByPosition } from "../../employeeType/services/employeeTypeAssignment.service.js"
 
 import Employee from "../models/Employee.js"
 import { resolveApprovalByAssignment } from "../../approval/services/approvalResolver.service.js"
@@ -102,102 +102,12 @@ function sameId(a, b) {
     return Boolean(left && right && left === right)
 }
 
-function findEmployeeTypePositionMatch(employeeType, positionId) {
-    if (!employeeType || !positionId) return null
-
-    const directPositionIds = Array.isArray(employeeType.positionIds)
-        ? employeeType.positionIds
-        : []
-
-    if (directPositionIds.some((item) => sameId(item, positionId))) {
-        return {
-            employeeTypeId: toId(employeeType._id || employeeType.id),
-            employeeTypeChildId: null,
-            employeeTypeChildCode: "",
-            employeeTypeChildName: "",
-        }
-    }
-
-    for (const child of employeeType.children || []) {
-        const childPositionIds = Array.isArray(child.positionIds)
-            ? child.positionIds
-            : []
-
-        if (childPositionIds.some((item) => sameId(item, positionId))) {
-            return {
-                employeeTypeId: toId(employeeType._id || employeeType.id),
-                employeeTypeChildId: toId(child._id || child.id),
-                employeeTypeChildCode: child.code || "",
-                employeeTypeChildName: child.name || "",
-            }
-        }
-    }
-
-    return null
-}
-
 async function resolveEmployeeTypeReporting(payload) {
-    if (!payload?.positionId) {
-        return {
-            employeeTypeId: payload?.employeeTypeId || null,
-            employeeTypeChildId: null,
-            employeeTypeChildCode: "",
-            employeeTypeChildName: "",
-        }
-    }
-
-
-    let employeeType = null
-
-    if (payload.employeeTypeId) {
-        employeeType = await ensureEmployeeType(payload.employeeTypeId)
-    } else {
-        employeeType = await EmployeeType.findOne({
-            companyId: payload.companyId,
-            status: "ACTIVE",
-            $or: [
-                { positionIds: payload.positionId },
-                { "children.positionIds": payload.positionId },
-            ],
-        }).lean()
-    }
-
-    if (!employeeType) {
-        return {
-            employeeTypeId: null,
-            employeeTypeChildId: null,
-            employeeTypeChildCode: "",
-            employeeTypeChildName: "",
-        }
-    }
-
-    const match = findEmployeeTypePositionMatch(employeeType, payload.positionId)
-
-    if (!match) {
-        throw new AppError({
-            statusCode: 409,
-            code: "EMPLOYEE_POSITION_NOT_IN_EMPLOYEE_TYPE",
-            messageKey: "errors.employee.profile.positionNotInEmployeeType",
-            fields: {
-                employeeTypeId: ["errors.employee.profile.positionNotInEmployeeType"],
-                positionId: ["errors.employee.profile.positionNotInEmployeeType"],
-            },
-        })
-    }
-
-    if (payload.employeeTypeChildId && !sameId(payload.employeeTypeChildId, match.employeeTypeChildId)) {
-        throw new AppError({
-            statusCode: 409,
-            code: "EMPLOYEE_TYPE_CHILD_MISMATCH",
-            messageKey: "errors.employee.profile.employeeTypeChildMismatch",
-            fields: {
-                employeeTypeChildId: ["errors.employee.profile.employeeTypeChildMismatch"],
-                positionId: ["errors.employee.profile.employeeTypeChildMismatch"],
-            },
-        })
-    }
-
-    return match
+    return resolveEmployeeTypeAssignmentByPosition({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        positionId: payload.positionId,
+    })
 }
 
 async function ensureExitReason({ exitReasonId, companyId, branchId }) {
@@ -304,34 +214,6 @@ async function ensureRecruitmentChannel({ recruitmentChannelId, companyId, branc
     }
 
     return recruitmentChannel
-}
-
-async function ensureEmployeeType(employeeTypeId) {
-    if (!employeeTypeId) return null
-
-    ensureObjectId(
-        employeeTypeId,
-        "EMPLOYEE_TYPE_INVALID_ID",
-        "errors.employee.profile.employeeTypeInvalidId",
-    )
-
-    const employeeType = await EmployeeType.findOne({
-        _id: employeeTypeId,
-        status: { $ne: "ARCHIVED" },
-    }).lean()
-
-    if (!employeeType) {
-        throw new AppError({
-            statusCode: 404,
-            code: "EMPLOYEE_TYPE_NOT_FOUND",
-            messageKey: "errors.employee.profile.employeeTypeNotFound",
-            fields: {
-                employeeTypeId: ["errors.employee.profile.employeeTypeNotFound"],
-            },
-        })
-    }
-
-    return employeeType
 }
 
 function getUserCompanyIds(user) {
@@ -782,8 +664,15 @@ function buildEmployeePayload(payload, accountId) {
 
     delete base.sourceOfHiring
     delete base.remark
+
+    // Employee Type is system-managed from Position. Never accept a manual
+    // Employee Type / Child override from Employee create or update payloads.
+    delete base.employeeTypeId
+    delete base.employeeTypeChildId
     delete base.employeeTypeChildCode
     delete base.employeeTypeChildName
+    delete base.employeeTypeReviewRequired
+    delete base.employeeTypeReviewReason
 
     if (payload.maritalStatus && payload.maritalStatus !== "MARRIED") {
         base.spouseName = ""

@@ -187,21 +187,6 @@ const GENERAL_WORKFORCE_CATEGORY_KEYS = Object.freeze({
     RD_MARKETING: "RD_MARKETING",
 })
 
-const GENERAL_WORKFORCE_DEPARTMENT_KEYWORDS = Object.freeze([
-    "MERCHANDISING",
-    "MERCHANDISE",
-    "MARKETING",
-    "MKT",
-    "RD MKT",
-    "R D MKT",
-    "R D",
-])
-
-const GENERAL_WORKFORCE_DIRECT_KEYWORDS = Object.freeze([
-    "SEWER",
-    "SEWING",
-    "JUMPER",
-])
 
 function toObjectId(value) {
     return value ? new mongoose.Types.ObjectId(value) : undefined
@@ -2066,22 +2051,6 @@ function summarizeEmployeesForGeneralData({ employees, selectedDate }) {
     }
 }
 
-function normalizeDashboardText(value) {
-    return String(value || "")
-        .trim()
-        .replace(/[^a-zA-Z0-9]+/g, " ")
-        .replace(/\s+/g, " ")
-        .toUpperCase()
-}
-
-function findLookupById(items = [], id) {
-    const stringId = toOptionalStringId(id)
-
-    if (!stringId) return null
-
-    return items.find((item) => item.id === stringId) || null
-}
-
 function getEmployeeTypeOptionForEmployee(employee = {}, lookups = {}) {
     const employeeTypeId = toOptionalStringId(employee.employeeTypeId)
 
@@ -2099,39 +2068,25 @@ function getEmployeeTypeOptionForEmployee(employee = {}, lookups = {}) {
     return lookups.employeeTypes?.find((item) => item.key === parentKey) || null
 }
 
-function lookupTextMatchesKeywords(item = {}, keywords = []) {
-    const text = normalizeDashboardText([
-        item.code,
-        item.name,
-        item.label,
-        item.title,
-    ].filter(Boolean).join(" "))
+function isRdMarketingEmployee(employee = {}, lookups = {}) {
+    const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
 
-    return keywords.some((keyword) => text.includes(keyword))
-}
-
-function isEmployeeInMerchandisingDepartment(employee = {}, lookups = {}) {
-    const department = findLookupById(lookups.departments, employee.departmentId)
-
-    return lookupTextMatchesKeywords(
-        department,
-        GENERAL_WORKFORCE_DEPARTMENT_KEYWORDS,
+    return (
+        String(employeeTypeOption?.dashboardCategory || "")
+            .trim()
+            .toUpperCase() === GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING
     )
 }
 
 function isDirectLaborEmployee(employee = {}, lookups = {}) {
     const employeeTypeOption = getEmployeeTypeOptionForEmployee(employee, lookups)
-
-    if (employeeTypeOption?.dashboardCategory === "BLUE_COLLAR_SEWER") {
-        return true
-    }
-
-    const position = findLookupById(lookups.positions, employee.positionId)
-
-    return lookupTextMatchesKeywords(
-        position,
-        GENERAL_WORKFORCE_DIRECT_KEYWORDS,
+    const classification = String(
+        employeeTypeOption?.laborClassification || "OTHER",
     )
+        .trim()
+        .toUpperCase()
+
+    return classification === "DIRECT"
 }
 
 function buildGeneralWorkforceCategoryBreakdown({
@@ -2150,7 +2105,7 @@ function buildGeneralWorkforceCategoryBreakdown({
     }
 
     for (const employee of activeEmployees) {
-        if (isEmployeeInMerchandisingDepartment(employee, lookups)) {
+        if (isRdMarketingEmployee(employee, lookups)) {
             counts[GENERAL_WORKFORCE_CATEGORY_KEYS.RD_MARKETING] += 1
             continue
         }
@@ -2437,10 +2392,18 @@ function buildEmployeeTypePositionLaborMap(lookups = {}) {
         ),
     ]
 
+    const allPositionIds = (lookups.positions || [])
+        .map((position) => String(position.id || ""))
+        .filter(Boolean)
+
     for (const option of orderedOptions) {
         const classification = classifyEmployeeTypeOptionLabor(option)
+        const positionIds =
+            option.positionAssignmentMode === "ALL_POSITIONS"
+                ? allPositionIds
+                : option.positionIds || []
 
-        for (const positionId of option.positionIds || []) {
+        for (const positionId of positionIds) {
             const key = String(positionId || "")
 
             if (!key || classificationByPositionId.has(key)) continue

@@ -94,11 +94,93 @@ const rows = (value) =>
   Array.isArray(value) ? value : Array.isArray(value?.items) ? value.items : [];
 const map = (items) =>
   rows(items).map((item) => ({ label: label(item), value: item.id, ...item }));
+
+const employeeTypePositionAssignments = computed(() => {
+  const assignments = new Map();
+  const allPositionIds = rows(lookups.positions)
+    .map((position) => String(position.id || position._id || ""))
+    .filter(Boolean);
+
+  const register = (positionId, employeeType, child = null) => {
+    const key = String(positionId || "");
+    if (!key) return;
+
+    const current = assignments.get(key);
+    assignments.set(key, {
+      ambiguous: Boolean(current),
+      employeeType,
+      child,
+    });
+  };
+
+  for (const employeeType of rows(lookups.employeeTypes)) {
+    if (employeeType.status && employeeType.status !== "ACTIVE") continue;
+
+    const parentPositionIds =
+      employeeType.positionAssignmentMode === "ALL_POSITIONS"
+        ? allPositionIds
+        : employeeType.positionIds || [];
+
+    for (const positionId of parentPositionIds) {
+      register(positionId, employeeType, null);
+    }
+
+    for (const child of employeeType.children || []) {
+      const childPositionIds =
+        child.positionAssignmentMode === "ALL_POSITIONS"
+          ? allPositionIds
+          : child.positionIds || [];
+
+      for (const positionId of childPositionIds) {
+        register(positionId, employeeType, child);
+      }
+    }
+  }
+
+  return assignments;
+});
+
+const formPositionOptions = computed(() =>
+  rows(lookups.positions).map((item) => {
+    const positionId = String(item.id || item._id || "");
+    const assignment = employeeTypePositionAssignments.value.get(positionId);
+    const baseLabel = label(item);
+
+    if (!assignment) {
+      return {
+        ...item,
+        label: `${baseLabel} — Employee Type not configured`,
+        value: item.id || item._id,
+        disabled: true,
+      };
+    }
+
+    if (assignment.ambiguous) {
+      return {
+        ...item,
+        label: `${baseLabel} — Employee Type mapping conflict`,
+        value: item.id || item._id,
+        disabled: true,
+      };
+    }
+
+    const typeName = assignment.employeeType?.name || assignment.employeeType?.code || "Employee Type";
+    const childName = assignment.child?.name || assignment.child?.code || "";
+
+    return {
+      ...item,
+      label: `${baseLabel} — ${typeName}${childName ? ` / ${childName}` : ""}`,
+      value: item.id || item._id,
+      disabled: false,
+    };
+  }),
+);
+
 const formOptions = computed(() => ({
   companyId: map(lookups.companies),
   branchId: map(lookups.branches),
   departmentId: map(lookups.departments),
-  positionId: map(lookups.positions),
+  positionId: formPositionOptions.value,
   lineId: map(lookups.lines),
   shiftId: map(lookups.shifts),
   recruitmentChannelId: map(lookups.recruitmentChannels),
@@ -234,19 +316,23 @@ async function loadBranchChildren() {
     "exitReasons",
   );
   if (!companyId || !branchId) return;
-  const [departments, lines, shifts, recruitmentChannels, exitReasons] =
+  const [departments, lines, shifts, recruitmentChannels, exitReasons, employeeTypes] =
     await Promise.all([
       fetchEmployeeDepartments({ companyId, branchId }),
       fetchEmployeeLines({ companyId, branchId }),
       fetchEmployeeShifts({ companyId, branchId }),
       fetchEmployeeRecruitmentChannels({ companyId, branchId }),
       fetchEmployeeExitReasons({ companyId, branchId }),
+      fetchEmployeeTypes(companyId),
     ]);
   lookups.departments = departments;
   lookups.lines = lines;
   lookups.shifts = shifts;
   lookups.recruitmentChannels = recruitmentChannels;
   lookups.exitReasons = exitReasons;
+  lookups.employeeTypes = rows(employeeTypes).filter(
+    (item) => !item.branchId || item.branchId === branchId,
+  );
 }
 async function loadDepartmentChildren() {
   const { companyId, branchId, departmentId } = formState.form;

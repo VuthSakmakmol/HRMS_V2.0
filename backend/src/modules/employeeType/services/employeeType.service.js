@@ -379,16 +379,37 @@ function handleDuplicateEmployeeTypeError(error) {
     })
 }
 
-function normalizeChildGroups(children = []) {
-    return (children || []).map((child) => ({
-        code: normalizeCode(child.code || child.name),
-        name: child.name,
-        dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
-        laborClassification: child.laborClassification || "OTHER",
-        positionAssignmentMode:
-            child.positionAssignmentMode || "SPECIFIC_POSITIONS",
-        positionIds: [...new Set(child.positionIds || [])],
-    }))
+function normalizeChildGroups(children = [], existingChildren = []) {
+    const existingById = new Map(
+        (existingChildren || [])
+            .filter((child) => child?._id || child?.id)
+            .map((child) => [toId(child._id || child.id), child]),
+    )
+    const existingByCode = new Map(
+        (existingChildren || [])
+            .filter((child) => child?.code)
+            .map((child) => [normalizeCode(child.code), child]),
+    )
+
+    return (children || []).map((child) => {
+        const requestedId = toId(child?._id || child?.id)
+        const previous =
+            (requestedId && existingById.get(requestedId)) ||
+            existingByCode.get(normalizeCode(child.code || child.name)) ||
+            null
+        const preservedId = requestedId || toId(previous?._id || previous?.id)
+
+        return {
+            ...(preservedId ? { _id: preservedId } : {}),
+            code: normalizeCode(child.code || child.name),
+            name: child.name,
+            dashboardCategory: child.dashboardCategory || "UNSPECIFIED",
+            laborClassification: child.laborClassification || "OTHER",
+            positionAssignmentMode:
+                child.positionAssignmentMode || "SPECIFIC_POSITIONS",
+            positionIds: [...new Set(child.positionIds || [])],
+        }
+    })
 }
 
 function flattenAssignmentPositionIds({ positionIds = [], children = [] }) {
@@ -441,35 +462,186 @@ function employeeAssignmentSnapshot(employee, overrides = {}) {
     }
 }
 
-async function buildEmployeeReconciliationPreview({ existingEmployeeType, normalizedPayload }) {
-    const oldAssignments = assignmentByPosition(existingEmployeeType)
-    const newAssignments = assignmentByPosition(normalizedPayload)
-    const affectedPositionIds = [...new Set([...oldAssignments.keys(), ...newAssignments.keys()])]
-
-    if (!affectedPositionIds.length) {
-        return { totalAffected: 0, reassigned: 0, reviewRequired: 0, employees: [] }
+function activeAssignmentView(employeeType) {
+    if (!employeeType || employeeType.status !== "ACTIVE") {
+        return employeeType
+            ? { ...employeeType, positionIds: [], children: [] }
+            : null
     }
 
-    const employees = await Employee.find({
-        companyId: normalizedPayload.companyId,
-        branchId: normalizedPayload.branchId,
-        positionId: { $in: affectedPositionIds },
+    return employeeType
+}
+
+async function ensurePositionsWithEmployeesRemainMapped({
+    previousEmployeeType,
+    nextEmployeeType,
+    session = null,
+}) {
+    // Existing employee usage must be protected even if an old Employee Type
+    // was already marked INACTIVE. The target side, however, only counts as a
+    // valid mapping when the Employee Type remains ACTIVE.
+    const oldAssignments = assignmentByPosition(previousEmployeeType || {})
+    const newAssignments = assignmentByPosition(
+        activeAssignmentView(nextEmployeeType) || {},
+    )
+    const removedPositionIds = [...oldAssignments.keys()].filter(
+        (positionId) => !newAssignments.has(positionId),
+    )
+
+    if (!removedPositionIds.length) return
+
+    let employeeQuery = Employee.find({
+        companyId: previousEmployeeType.companyId,
+        branchId: previousEmployeeType.branchId,
+        positionId: { $in: removedPositionIds },
         recordStatus: { $ne: "ARCHIVED" },
-    })
-        .select("employeeCode companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildId employeeTypeChildCode employeeTypeChildName employeeTypeReviewRequired employmentStatus")
-        .lean()
+    }).select("positionId")
 
-    const changes = []
+    if (session) employeeQuery = employeeQuery.session(session)
+    const employees = await employeeQuery.lean()
+
+    if (!employees.length) return
+
+    const countByPosition = new Map()
     for (const employee of employees) {
-        const target = newAssignments.get(toId(employee.positionId))
-        const desiredTypeId = target ? toId(existingEmployeeType._id) : null
-        const alreadyCorrect =
-            toId(employee.employeeTypeId) === desiredTypeId &&
-            toId(employee.employeeTypeChildId) === toId(target?.employeeTypeChildId)
+        const positionId = toId(employee.positionId)
+        countByPosition.set(
+            positionId,
+            Number(countByPosition.get(positionId) || 0) + 1,
+        )
+    }
 
-        if (alreadyCorrect && !employee.employeeTypeReviewRequired) continue
+    let positionQuery = Position.find({
+        _id: { $in: [...countByPosition.keys()] },
+    }).select("code title")
+    if (session) positionQuery = positionQuery.session(session)
+    const positions = await positionQuery.lean()
 
-        changes.push({ employee, target: target || null })
+    const positionDetails = positions.map((position) => ({
+        positionId: toId(position._id),
+        code: position.code || "",
+        name: position.title || position.code || "",
+        employeeCount: Number(countByPosition.get(toId(position._id)) || 0),
+    }))
+
+    throw new AppError({
+        statusCode: 409,
+        code: "ORGANIZATION_EMPLOYEE_TYPE_POSITION_IN_USE_CANNOT_UNMAP",
+        messageKey: "errors.organization.employeeType.positionInUseCannotUnmap",
+        fields: {
+            positionIds: [
+                "errors.organization.employeeType.positionInUseCannotUnmap",
+            ],
+            children: [
+                "errors.organization.employeeType.positionInUseCannotUnmap",
+            ],
+        },
+        details: {
+            totalEmployees: employees.length,
+            positions: positionDetails,
+        },
+    })
+}
+
+async function buildEmployeeReconciliationPreview({
+    previousEmployeeType = null,
+    nextEmployeeType = null,
+    session = null,
+}) {
+    const oldAssignments = assignmentByPosition(
+        activeAssignmentView(previousEmployeeType) || {},
+    )
+    const newAssignments = assignmentByPosition(
+        activeAssignmentView(nextEmployeeType) || {},
+    )
+    const oldPositionIds = [...oldAssignments.keys()]
+    const newPositionIds = [...newAssignments.keys()]
+
+    if (!oldPositionIds.length && !newPositionIds.length) {
+        return {
+            totalAffected: 0,
+            reassigned: 0,
+            reviewRequired: 0,
+            employees: [],
+        }
+    }
+
+    const organizationClauses = []
+
+    if (previousEmployeeType && oldPositionIds.length) {
+        organizationClauses.push({
+            companyId: previousEmployeeType.companyId,
+            branchId: previousEmployeeType.branchId,
+            positionId: { $in: oldPositionIds },
+        })
+    }
+
+    if (nextEmployeeType && newPositionIds.length) {
+        organizationClauses.push({
+            companyId: nextEmployeeType.companyId,
+            branchId: nextEmployeeType.branchId,
+            positionId: { $in: newPositionIds },
+        })
+    }
+
+    if (!organizationClauses.length) {
+        return {
+            totalAffected: 0,
+            reassigned: 0,
+            reviewRequired: 0,
+            employees: [],
+        }
+    }
+
+    let query = Employee.find({
+        $or: organizationClauses,
+        recordStatus: { $ne: "ARCHIVED" },
+    }).select(
+        "employeeCode companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildId employeeTypeChildCode employeeTypeChildName employeeTypeReviewRequired employeeTypeReviewReason employmentStatus",
+    )
+
+    if (session) {
+        query = query.session(session)
+    }
+
+    const employees = await query.lean()
+    const previousTypeId = toId(previousEmployeeType?._id || previousEmployeeType?.id)
+    const nextTypeId = toId(nextEmployeeType?._id || nextEmployeeType?.id)
+    const changes = []
+
+    for (const employee of employees) {
+        const positionId = toId(employee.positionId)
+        const target = newAssignments.get(positionId) || null
+
+        // A mapped position is authoritative: all employees currently holding
+        // that position must follow the Employee Type / Child assignment.
+        if (target) {
+            const alreadyCorrect =
+                toId(employee.employeeTypeId) === nextTypeId &&
+                toId(employee.employeeTypeChildId) ===
+                    toId(target.employeeTypeChildId) &&
+                String(employee.employeeTypeChildCode || "") ===
+                    String(target.employeeTypeChildCode || "") &&
+                String(employee.employeeTypeChildName || "") ===
+                    String(target.employeeTypeChildName || "") &&
+                !employee.employeeTypeReviewRequired &&
+                !employee.employeeTypeReviewReason
+
+            if (!alreadyCorrect) {
+                changes.push({ employee, target })
+            }
+
+            continue
+        }
+
+        // A removed position must only clear employees that still belong to
+        // this Employee Type. Never wipe another valid assignment by accident.
+        if (
+            previousTypeId &&
+            toId(employee.employeeTypeId) === previousTypeId
+        ) {
+            changes.push({ employee, target: null })
+        }
     }
 
     return {
@@ -480,7 +652,12 @@ async function buildEmployeeReconciliationPreview({ existingEmployeeType, normal
     }
 }
 
-async function applyEmployeeReconciliation({ preview, employeeTypeId, accountId, session }) {
+async function applyEmployeeReconciliation({
+    preview,
+    employeeTypeId,
+    accountId,
+    session,
+}) {
     if (!preview.totalAffected) return
 
     const employeeOperations = []
@@ -491,8 +668,8 @@ async function applyEmployeeReconciliation({ preview, employeeTypeId, accountId,
             ? {
                   employeeTypeId,
                   employeeTypeChildId: target.employeeTypeChildId || null,
-                  employeeTypeChildCode: target.employeeTypeChildCode,
-                  employeeTypeChildName: target.employeeTypeChildName,
+                  employeeTypeChildCode: target.employeeTypeChildCode || "",
+                  employeeTypeChildName: target.employeeTypeChildName || "",
                   employeeTypeReviewRequired: false,
                   employeeTypeReviewReason: "",
               }
@@ -508,9 +685,15 @@ async function applyEmployeeReconciliation({ preview, employeeTypeId, accountId,
         employeeOperations.push({
             updateOne: {
                 filter: { _id: employee._id },
-                update: { $set: { ...next, updatedByAccountId: accountId } },
+                update: {
+                    $set: {
+                        ...next,
+                        updatedByAccountId: accountId,
+                    },
+                },
             },
         })
+
         movementRows.push({
             employeeId: employee._id,
             movementType: "EMPLOYEE_TYPE_CHANGE",
@@ -518,19 +701,24 @@ async function applyEmployeeReconciliation({ preview, employeeTypeId, accountId,
             from: employeeAssignmentSnapshot(employee),
             to: employeeAssignmentSnapshot(employee, next),
             reason: target
-                ? "Automatically reconciled after Employee Type position assignment changed."
-                : "Position removed from Employee Type assignment; HR review required.",
+                ? "Automatically synchronized from Employee Type position assignment."
+                : "Position is no longer assigned to this Employee Type; HR review required.",
             source: "SYSTEM",
             createdByAccountId: accountId,
             updatedByAccountId: accountId,
         })
     }
 
-    await Employee.bulkWrite(employeeOperations, { session })
-    await EmployeeMovement.insertMany(movementRows, { session })
+    if (employeeOperations.length) {
+        await Employee.bulkWrite(employeeOperations, { session })
+    }
+
+    if (movementRows.length) {
+        await EmployeeMovement.insertMany(movementRows, { session })
+    }
 }
 
-function normalizeAssignmentPayload(payload) {
+function normalizeAssignmentPayload(payload, { existingChildren = [] } = {}) {
     const normalized = { ...payload }
 
     if (!normalized.positionAssignmentMode) {
@@ -538,7 +726,10 @@ function normalizeAssignmentPayload(payload) {
     }
 
     if (normalized.children !== undefined) {
-        normalized.children = normalizeChildGroups(normalized.children)
+        normalized.children = normalizeChildGroups(
+            normalized.children,
+            existingChildren,
+        )
     }
 
     if (normalized.positionIds !== undefined) {
@@ -1074,18 +1265,50 @@ export async function createEmployeeType({ payload, user }) {
         positionIds: allPositionIds,
     })
 
+    const session = await mongoose.startSession()
+
     try {
-        const employeeType = await EmployeeType.create({
-            ...normalizedPayload,
-            createdByAccountId: user?.accountId || null,
-            updatedByAccountId: user?.accountId || null,
+        let createdEmployeeType = null
+
+        await session.withTransaction(async () => {
+            const createdRows = await EmployeeType.create(
+                [
+                    {
+                        ...normalizedPayload,
+                        createdByAccountId: user?.accountId || null,
+                        updatedByAccountId: user?.accountId || null,
+                    },
+                ],
+                { session },
+            )
+
+            createdEmployeeType = createdRows[0]
+
+            const reconciliationPreview =
+                await buildEmployeeReconciliationPreview({
+                    previousEmployeeType: null,
+                    nextEmployeeType: createdEmployeeType.toObject(),
+                    session,
+                })
+
+            await applyEmployeeReconciliation({
+                preview: reconciliationPreview,
+                employeeTypeId: createdEmployeeType._id,
+                accountId: user?.accountId || null,
+                session,
+            })
         })
 
         clearEmployeeTypeRelatedCaches()
 
-        return getEmployeeTypeById({ employeeTypeId: employeeType._id, user })
+        return getEmployeeTypeById({
+            employeeTypeId: createdEmployeeType._id,
+            user,
+        })
     } catch (error) {
         handleDuplicateEmployeeTypeError(error)
+    } finally {
+        await session.endSession()
     }
 }
 
@@ -1117,14 +1340,18 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         })
     }
 
-    const confirmEmployeeReconciliation = payload.confirmEmployeeReconciliation === true
     const cleanPayload = { ...payload }
+    // Kept for backward compatibility with older frontend builds. Employee
+    // reconciliation is automatic now and never needs a second confirmation.
     delete cleanPayload.confirmEmployeeReconciliation
 
-    let normalizedPayload = normalizeAssignmentPayload({
-        ...existingEmployeeType,
-        ...cleanPayload,
-    })
+    let normalizedPayload = normalizeAssignmentPayload(
+        {
+            ...existingEmployeeType,
+            ...cleanPayload,
+        },
+        { existingChildren: existingEmployeeType.children || [] },
+    )
 
     await ensureCompanyExists({
         companyId: normalizedPayload.companyId,
@@ -1142,7 +1369,9 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         user,
     })
 
-    let patchPayload = normalizeAssignmentPayload(cleanPayload)
+    let patchPayload = normalizeAssignmentPayload(cleanPayload, {
+        existingChildren: existingEmployeeType.children || [],
+    })
 
     if (
         patchPayload.positionIds !== undefined ||
@@ -1175,47 +1404,57 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
         }
     }
 
-    const reconciliationPreview = await buildEmployeeReconciliationPreview({
-        existingEmployeeType,
-        normalizedPayload,
-    })
-
-    if (reconciliationPreview.totalAffected > 0 && !confirmEmployeeReconciliation) {
-        throw new AppError({
-            statusCode: 409,
-            code: "ORGANIZATION_EMPLOYEE_TYPE_RECONCILIATION_CONFIRMATION_REQUIRED",
-            messageKey: "errors.organization.employeeType.reconciliationConfirmationRequired",
-            details: {
-                reconciliation: {
-                    totalAffected: reconciliationPreview.totalAffected,
-                    reassigned: reconciliationPreview.reassigned,
-                    reviewRequired: reconciliationPreview.reviewRequired,
-                },
-            },
-        })
-    }
-
     const session = await mongoose.startSession()
+
     try {
-        let updatedEmployeeType
+        let updatedEmployeeType = null
+        let reconciliationPreview = {
+            totalAffected: 0,
+            reassigned: 0,
+            reviewRequired: 0,
+            employees: [],
+        }
+
         await session.withTransaction(async () => {
-            updatedEmployeeType = await EmployeeType.findOneAndUpdate(
-            {
-                _id: employeeTypeId,
-                ...getEmployeeTypeScopeFilter(user),
-            },
-            {
-                $set: buildEmployeeTypeUpdatePayload(
-                    patchPayload,
-                    user?.accountId || null,
-                ),
-            },
-            {
-                new: true,
-                runValidators: true,
+            await ensurePositionsWithEmployeesRemainMapped({
+                previousEmployeeType: existingEmployeeType,
+                nextEmployeeType: normalizedPayload,
                 session,
-            },
+            })
+
+            updatedEmployeeType = await EmployeeType.findOneAndUpdate(
+                {
+                    _id: employeeTypeId,
+                    ...getEmployeeTypeScopeFilter(user),
+                },
+                {
+                    $set: buildEmployeeTypeUpdatePayload(
+                        patchPayload,
+                        user?.accountId || null,
+                    ),
+                },
+                {
+                    new: true,
+                    runValidators: true,
+                    session,
+                },
             )
+
+            if (!updatedEmployeeType) {
+                throw new AppError({
+                    statusCode: 404,
+                    code: "ORGANIZATION_EMPLOYEE_TYPE_NOT_FOUND",
+                    messageKey: "errors.organization.employeeType.notFound",
+                })
+            }
+
+            // Build the target from the persisted document so newly-created
+            // child groups already have their real MongoDB subdocument _id.
+            reconciliationPreview = await buildEmployeeReconciliationPreview({
+                previousEmployeeType: existingEmployeeType,
+                nextEmployeeType: updatedEmployeeType.toObject(),
+                session,
+            })
 
             await applyEmployeeReconciliation({
                 preview: reconciliationPreview,
@@ -1231,6 +1470,7 @@ export async function updateEmployeeType({ employeeTypeId, payload, user }) {
             employeeTypeId: updatedEmployeeType._id,
             user,
         })
+
         return {
             employeeType,
             reconciliation: {
@@ -1270,22 +1510,58 @@ export async function archiveEmployeeType({ employeeTypeId, user }) {
         return getEmployeeTypeById({ employeeTypeId, user })
     }
 
-    await EmployeeType.updateOne(
-        {
-            _id: employeeTypeId,
-            ...getEmployeeTypeScopeFilter(user),
-        },
-        {
-            $set: {
+    const session = await mongoose.startSession()
+
+    try {
+        await session.withTransaction(async () => {
+            const archivedAssignmentView = {
+                ...employeeType,
                 status: "ARCHIVED",
-                updatedByAccountId: user?.accountId || null,
-            },
-        },
-    )
+                positionIds: [],
+                children: [],
+            }
 
-    clearEmployeeTypeRelatedCaches()
+            await ensurePositionsWithEmployeesRemainMapped({
+                previousEmployeeType: employeeType,
+                nextEmployeeType: archivedAssignmentView,
+                session,
+            })
 
-    return getEmployeeTypeById({ employeeTypeId, user })
+            const reconciliationPreview =
+                await buildEmployeeReconciliationPreview({
+                    previousEmployeeType: employeeType,
+                    nextEmployeeType: archivedAssignmentView,
+                    session,
+                })
+
+            await EmployeeType.updateOne(
+                {
+                    _id: employeeTypeId,
+                    ...getEmployeeTypeScopeFilter(user),
+                },
+                {
+                    $set: {
+                        status: "ARCHIVED",
+                        updatedByAccountId: user?.accountId || null,
+                    },
+                },
+                { session },
+            )
+
+            await applyEmployeeReconciliation({
+                preview: reconciliationPreview,
+                employeeTypeId,
+                accountId: user?.accountId || null,
+                session,
+            })
+        })
+
+        clearEmployeeTypeRelatedCaches()
+
+        return getEmployeeTypeById({ employeeTypeId, user })
+    } finally {
+        await session.endSession()
+    }
 }
 
 export async function listEmployeeTypeDashboardCategories({ user }) {

@@ -1828,6 +1828,7 @@ export default {
                 duplicate: "This employee type already exists.",
                 positionNotFound: "One or more selected positions were not found in the selected branch.",
                 positionAlreadyMapped: "One or more selected positions are already mapped to another employee type.",
+                positionInUseCannotUnmap: "This position still has employees assigned. Keep it mapped to an active Employee Type before removing or archiving this assignment.",
                 reconciliationConfirmationRequired: "Confirm the employee assignment changes before saving."
             },
             employeeTypeImport: {
@@ -1886,10 +1887,15 @@ export default {
         },
         employee: {
             profile: {
+                positionEmployeeTypeNotConfigured: "This position has not been assigned to an active Employee Type. Configure the position in Employee Type first.",
+                positionEmployeeTypeAmbiguous: "This position is assigned to more than one Employee Type. Fix the Employee Type mapping before assigning employees.",
                 recruitmentChannelInvalidId: "Invalid recruitment channel ID.",
                 recruitmentChannelNotFound: "Recruitment channel was not found or is archived.",
                 recruitmentChannelCompanyMismatch: "Recruitment channel does not belong to the selected company.",
                 recruitmentChannelBranchMismatch: "Recruitment channel does not belong to the selected branch."
+            },
+            import: {
+                positionEmployeeTypeNotConfigured: "The position is not assigned to an active Employee Type. Configure Employee Type first, then import again."
             }
         },
         attendance: {

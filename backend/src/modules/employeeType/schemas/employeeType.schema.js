@@ -90,6 +90,7 @@ const laborClassificationSchema = z
     .pipe(z.enum(LABOR_CLASSIFICATIONS))
 
 const employeeTypeChildSchema = z.object({
+    id: objectIdSchema.optional(),
     code: normalizedCodeSchema.optional(),
     name: normalizedTextSchema(2, 120),
     dashboardCategory: dashboardCategorySchema,

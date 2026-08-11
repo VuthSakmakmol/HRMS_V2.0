@@ -138,6 +138,45 @@ async function fetchPage(endpoint, params = {}) {
     return collection || []
 }
 
+async function fetchAllPages(endpoint, params = {}) {
+    const allItems = []
+    const seenIds = new Set()
+    let page = 1
+    let totalPages = 1
+
+    do {
+        const response = await apiClient.get(endpoint, {
+            params: {
+                page,
+                limit: 100,
+                status: "ACTIVE",
+                ...params,
+            },
+        })
+        const payload = response?.data?.data
+        const items = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.items)
+              ? payload.items
+              : Object.values(payload || {}).find(Array.isArray) || []
+
+        let added = 0
+        for (const item of items) {
+            const id = String(item?.id || item?._id || "")
+            if (id && seenIds.has(id)) continue
+            if (id) seenIds.add(id)
+            allItems.push(item)
+            added += 1
+        }
+
+        totalPages = Math.max(1, Number(payload?.pagination?.totalPages || 1))
+        if (!payload?.pagination || added === 0) break
+        page += 1
+    } while (page <= totalPages)
+
+    return allItems
+}
+
 async function fetchOptional(endpoints, params = {}) {
     for (const endpoint of endpoints) {
         try { return await fetchPage(endpoint, params) }
@@ -166,7 +205,7 @@ export function fetchEmployeeDepartments({ companyId, branchId }) {
 
 export function fetchEmployeePositions({ companyId, branchId, departmentId }) {
     if (!companyId || !branchId || !departmentId) return Promise.resolve([])
-    return fetchPage("/organization/positions/lookup", {
+    return fetchAllPages("/organization/positions/lookup", {
         companyId,
         branchId,
         departmentId,
@@ -186,12 +225,20 @@ export function fetchEmployeeShifts({ companyId, branchId }) {
     return fetchPage("/organization/shifts/lookup", { companyId, branchId })
 }
 
-export function fetchEmployeeTypes(companyId) {
-    if (!companyId) return Promise.resolve([])
-    return fetchOptional(
-        ["/organization/employee-types", "/employee-types", "/setup/employee-types"],
-        { companyId },
-    )
+export async function fetchEmployeeTypes(companyId) {
+    if (!companyId) return []
+
+    try {
+        return await fetchAllPages("/organization/employee-types", { companyId })
+    } catch (error) {
+        const status = error?.status || error?.response?.status
+        if (![404, 422].includes(status)) throw error
+
+        return fetchOptional(
+            ["/employee-types", "/setup/employee-types"],
+            { companyId },
+        )
+    }
 }
 
 export function fetchEmployeeRecruitmentChannels({ companyId, branchId }) {

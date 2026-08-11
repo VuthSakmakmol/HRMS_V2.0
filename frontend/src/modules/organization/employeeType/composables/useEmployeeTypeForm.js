@@ -134,6 +134,7 @@ export function useEmployeeTypeForm() {
             children:
                 form.structureMode === "CHILD"
                     ? form.children.map((child) => ({
+                          id: child.id || undefined,
                           code: normalizeCode(child.code || child.name),
                           name: child.name.trim(),
                           dashboardCategory: normalizeCode(
@@ -157,7 +158,9 @@ export function useEmployeeTypeForm() {
 
     async function save() {
         saving.value = true
-        savingMessage.value = t("organization.employeeType.savingBackend")
+        savingMessage.value = isEdit.value
+            ? t("organization.employeeType.reconcilingEmployees")
+            : t("organization.employeeType.savingBackend")
         Object.keys(errors).forEach((key) => delete errors[key])
 
         try {
@@ -167,43 +170,10 @@ export function useEmployeeTypeForm() {
                 return await createEmployeeType(payload)
             }
 
-            try {
-                return await updateEmployeeType(employeeTypeId.value, payload)
-            } catch (caught) {
-                const error = caught?.response?.data?.error || caught
-
-                if (
-                    error?.code !==
-                    "ORGANIZATION_EMPLOYEE_TYPE_RECONCILIATION_CONFIRMATION_REQUIRED"
-                ) {
-                    throw caught
-                }
-
-                saving.value = false
-                savingMessage.value = ""
-
-                const summary = error?.details?.reconciliation || {}
-                const confirmed = window.confirm(
-                    `This assignment change affects ${Number(summary.totalAffected || 0)} employee(s).\n\n` +
-                        `${Number(summary.reassigned || 0)} will follow the new Employee Type assignment.\n` +
-                        `${Number(summary.reviewRequired || 0)} will be marked for HR review.\n\n` +
-                        "Continue and record the changes in employee movement history?",
-                )
-
-                if (!confirmed) {
-                    return null
-                }
-
-                saving.value = true
-                savingMessage.value = t(
-                    "organization.employeeType.reconcilingEmployees",
-                )
-
-                return await updateEmployeeType(employeeTypeId.value, {
-                    ...payload,
-                    confirmEmployeeReconciliation: true,
-                })
-            }
+            // Employee synchronization is automatic in the backend. One save
+            // updates the Employee Type and every employee holding an affected
+            // position; HR never needs to edit employees one by one.
+            return await updateEmployeeType(employeeTypeId.value, payload)
         } catch (caught) {
             Object.assign(
                 errors,

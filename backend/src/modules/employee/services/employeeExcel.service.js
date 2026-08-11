@@ -13,7 +13,7 @@ import Province from "../../location/models/Province.js"
 import District from "../../location/models/District.js"
 import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
-import EmployeeType from "../../employeeType/models/EmployeeType.js"
+import { getEmployeeTypeAssignmentMap } from "../../employeeType/services/employeeTypeAssignment.service.js"
 import Account from "../../access/models/Account.js"
 
 import Employee from "../models/Employee.js"
@@ -72,7 +72,6 @@ const TEMPLATE_HEADERS = [
     "workingBookNo",
     "sourceOfHiring",
     "introducerEmployeeCode",
-    "employeeType",
     "singleNeedle",
     "overlock",
     "coverstitch",
@@ -332,14 +331,6 @@ function normalizeEmploymentStatus(value) {
     return map[code] || "WORKING"
 }
 
-function normalizeEmployeeTypeLookup(value) {
-    const raw = normalizeText(value)
-    if (!raw) return ""
-
-    const code = normalizeCode(raw)
-    return code === "MAARKETING" ? "MARKETING" : raw
-}
-
 function normalizeNumber(value) {
     const raw = excelValueToString(value).trim()
     if (!raw) return 0
@@ -487,7 +478,6 @@ export async function buildEmployeeImportTemplateWorkbook() {
         shiftCode: "DAY",
         joinDate: "15/08/2024",
         employmentStatus: "WORKING",
-        employeeType: "DIRECT",
         singleNeedle: 1,
         overlock: 0,
         coverstitch: 0,
@@ -506,6 +496,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         { rule: "Team/Section", description: "Team and Section are ignored because the project structure is Department => Position => Line." },
         { rule: "Status", description: "Use WORKING, MATERNITY_LEAVE, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED. Old values Working, Maternity, Resign, Terminate, Abandon, Pass Away, and Retirement are accepted." },
         { rule: "Login account", description: "Set createAccount to YES to create login. Login ID = employeeCode. Initial password = employeeCode + phoneNumber. If the column is missing, YES is used." },
+        { rule: "Employee Type", description: "Do not enter Employee Type or Child Type. The system derives both automatically from positionCode. A position must be configured in Employee Type before employees can be imported into it." },
     ])
     instructions.getRow(1).font = { bold: true }
     return workbook
@@ -594,7 +585,6 @@ export async function parseEmployeeImportWorkbook(buffer) {
             workingBookNo: normalizeText(raw.workingBookNo),
             sourceOfHiring: normalizeText(raw.sourceOfHiring),
             introducerEmployeeCode: normalizeCode(raw.introducerEmployeeCode),
-            employeeTypeLookup: normalizeEmployeeTypeLookup(raw.employeeType),
             singleNeedle: normalizeNumber(raw.singleNeedle),
             overlock: normalizeNumber(raw.overlock),
             coverstitch: normalizeNumber(raw.coverstitch),
@@ -692,26 +682,6 @@ async function findLineForEmployeeImport({
     }).lean()
 }
 
-async function findEmployeeType(value) {
-    if (!value) return null
-
-    const code = normalizeCode(value)
-    const name = normalizeText(value)
-
-    return EmployeeType.findOne({
-        status: { $ne: "ARCHIVED" },
-        $or: [
-            { code },
-            { typeCode: code },
-            { name },
-            { typeName: name },
-            { title: name },
-            { displayName: name },
-            { shortName: name },
-        ],
-    }).lean()
-}
-
 async function resolveLocation({ provinceName, districtName, communeName, villageName }) {
     const province = await findByCodeOrName(Province, provinceName)
     const district = province && districtName ? await findByCodeOrName(District, districtName, { provinceId: province._id }) : null
@@ -753,13 +723,16 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         return summary
     }
 
-    const [departments, positions, lines, shifts, introducers, employeeTypes] = await Promise.all([
+    const [departments, positions, lines, shifts, introducers, employeeTypeAssignments] = await Promise.all([
         Department.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Position.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Line.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Shift.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Employee.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, recordStatus: { $ne: "ARCHIVED" } }).select("_id employeeCode").lean(),
-        EmployeeType.find({ companyId: fallbackCompany._id, status: { $ne: "ARCHIVED" } }).lean(),
+        getEmployeeTypeAssignmentMap({
+            companyId: fallbackCompany._id,
+            branchId: fallbackBranch._id,
+        }),
     ])
 
     const departmentMap = new Map()
@@ -767,14 +740,12 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     const lineMap = new Map()
     const shiftMap = new Map()
     const introducerMap = new Map()
-    const employeeTypeMap = new Map()
 
     for (const department of departments) addDocumentAliases(departmentMap, department)
     for (const position of positions) addDocumentAliases(positionMap, position, `${position.departmentId?.toString()}::`)
     for (const line of lines) addDocumentAliases(lineMap, line)
     for (const shift of shifts) addDocumentAliases(shiftMap, shift)
     for (const introducer of introducers) introducerMap.set(normalizeCode(introducer.employeeCode), introducer)
-    for (const employeeType of employeeTypes) addDocumentAliases(employeeTypeMap, employeeType)
 
     for (const [index, row] of rows.entries()) {
         const company = fallbackCompany
@@ -785,7 +756,9 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         const line = lineMap.get(normalizeCode(row.lineCode)) || null
         const shift = shiftMap.get(normalizeCode(row.shiftCode)) || null
         const introducer = row.introducerEmployeeCode ? introducerMap.get(normalizeCode(row.introducerEmployeeCode)) || null : null
-        const employeeType = row.employeeTypeLookup ? employeeTypeMap.get(normalizeCode(row.employeeTypeLookup)) || null : null
+        const employeeTypeAssignment = position
+            ? employeeTypeAssignments.get(position._id.toString()) || null
+            : null
 
         if (!department) summary.errors.push(buildError(row.rowNumber, "departmentCode", "errors.employee.import.departmentNotFound"))
         if (!position) summary.errors.push(buildError(row.rowNumber, "positionCode", "errors.employee.import.positionNotFound"))
@@ -795,9 +768,12 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         }))
         if (!shift) summary.errors.push(buildError(row.rowNumber, "shiftCode", "errors.employee.import.shiftNotFound"))
         if (row.introducerEmployeeCode && !introducer) summary.errors.push(buildError(row.rowNumber, "introducerEmployeeCode", "errors.employee.import.introducerNotFound"))
-        if (row.employeeTypeLookup && !employeeType) summary.errors.push(buildError(row.rowNumber, "employeeType", "errors.employee.import.employeeTypeNotFound"))
+        if (position && !employeeTypeAssignment) summary.errors.push(buildError(row.rowNumber, "positionCode", "errors.employee.import.positionEmployeeTypeNotConfigured", {
+            value: row.positionCode,
+            expected: "Assign this position to an active Employee Type before importing employees",
+        }))
 
-        row._resolved = { company, branch, department, position, line, shift, introducer, employeeType }
+        row._resolved = { company, branch, department, position, line, shift, introducer, employeeTypeAssignment }
         onProgress?.({
             phase: "RESOLVING_REFERENCES",
             percent: 20 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 35),
@@ -816,7 +792,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     for (const [index, row] of rows.entries()) {
         const birthAddress = await resolveLocation({ provinceName: row.birthProvince, districtName: row.birthDistrict, communeName: row.birthCommune, villageName: row.birthVillage })
         const permanentAddress = await resolveLocation({ provinceName: row.permanentProvince, districtName: row.permanentDistrict, communeName: row.permanentCommune, villageName: row.permanentVillage })
-        const { company, branch, department, position, line, shift, introducer, employeeType } = row._resolved
+        const { company, branch, department, position, line, shift, introducer, employeeTypeAssignment } = row._resolved
         const payload = {
             employeeCode: row.employeeCode,
             profileImageUrl: row.profileImageUrl,
@@ -864,7 +840,12 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
             },
             sourceOfHiring: row.sourceOfHiring,
             introducerEmployeeId: introducer?._id || null,
-            employeeTypeId: employeeType?._id || null,
+            employeeTypeId: employeeTypeAssignment.employeeTypeId,
+            employeeTypeChildId: employeeTypeAssignment.employeeTypeChildId || null,
+            employeeTypeChildCode: employeeTypeAssignment.employeeTypeChildCode || "",
+            employeeTypeChildName: employeeTypeAssignment.employeeTypeChildName || "",
+            employeeTypeReviewRequired: false,
+            employeeTypeReviewReason: "",
             machineSkills: {
                 singleNeedle: row.singleNeedle,
                 overlock: row.overlock,

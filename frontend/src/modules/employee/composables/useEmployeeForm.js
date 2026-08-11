@@ -15,7 +15,6 @@ export function createEmptyEmployeeForm() {
         companyId: "", branchId: "", departmentId: "", positionId: "", lineId: "", shiftId: "",
         joinDate: "", employmentStatus: "WORKING", resignDate: "", resignReason: "", exitReasonId: null,
         documents: emptyDocuments(), recruitmentChannelId: null, introducerEmployeeId: null,
-        employeeTypeId: null, employeeTypeChildId: null, employeeTypeChildCode: "", employeeTypeChildName: "",
         machineSkills: { singleNeedle: 0, overlock: 0, coverstitch: 0, totalMachines: 0 },
         approvalPolicyId: null, recordStatus: "ACTIVE",
     }
@@ -50,8 +49,17 @@ export function useEmployeeForm() {
             const payload = JSON.parse(JSON.stringify(form))
             delete payload.sourceOfHiring
             delete payload.remark
+            // Employee Type / Child are derived by the backend from Position.
+            // Never submit stale values loaded from an existing employee.
+            delete payload.employeeTypeId
+            delete payload.employeeTypeChildId
             delete payload.employeeTypeChildCode
             delete payload.employeeTypeChildName
+            delete payload.employeeType
+            delete payload.employeeTypeChild
+            delete payload.employeeTypeLabel
+            delete payload.employeeTypeReviewRequired
+            delete payload.employeeTypeReviewReason
             if (payload.maritalStatus !== "MARRIED") {
                 payload.spouseName = ""
                 payload.spouseContactNumber = ""
