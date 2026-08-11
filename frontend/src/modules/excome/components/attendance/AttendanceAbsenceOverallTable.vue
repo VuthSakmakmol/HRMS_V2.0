@@ -135,14 +135,39 @@ function isSummaryRow(row) {
         "YTD",
     ].includes(row?.rowType)
 }
+
+function isSelectedRow(row) {
+    if (props.selectedPeriodKey) {
+        return row?.key === props.selectedPeriodKey
+    }
+
+    return row?.rowType === "CURRENT_YTD"
+}
+
+function progressColor(value) {
+    const number = normalizeNumber(value)
+
+    if (number >= 10) return "rgba(50, 140, 175, 0.72)"
+    if (number >= 7) return "rgba(115, 190, 220, 0.68)"
+    if (number >= 5) return "rgba(169, 216, 235, 0.72)"
+    if (number >= 3) return "rgba(207, 234, 245, 0.82)"
+    if (number > 0) return "rgba(232, 246, 251, 0.95)"
+    return "transparent"
+}
+
+function progressStyle(value) {
+    const number = normalizeNumber(value)
+    const progress = Math.min(Math.max(number, 0), 100)
+
+    return {
+        "--progress-width": `${progress}%`,
+        "--progress-color": progressColor(number),
+    }
+}
 </script>
 
 <template>
     <div class="attendance-overall-table-card">
-        <div class="attendance-overall-table-card__title">
-            {{ safeT("excome.attendance.absentData", "Absent Data") }}
-        </div>
-
         <div
             v-if="hasRows"
             class="attendance-overall-table-wrap"
@@ -215,6 +240,7 @@ function isSummaryRow(row) {
                         :key="row.key || row.label"
                         :class="{
                             'is-summary': isSummaryRow(row),
+                            'is-filter-selected': isSelectedRow(row),
                         }"
                     >
                         <th class="attendance-overall-table__label">
@@ -239,18 +265,32 @@ function isSummaryRow(row) {
                                 :class="[
                                     'attendance-overall-table__value',
                                     columnClass(column),
+                                    'percentage-progress-cell',
                                 ]"
+                                :style="progressStyle(valueFor(row, column, 'rate'))"
                             >
-                                {{ formatPercent(valueFor(row, column, "rate")) }}
+                                <span class="percentage-progress-cell__value">
+                                    {{ formatPercent(valueFor(row, column, "rate")) }}
+                                </span>
                             </td>
                         </template>
 
-                        <td class="attendance-overall-table__value is-total-rate">
-                            {{ formatPercent(row.absentRate) }}
+                        <td
+                            class="attendance-overall-table__value is-total-rate percentage-progress-cell"
+                            :style="progressStyle(row.absentRate)"
+                        >
+                            <span class="percentage-progress-cell__value">
+                                {{ formatPercent(row.absentRate) }}
+                            </span>
                         </td>
 
-                        <td class="attendance-overall-table__value is-workforce-rate">
-                            {{ formatPercent(row.absentRateExcludingAnnualMaternity) }}
+                        <td
+                            class="attendance-overall-table__value is-workforce-rate percentage-progress-cell"
+                            :style="progressStyle(row.absentRateExcludingAnnualMaternity)"
+                        >
+                            <span class="percentage-progress-cell__value">
+                                {{ formatPercent(row.absentRateExcludingAnnualMaternity) }}
+                            </span>
                         </td>
                     </tr>
                 </tbody>
@@ -276,15 +316,9 @@ function isSummaryRow(row) {
     background: #ffffff;
 }
 
-.attendance-overall-table-card__title {
-    color: #111111;
-    font-size: 0.78rem;
-    font-weight: 900;
-    letter-spacing: 0.01em;
-}
-
 .attendance-overall-table-wrap {
     width: 100%;
+    min-width: 0;
     overflow: hidden;
 }
 
@@ -292,16 +326,16 @@ function isSummaryRow(row) {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
-    color: #000000;
-    font-size: 0.58rem;
-    font-weight: 800;
+    color: #111827;
+    font-size: clamp(0.60rem, 0.62vw, 0.70rem);
+    font-weight: 400;
 }
 
 .attendance-overall-table th,
 .attendance-overall-table td {
-    height: 1.2rem;
-    padding: 0.12rem 0.16rem;
-    border: 1px solid #101010;
+    height: 1.35rem;
+    padding: 0.14rem 0.18rem;
+    border: 1px solid #334155;
     text-align: center;
     vertical-align: middle;
     white-space: nowrap;
@@ -309,13 +343,21 @@ function isSummaryRow(row) {
 
 .attendance-overall-table thead th {
     background: #f8fafc;
-    font-weight: 900;
+    font-weight: 700;
+}
+
+.attendance-overall-table tbody td {
+    font-weight: 400;
 }
 
 .attendance-overall-table__label {
     width: 6.4rem;
     background: #ffffff;
-    font-weight: 900;
+    font-weight: 500;
+}
+
+.attendance-overall-table thead .attendance-overall-table__label {
+    font-weight: 700;
 }
 
 .attendance-overall-table__group.is-absence,
@@ -333,28 +375,59 @@ function isSummaryRow(row) {
 .attendance-overall-table__rate,
 .attendance-overall-table__value.is-total-rate {
     background: #fce4d6;
-    font-weight: 900;
+    font-weight: 500;
 }
 
 .attendance-overall-table__value.is-workforce-rate,
 .attendance-overall-table__rate.is-workforce-rate {
     background: #bfefff;
     color: #002060;
-    font-weight: 900;
+    font-weight: 500;
 }
 
+.percentage-progress-cell {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+
+.percentage-progress-cell::before {
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--progress-width, 0%);
+    background: var(--progress-color, transparent);
+    content: "";
+    transition: width 160ms ease, background-color 160ms ease;
+}
+
+.percentage-progress-cell__value {
+    position: relative;
+    z-index: 1;
+    color: inherit;
+    font-weight: inherit;
+}
+
+/* Summary rows stay distinguishable without the heavy bold treatment. */
 .attendance-overall-table tbody tr.is-summary th,
 .attendance-overall-table tbody tr.is-summary td {
-    border-top: 2px solid #ff0000;
-    border-bottom: 2px solid #ff0000;
+    font-weight: 500;
 }
 
-.attendance-overall-table tbody tr.is-summary th:first-child {
-    border-left: 2px solid #ff0000;
+.attendance-overall-table tbody tr.is-filter-selected th,
+.attendance-overall-table tbody tr.is-filter-selected td {
+    border-top: 2px solid #ef1f1f;
+    border-bottom: 2px solid #ef1f1f;
 }
 
-.attendance-overall-table tbody tr.is-summary td:last-child {
-    border-right: 2px solid #ff0000;
+.attendance-overall-table tbody tr.is-filter-selected th:first-child {
+    border-left: 2px solid #ef1f1f;
+}
+
+.attendance-overall-table tbody tr.is-filter-selected td:last-child {
+    border-right: 2px solid #ef1f1f;
 }
 
 .attendance-overall-table-empty {
@@ -364,8 +437,8 @@ function isSummaryRow(row) {
     border: 1px dashed #cbd5e1;
     background: #f8fafc;
     color: #64748b;
-    font-size: 0.75rem;
-    font-weight: 800;
+    font-size: 0.84rem;
+    font-weight: 500;
 }
 
 .attendance-overall-table tbody tr.is-selected-period-row > * {
@@ -387,7 +460,7 @@ function isSummaryRow(row) {
     }
 
     .attendance-overall-table {
-        font-size: 0.48rem;
+        font-size: clamp(0.50rem, 1.65vw, 0.60rem);
     }
 
     .attendance-overall-table__label {

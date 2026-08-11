@@ -32,6 +32,19 @@ const employeeTypeLabel = computed(() =>
     dashboard.value.filters?.employeeTypeLabel ||
     safeT("excome.filters.allEmployeeTypes", "All employee types"),
 )
+const isWholeYearRange = computed(() => {
+    const startDate = String(dashboard.value.filters?.startDate || "")
+    const endDate = String(dashboard.value.filters?.endDate || "")
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return false
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return false
+
+    return (
+        startDate.slice(0, 4) === endDate.slice(0, 4) &&
+        startDate.endsWith("-01-01") &&
+        endDate.endsWith("-12-31")
+    )
+})
 const hasDashboardData = computed(() => {
     const data = dashboard.value
 
@@ -141,6 +154,8 @@ function createDefaultFilters() {
         companyId: workspaceStore.companyId || undefined,
         branchId: workspaceStore.branchId || undefined,
         employeeTypeFilterKey: undefined,
+        exitReasonId: undefined,
+        shiftId: undefined,
         departmentId: undefined,
         positionId: undefined,
         lineId: undefined,
@@ -173,6 +188,8 @@ watch(
             companyId: companyId || undefined,
             branchId: branchId || undefined,
             employeeTypeFilterKey: undefined,
+            exitReasonId: undefined,
+            shiftId: undefined,
             departmentId: undefined,
             positionId: undefined,
             lineId: undefined,
@@ -271,15 +288,15 @@ onMounted(async () => {
 
                 <article class="excome-module-card">
                     <AttendanceAbsenceDataSection
-                        :title="safeT('excome.attendance.absentData', 'Absent Data')"
                         :data="dashboard.attendance || {}"
+                        :employee-type-label="employeeTypeLabel"
                         :selected-period-key="selectedPeriodKey"
+                        :whole-year="isWholeYearRange"
                     />
                 </article>
 
                 <article class="excome-module-card">
                     <ExitAnalysisSection
-                        :title="safeT('excome.sections.exitAnalysis', 'Exit Analysis')"
                         :data="dashboard.exitAnalysis || {}"
                     />
                 </article>

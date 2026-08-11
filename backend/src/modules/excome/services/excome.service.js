@@ -179,7 +179,6 @@ const ABSENCE_OVERALL_TYPES = Object.freeze([
 const ABSENCE_EXCLUDED_FROM_WORKFORCE_RATE = new Set(["AL", "ML"])
 const ABSENCE_RATE_CODES = new Set(["UL", "SL", "SP", "AB", "AL", "ML"])
 const ABSENCE_RATE_EXCLUDING_ANNUAL_MATERNITY_CODES = new Set(["UL", "SL", "SP", "AB"])
-const TOP_ABSENT_DEPARTMENT_LIMIT = 15
 
 
 function toObjectId(value) {
@@ -662,21 +661,6 @@ function buildManpowerSeries({ employees, plans, periods }) {
     return rows
 }
 
-function movementMatchesEmployeeTypeFilter(snapshot = {}, filter = {}) {
-    if (filter.employeeTypeId) {
-        const id = snapshot.employeeTypeId?.toString?.() || snapshot.employeeTypeId
-        if (id !== filter.employeeTypeId) return false
-    }
-
-    if (filter.employeeTypeChildCode) {
-        if (snapshot.employeeTypeChildCode !== filter.employeeTypeChildCode) {
-            return false
-        }
-    }
-
-    return true
-}
-
 function movementSnapshotMatchesQuery(snapshot = {}, query = {}) {
     const filter = normalizedQuery(query)
 
@@ -707,29 +691,32 @@ function filterMovementsForQuery(movements = [], query = {}) {
     )
 }
 
-function buildMovementSeries({ movements, periods, query }) {
+function buildMovementSeries({ employees, periods }) {
     const rows = clonePeriods(periods)
     const rowByKey = new Map(rows.map((row) => [row.key, row]))
-    const filter = normalizedQuery(query)
 
-    for (const movement of movements) {
-        const date = new Date(movement.effectiveDate)
+    const addDateToPeriod = (rawDate, field) => {
+        if (!rawDate) return
+
+        const date = new Date(rawDate)
+        if (Number.isNaN(date.getTime())) return
+
         const key = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`
         const row = rowByKey.get(key)
 
-        if (!row) continue
+        if (!row) return
 
-        if (ENTRY_TYPES.has(movement.movementType)) {
-            if (movementMatchesEmployeeTypeFilter(movement.to, filter)) {
-                row.in += 1
-            }
-        }
+        row[field] += 1
+    }
 
-        if (EXIT_TYPES.has(movement.movementType)) {
-            if (movementMatchesEmployeeTypeFilter(movement.from, filter)) {
-                row.out += 1
-            }
-        }
+    // Movement IN/OUT is intentionally derived from Employee Master.
+    // The employee list has already been filtered by company, branch,
+    // employee type, child type, department, position, line and shift.
+    // This keeps the chart complete even when historical EmployeeMovement
+    // records were never created for imported employees.
+    for (const employee of employees) {
+        addDateToPeriod(employee.joinDate, "in")
+        addDateToPeriod(employee.resignDate, "out")
     }
 
     for (const row of rows) {
@@ -1213,6 +1200,7 @@ function buildRecruitmentChannelDashboard({
     periods,
     startDate,
     endDate,
+    selectedLabel = "All Employee Types",
 }) {
     const firstPeriod = periods[0]
     const currentYear = firstPeriod?.year || startDate.getUTCFullYear()
@@ -1266,6 +1254,7 @@ function buildRecruitmentChannelDashboard({
     )
 
     return {
+        selectedLabel,
         previousYear,
         currentYear,
         periods: periods.map((period) => ({
@@ -1590,7 +1579,6 @@ function buildAttendanceTopAbsentDepartments({ records, periods, departments }) 
                 b.absentRate - a.absentRate ||
                 String(a.label).localeCompare(String(b.label)),
         )
-        .slice(0, TOP_ABSENT_DEPARTMENT_LIMIT)
 }
 
 function buildAttendanceAbsenceTables({
@@ -1918,7 +1906,6 @@ function summarizeTurnoverMonths(months = []) {
 
 function buildTurnoverComparison({
     employees,
-    movements,
     selectedYear,
     selectedLabel,
     targetRates,
@@ -1943,18 +1930,24 @@ function buildTurnoverComparison({
         ).length
     }
 
-    for (const movement of movements) {
-        if (!EXIT_TYPES.has(movement.movementType)) continue
+    // Turnover exits come directly from Employee Master resignDate.
+    // The employee list is already filtered by company, branch, employee type,
+    // child type, department, position, line and shift, so the turnover chart
+    // follows the exact same Excome scope without depending on EmployeeMovement
+    // history that may not exist for imported/legacy employees.
+    for (const employee of employees) {
+        if (!employee.resignDate) continue
 
-        const date = new Date(movement.effectiveDate)
+        const date = new Date(employee.resignDate)
+        if (Number.isNaN(date.getTime())) continue
+
         const year = date.getUTCFullYear()
-        const month = date.getUTCMonth()
+        const monthIndex = date.getUTCMonth()
         const months = monthsByYear.get(year)
 
         if (!months) continue
 
-        const bucket = months[month]
-
+        const bucket = months[monthIndex]
         if (!bucket) continue
 
         bucket.exits += 1
@@ -2156,25 +2149,34 @@ function buildExitReasonRows({ exitEmployees, exitReasons, periods = [] }) {
         exitReasons.map((reason) => [reason._id.toString(), reason]),
     )
     const periodKeys = periods.map((period) => period.key)
-    const rowsByLabel = new Map()
+    const rowsByKey = new Map()
 
-    function ensureRow(label) {
-        if (!rowsByLabel.has(label)) {
-            rowsByLabel.set(label, {
+    function ensureRow({ key, label, reasonId = null, code = "" }) {
+        if (!rowsByKey.has(key)) {
+            rowsByKey.set(key, {
+                key,
+                reasonId,
+                code,
                 label,
-                monthly: Object.fromEntries(periodKeys.map((key) => [key, 0])),
+                monthly: Object.fromEntries(periodKeys.map((periodKey) => [periodKey, 0])),
                 count: 0,
                 rate: 0,
             })
         }
 
-        return rowsByLabel.get(label)
+        return rowsByKey.get(key)
     }
 
-    // Keep configured reasons available as stable rows. The frontend hides rows
-    // whose yearly total is zero, so old/unused reasons do not make the table noisy.
+    // Keep configured reasons available as stable chart categories. Zero rows
+    // are hidden by the frontend, so unused reasons do not create visual noise.
     for (const reason of exitReasons) {
-        ensureRow(reason.name || reason.code || "Unknown")
+        const reasonId = reason._id.toString()
+        ensureRow({
+            key: `ID:${reasonId}`,
+            reasonId,
+            code: reason.code || "",
+            label: reason.name || reason.code || "Unknown",
+        })
     }
 
     for (const employee of exitEmployees) {
@@ -2186,11 +2188,22 @@ function buildExitReasonRows({ exitEmployees, exitReasons, periods = [] }) {
             resignDate.getUTCMonth() + 1,
         ).padStart(2, "0")}`
 
-        // Ignore dates outside the periods represented by this dashboard response.
         if (!periodKeys.includes(periodKey)) continue
 
+        const employeeReasonId = employee.exitReasonId?.toString?.() || null
+        const configuredReason = employeeReasonId
+            ? exitReasonById.get(employeeReasonId)
+            : null
         const label = getExitReasonLabel(employee, exitReasonById)
-        const row = ensureRow(label)
+        const key = employeeReasonId
+            ? `ID:${employeeReasonId}`
+            : `LEGACY:${String(label || "Unknown").trim().toUpperCase()}`
+        const row = ensureRow({
+            key,
+            reasonId: configuredReason ? employeeReasonId : null,
+            code: configuredReason?.code || "",
+            label,
+        })
 
         row.monthly[periodKey] = (row.monthly[periodKey] || 0) + 1
         row.count += 1
@@ -2198,7 +2211,7 @@ function buildExitReasonRows({ exitEmployees, exitReasons, periods = [] }) {
 
     const total = exitEmployees.length
 
-    return [...rowsByLabel.values()]
+    return [...rowsByKey.values()]
         .map((row) => ({
             ...row,
             rate: total > 0 ? round((row.count / total) * 100, 2) : 0,
@@ -2267,16 +2280,23 @@ function buildExitAnalysisDashboard({
     endDate,
     selectedYear,
     selectedLabel,
+    selectedExitReasonId = null,
     periods = [],
 }) {
-    const exitEmployees = employees.filter((employee) =>
+    const allExitEmployees = employees.filter((employee) =>
         isExitEmployee(employee, startDate, endDate),
     )
-    const reasonRows = buildExitReasonRows({
-        exitEmployees,
+    const allReasonRows = buildExitReasonRows({
+        exitEmployees: allExitEmployees,
         exitReasons,
         periods,
     })
+    const reasonRows = selectedExitReasonId
+        ? allReasonRows.filter((row) => sameId(row.reasonId, selectedExitReasonId))
+        : allReasonRows
+    const selectedExitEmployees = selectedExitReasonId
+        ? allExitEmployees.filter((employee) => sameId(employee.exitReasonId, selectedExitReasonId))
+        : allExitEmployees
     const reasonTotals = buildExitReasonTotals({
         rows: reasonRows,
         periods,
@@ -2285,11 +2305,13 @@ function buildExitAnalysisDashboard({
     return {
         selectedLabel,
         selectedYear,
-        totalExits: exitEmployees.length,
+        selectedExitReasonId: selectedExitReasonId || null,
+        totalExits: selectedExitEmployees.length,
         exitReasons: {
-            title: "RESIGN by Reason",
+            title: `${selectedLabel} EXIT REASON`,
             selectedLabel,
             selectedYear,
+            selectedExitReasonId: selectedExitReasonId || null,
             months: periods.map((period) => ({
                 key: period.key,
                 label: period.label,
@@ -2300,8 +2322,8 @@ function buildExitAnalysisDashboard({
             totals: reasonTotals,
         },
         servicePeriods: {
-            title: `Period of Service-${selectedLabel}- ${selectedYear}`,
-            rows: buildServicePeriodRows(exitEmployees),
+            title: `${selectedLabel} PERIOD OF SERVICE`,
+            rows: buildServicePeriodRows(selectedExitEmployees),
         },
     }
 }
@@ -2460,14 +2482,40 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
 
 function getSelectedEmployeeTypeLabel({ query, lookups }) {
     const filter = normalizedQuery(query)
+    const employeeTypeOptions = lookups.employeeTypes || []
 
     if (!filter.employeeTypeFilterKey) return "All Employee Types"
 
-    const selected = lookups.employeeTypes.find(
+    const selected = employeeTypeOptions.find(
         (item) => item.key === filter.employeeTypeFilterKey,
     )
 
-    return selected?.label || "Selected Employee Type"
+    if (!selected) return "Selected Employee Type"
+
+    // Excome titles use Employee Type codes only. Never use the employee
+    // type name as a fallback because the title must remain a stable,
+    // compact reporting label.
+    if (selected.type === "CHILD") {
+        const parent = employeeTypeOptions.find(
+            (item) =>
+                item.type === "TYPE" &&
+                String(item.employeeTypeId || item.id || "") ===
+                    String(selected.employeeTypeId || ""),
+        )
+
+        const parentCode = String(parent?.code || "").trim()
+        const childCode = String(
+            selected.code || filter.employeeTypeChildCode || "",
+        ).trim()
+
+        if (parentCode && childCode) return `${parentCode} + ${childCode}`
+        if (parentCode) return parentCode
+        if (childCode) return childCode
+
+        return "Selected Employee Type"
+    }
+
+    return String(selected.code || "").trim() || "Selected Employee Type"
 }
 
 function findLookupName(items = [], id) {
@@ -2596,7 +2644,7 @@ export async function getExcomeLookups({ query }) {
         ...(query.branchId ? { branchId: toObjectId(query.branchId) } : {}),
     }
 
-    const [companies, branches, departments, positions, lines, shifts, employeeTypes] =
+    const [companies, branches, departments, positions, lines, shifts, employeeTypes, exitReasons] =
         await Promise.all([
             Company.find({ status: "ACTIVE", ...companyMatch })
                 .select(["code", "displayName"])
@@ -2647,6 +2695,7 @@ export async function getExcomeLookups({ query }) {
                 ])
                 .sort({ name: 1 })
                 .lean(),
+            loadExitReasons(query),
         ])
 
     const result = {
@@ -2657,17 +2706,27 @@ export async function getExcomeLookups({ query }) {
         lines: lines.map((item) => normalizeLookupItem(item)),
         shifts: shifts.map((item) => normalizeLookupItem(item)),
         employeeTypes: buildEmployeeTypeLookupOptions(employeeTypes),
+        exitReasons: exitReasons.map((item) => normalizeLookupItem(item)),
     }
 
     return setCache(cacheKey, result, 60_000)
 }
 
-function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recruitmentChannels, movements, dashboardTargets }) {
+function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recruitmentChannels, dashboardTargets }) {
     const totalEmployees = employees.length
     const countMissing = (field) => employees.filter((employee) => !employee?.[field]).length
     const missingExitReason = employees.filter((employee) =>
         employee.resignDate && !employee.exitReasonId && !String(employee.resignReason || "").trim(),
     ).length
+    const movementDateCount = employees.reduce((count, employee) => {
+        const joinDate = employee.joinDate ? new Date(employee.joinDate) : null
+        const resignDate = employee.resignDate ? new Date(employee.resignDate) : null
+
+        if (joinDate && !Number.isNaN(joinDate.getTime())) count += 1
+        if (resignDate && !Number.isNaN(resignDate.getTime())) count += 1
+
+        return count
+    }, 0)
 
     const items = [
         { key: "employeeMaster", label: "Employee Master", ready: totalEmployees > 0, count: totalEmployees, detail: totalEmployees ? `${totalEmployees.toLocaleString()} employees available` : "No employee data" },
@@ -2680,7 +2739,7 @@ function buildDataReadiness({ employees, plans, attendanceRecordCount = 0, recru
         { key: "attendance", label: "Attendance", ready: attendanceRecordCount > 0, count: attendanceRecordCount, detail: attendanceRecordCount ? `${attendanceRecordCount.toLocaleString()} attendance records in selected range` : "No attendance data in selected range" },
         { key: "manpowerPlan", label: "Manpower Plan", ready: plans.length > 0, count: plans.length, detail: plans.length ? `${plans.length.toLocaleString()} active plan rows` : "Budget and roadmap are not configured" },
         { key: "recruitment", label: "Recruitment Channels", ready: recruitmentChannels.length > 0, count: recruitmentChannels.length, detail: recruitmentChannels.length ? `${recruitmentChannels.length.toLocaleString()} recruitment channels available` : "Recruitment channel data is missing" },
-        { key: "movement", label: "Employee Movement", ready: movements.length > 0, count: movements.length, detail: movements.length ? `${movements.length.toLocaleString()} movement records in selected range` : "No employee movement history in selected range" },
+        { key: "movement", label: "Employee Movement", ready: movementDateCount > 0, count: movementDateCount, detail: movementDateCount ? `${movementDateCount.toLocaleString()} join/resign dates available from Employee Master` : "No join/resign dates available for movement" },
         { key: "exitReason", label: "Exit Reasons", ready: missingExitReason === 0, count: missingExitReason, detail: `${missingExitReason.toLocaleString()} exited employees missing exit reason` },
         { key: "targets", label: "Excome Targets", ready: dashboardTargets.length > 0, count: dashboardTargets.length, detail: dashboardTargets.length ? `${dashboardTargets.length.toLocaleString()} targets configured` : "No Excome targets configured" },
     ]
@@ -2726,7 +2785,6 @@ export async function getExcome({ query }) {
         lookups,
         totalGeneralEmployees,
         totalGeneralPlans,
-        turnoverMovements,
         recruitmentChannels,
         dashboardTargets,
         exitReasons,
@@ -2734,11 +2792,6 @@ export async function getExcome({ query }) {
         lookupsPromise,
         loadEmployees(totalGeneralQuery),
         loadPlans(totalGeneralQuery, periods),
-        loadMovements(
-            totalGeneralQuery,
-            monthStart(selectedYear - 1, 1),
-            monthEnd(selectedYear, 12),
-        ),
         loadRecruitmentChannels(cleanQuery),
         loadDashboardTargets(cleanQuery, startDate.getUTCFullYear()),
         loadExitReasons(cleanQuery),
@@ -2749,11 +2802,6 @@ export async function getExcome({ query }) {
     // operations over ~3,500 employees instead of a second MongoDB round-trip.
     const employees = filterEmployeesForQuery(totalGeneralEmployees, cleanQuery)
     const plans = filterPlansForQuery(totalGeneralPlans, cleanQuery, lookups)
-    const filteredTurnoverMovements = filterMovementsForQuery(turnoverMovements, cleanQuery)
-    const movements = filteredTurnoverMovements.filter((movement) => {
-        const date = new Date(movement.effectiveDate)
-        return date >= startDate && date <= endDate
-    })
     const lines = lookups.lines || []
 
     const selectedPeriod = periods.find((period) => period.key === selectedPeriodKey) || periods.at(-1)
@@ -2783,7 +2831,7 @@ export async function getExcome({ query }) {
             query: cleanQuery,
             employees,
             selectedYear,
-            selectedLabel: selectedMetricLabel,
+            selectedLabel: selectedEmployeeTypeLabel,
             targetRates: absenceTargetRates,
             departments: lookups.departments,
             lines,
@@ -2791,9 +2839,8 @@ export async function getExcome({ query }) {
     ])
     const turnoverComparison = buildTurnoverComparison({
         employees,
-        movements: filteredTurnoverMovements,
         selectedYear,
-        selectedLabel: selectedMetricLabel,
+        selectedLabel: selectedEmployeeTypeLabel,
         targetRates: turnoverTargetRates,
     })
 
@@ -2811,6 +2858,7 @@ export async function getExcome({ query }) {
             employeeTypeId: cleanQuery.employeeTypeId || null,
             employeeTypeChildCode: cleanQuery.employeeTypeChildCode || null,
             employeeTypeFilterKey: cleanQuery.employeeTypeFilterKey || null,
+            exitReasonId: cleanQuery.exitReasonId || null,
             employeeTypeLabel: selectedEmployeeTypeLabel,
         },
         lookups,
@@ -2819,7 +2867,6 @@ export async function getExcome({ query }) {
             plans,
             attendanceRecordCount: attendanceAnalytics.recordCount,
             recruitmentChannels,
-            movements,
             dashboardTargets,
         }),
         general: buildGeneralData({
@@ -2838,6 +2885,7 @@ export async function getExcome({ query }) {
             periods,
             startDate,
             endDate,
+            selectedLabel: selectedEmployeeTypeLabel,
         }),
         attendance: attendanceAnalytics.attendance,
         exitAnalysis: buildExitAnalysisDashboard({
@@ -2846,11 +2894,12 @@ export async function getExcome({ query }) {
             startDate,
             endDate,
             selectedYear,
-            selectedLabel: selectedMetricLabel,
+            selectedLabel: selectedEmployeeTypeLabel,
+            selectedExitReasonId: cleanQuery.exitReasonId || null,
             periods,
         }),
-        turnover: turnoverComparison,
-        movement: buildMovementSeries({ movements, periods, query: cleanQuery }),
+        turnover: turnoverComparison    ,
+        movement: buildMovementSeries({ employees, periods }),
     }
 
     return setCache(cacheKey, result, 120_000)

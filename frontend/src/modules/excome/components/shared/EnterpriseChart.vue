@@ -170,6 +170,12 @@ const permanentValueLabelsPlugin = {
 
         if (isLine) {
           y = Math.max(chartArea.top + 10, Math.min(y - 12, chartArea.bottom - 10));
+        } else if (props.horizontal) {
+          // Horizontal bars use their right edge as the value anchor. This is
+          // ideal for ranked charts such as Exit Reason where the category
+          // name is on the left and the percentage should stay beside the bar.
+          x = numericValue >= 0 ? position.x + 8 : position.x - 8;
+          y = position.y;
         } else if (numericValue === 0) {
           // A zero-height bar has no visible top. Keep its 0.0% label just
           // above the baseline, at the exact x-position of that dataset bar.
@@ -185,11 +191,19 @@ const permanentValueLabelsPlugin = {
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
-        // A small white backing keeps fixed percentages readable over grid
-        // lines and beside the second attendance series.
+        // A small white backing keeps fixed values readable over grid lines.
         const textWidth = ctx.measureText(text).width;
         const boxWidth = textWidth + 6;
         const boxHeight = 13;
+
+        if (props.horizontal) {
+          const halfWidth = boxWidth / 2;
+          x = Math.max(
+            chartArea.left + halfWidth + 2,
+            Math.min(x + halfWidth, chartArea.right - halfWidth - 2),
+          );
+        }
+
         ctx.fillStyle = "rgba(255, 255, 255, 0.90)";
         ctx.fillRect(x - boxWidth / 2, y - boxHeight / 2, boxWidth, boxHeight);
         ctx.fillStyle = dataset.valueLabelColor || dataset.borderColor || "#334155";
@@ -327,30 +341,55 @@ const options = computed(() => ({
   scales:
     props.type === "doughnut"
       ? undefined
-      : {
-          x: {
-            stacked: props.stacked,
-            grid: { display: false },
-            border: { color: "#CBD5E1" },
-            ticks: {
-              color: "#64748B",
-              maxRotation: 0,
-              autoSkip: true,
-              font: { size: 11 },
+      : props.horizontal
+        ? {
+            x: {
+              stacked: props.stacked,
+              beginAtZero: true,
+              position: "top",
+              grid: { color: "rgba(148, 163, 184, 0.22)" },
+              border: { color: "#CBD5E1" },
+              ticks: {
+                color: "#64748B",
+                font: { size: 11 },
+                callback: (value) => `${value}${props.percent ? "%" : ""}`,
+              },
+            },
+            y: {
+              stacked: props.stacked,
+              grid: { display: false },
+              border: { color: "#CBD5E1" },
+              ticks: {
+                color: "#475569",
+                autoSkip: false,
+                font: { size: 11, weight: "600" },
+              },
+            },
+          }
+        : {
+            x: {
+              stacked: props.stacked,
+              grid: { display: false },
+              border: { color: "#CBD5E1" },
+              ticks: {
+                color: "#64748B",
+                maxRotation: 0,
+                autoSkip: true,
+                font: { size: 11 },
+              },
+            },
+            y: {
+              stacked: props.stacked,
+              beginAtZero: true,
+              grid: { color: "rgba(148, 163, 184, 0.22)" },
+              border: { color: "#CBD5E1" },
+              ticks: {
+                color: "#64748B",
+                font: { size: 11 },
+                callback: (value) => `${value}${props.percent ? "%" : ""}`,
+              },
             },
           },
-          y: {
-            stacked: props.stacked,
-            beginAtZero: true,
-            grid: { color: "rgba(148, 163, 184, 0.22)" },
-            border: { color: "#CBD5E1" },
-            ticks: {
-              color: "#64748B",
-              font: { size: 11 },
-              callback: (value) => `${value}${props.percent ? "%" : ""}`,
-            },
-          },
-        },
 }));
 </script>
 

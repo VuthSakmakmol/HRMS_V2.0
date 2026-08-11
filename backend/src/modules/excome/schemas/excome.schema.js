@@ -41,6 +41,7 @@ export const excomeQuerySchema = z
         lineId: objectIdSchema.optional(),
         shiftId: objectIdSchema.optional(),
         employeeTypeId: objectIdSchema.optional(),
+        exitReasonId: objectIdSchema.optional(),
         employeeTypeChildCode: employeeTypeChildCodeSchema,
         employeeTypeFilterKey: employeeTypeFilterKeySchema,
         forceRefresh: z

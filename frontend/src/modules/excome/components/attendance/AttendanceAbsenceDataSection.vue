@@ -2,36 +2,57 @@
 import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 
-import DashboardSectionHeader from "../shared/DashboardSectionHeader.vue"
 import AttendanceAbsenceOverallTable from "./AttendanceAbsenceOverallTable.vue"
 import AttendanceTopAbsentTable from "./AttendanceTopAbsentTable.vue"
 
 const props = defineProps({
-    title: {
-        type: String,
-        required: true,
-    },
     data: {
         type: Object,
         default: () => ({}),
+    },
+    employeeTypeLabel: {
+        type: String,
+        default: "",
     },
     selectedPeriodKey: {
         type: String,
         default: null,
     },
+    wholeYear: {
+        type: Boolean,
+        default: false,
+    },
 })
 
 const { t } = useI18n()
 
-const selectedLabel = computed(() =>
-    props.data.absenceComparison?.selectedLabel || safeT("excome.attendance.selectedScope", "Selected"),
+const scopeLabel = computed(() =>
+    String(
+        props.employeeTypeLabel ||
+        props.data.absenceComparison?.selectedLabel ||
+        safeT("excome.filters.allEmployeeTypes", "All Employee Types"),
+    ).trim(),
 )
 
 const absenceOverall = computed(() => props.data.absenceOverall || {})
-const topAbsentDepartments = computed(() => props.data.topAbsentDepartments || {})
+const departmentData = computed(() => props.data.topAbsentDepartments || {})
 const hasOverallRows = computed(() => Boolean((absenceOverall.value.rows || []).length))
-const hasTopRows = computed(() => Boolean((topAbsentDepartments.value.rows || []).length))
-const hasData = computed(() => hasOverallRows.value || hasTopRows.value)
+const hasDepartmentRows = computed(() => Boolean((departmentData.value.rows || []).length))
+const hasData = computed(() => hasOverallRows.value || hasDepartmentRows.value)
+
+const separateByTypeTitle = computed(() =>
+    safeT(
+        "excome.attendance.absentSeparateByType",
+        "{employeeType} ABSENT – Separate by type",
+    ).replace("{employeeType}", scopeLabel.value),
+)
+
+const separateByDepartmentTitle = computed(() =>
+    safeT(
+        "excome.attendance.absentSeparateByDepartment",
+        "{employeeType} ABSENT – Separate by department",
+    ).replace("{employeeType}", scopeLabel.value),
+)
 
 function safeT(key, fallback) {
     const translated = t(key)
@@ -41,17 +62,36 @@ function safeT(key, fallback) {
 </script>
 
 <template>
-    <section class="dashboard-section attendance-absence-data-section">
-        <DashboardSectionHeader :title="title" />
-
+    <section class="attendance-absence-data-section">
         <template v-if="hasData">
-            <AttendanceAbsenceOverallTable :data="absenceOverall" :selected-period-key="selectedPeriodKey" />
+            <div class="attendance-absence-titlebar">
+                {{ separateByTypeTitle }}
+            </div>
 
-            <AttendanceTopAbsentTable
-                :data="topAbsentDepartments"
-                :selected-label="selectedLabel"
+            <AttendanceAbsenceOverallTable
+                :data="absenceOverall"
                 :selected-period-key="selectedPeriodKey"
             />
+
+            <div class="attendance-absence-titlebar attendance-absence-titlebar--department">
+                {{ separateByDepartmentTitle }}
+            </div>
+
+            <div class="attendance-department-ranking-grid">
+                <AttendanceTopAbsentTable
+                    :data="departmentData"
+                    direction="DESC"
+                    :selected-period-key="selectedPeriodKey"
+                    :whole-year="wholeYear"
+                />
+
+                <AttendanceTopAbsentTable
+                    :data="departmentData"
+                    direction="ASC"
+                    :selected-period-key="selectedPeriodKey"
+                    :whole-year="wholeYear"
+                />
+            </div>
         </template>
 
         <div
@@ -64,9 +104,42 @@ function safeT(key, fallback) {
 </template>
 
 <style scoped>
-.dashboard-section {
+.attendance-absence-data-section {
     display: grid;
     gap: 0;
+    min-width: 0;
+    background: #ffffff;
+}
+
+.attendance-absence-titlebar {
+    display: flex;
+    min-height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.42rem 0.75rem;
+    background: #0b2d6b;
+    color: #ffffff;
+    font-size: 1.08rem;
+    font-weight: 900;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.attendance-absence-titlebar--department {
+    margin-top: 0.85rem;
+}
+
+.attendance-department-ranking-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+    min-width: 0;
+    padding: 0.65rem 0.75rem 0.8rem;
+    border-right: 1px solid #1f1f1f;
+    border-bottom: 1px solid #1f1f1f;
+    border-left: 1px solid #1f1f1f;
+    background: #ffffff;
 }
 
 .attendance-absence-data-section__empty {
@@ -74,12 +147,27 @@ function safeT(key, fallback) {
     min-height: 4.5rem;
     place-items: center;
     padding: 0.75rem;
-    border-right: 1px solid #1f1f1f;
-    border-bottom: 1px solid #1f1f1f;
-    border-left: 1px solid #1f1f1f;
+    border: 1px solid #1f1f1f;
     background: #ffffff;
     color: #64748b;
-    font-size: 0.78rem;
+    font-size: 0.86rem;
     font-weight: 800;
+}
+
+@media (max-width: 1040px) {
+    .attendance-department-ranking-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 700px) {
+    .attendance-absence-titlebar {
+        font-size: 0.92rem;
+    }
+
+    .attendance-department-ranking-grid {
+        gap: 0.55rem;
+        padding: 0.5rem;
+    }
 }
 </style>

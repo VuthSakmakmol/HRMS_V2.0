@@ -158,6 +158,13 @@ const positionOptions = computed(() =>
     ),
 )
 
+const exitReasonOptions = computed(() =>
+    (props.lookups.exitReasons || []).filter((item) =>
+        (!item.companyId || !props.modelValue.companyId || item.companyId === props.modelValue.companyId) &&
+        (!item.branchId || !props.modelValue.branchId || item.branchId === props.modelValue.branchId),
+    ),
+)
+
 const shiftOptions = computed(() =>
     (props.lookups.shifts || []).filter((item) =>
         (!props.modelValue.companyId || item.companyId === props.modelValue.companyId) &&
@@ -176,6 +183,14 @@ const lineOptions = computed(() =>
         lineAllowedByEmployeeType(item),
     ),
 )
+
+function employeeTypeOptionLabel(item) {
+    if (item?.type === "ALL") {
+        return item.label || item.name
+    }
+
+    return item?.code || item?.name || item?.label || ""
+}
 
 function optionLabel(item) {
     return item.label || (item.code ? `${item.code} - ${item.name}` : item.name)
@@ -266,7 +281,7 @@ function updateEmployeeTypeChild(childKey) {
                 class="dashboard-filter-field dashboard-filter-field--employee-type"
                 :model-value="selectedEmployeeTypeId"
                 :options="employeeTypeParentOptions"
-                :option-label="optionLabel"
+                :option-label="employeeTypeOptionLabel"
                 option-value="employeeTypeId"
                 :placeholder="t('excome.filters.allEmployeeTypes')"
                 filter
@@ -279,13 +294,26 @@ function updateEmployeeTypeChild(childKey) {
                 class="dashboard-filter-field dashboard-filter-field--employee-type"
                 :model-value="selectedEmployeeTypeChildKey"
                 :options="employeeTypeChildOptions"
-                :option-label="optionLabel"
+                :option-label="employeeTypeOptionLabel"
                 option-value="key"
                 :placeholder="t('excome.filters.allEmployeeTypeChildren')"
                 show-clear
                 filter
                 :loading="lookupLoading"
                 @update:model-value="updateEmployeeTypeChild"
+            />
+
+            <Select
+                class="dashboard-filter-field"
+                :model-value="modelValue.exitReasonId"
+                :options="exitReasonOptions"
+                :option-label="optionLabel"
+                option-value="id"
+                :placeholder="t('excome.filters.allExitReasons')"
+                show-clear
+                filter
+                :loading="lookupLoading"
+                @update:model-value="updateField('exitReasonId', $event)"
             />
 
             <Select

@@ -203,9 +203,196 @@ const permanentValueLabelsPlugin = {
     id: "excomeManpowerPermanentValueLabels",
     afterDatasetsDraw(chart) {
         const { ctx, chartArea } = chart
+        if (!chartArea) return
 
+        // Bar labels are placed first and become protected areas. Fill Rate
+        // labels are never allowed to enter those areas.
+        const placedBoxes = []
+
+        function boxesOverlap(a, b, padding = 4) {
+            return !(
+                a.right + padding < b.left ||
+                a.left - padding > b.right ||
+                a.bottom + padding < b.top ||
+                a.top - padding > b.bottom
+            )
+        }
+
+        function makeBox(x, y, text, horizontalPadding = 5, height = 15) {
+            ctx.save()
+            ctx.font = "700 10px Arial, sans-serif"
+            const width = ctx.measureText(text).width + (horizontalPadding * 2)
+            ctx.restore()
+
+            return {
+                x,
+                y,
+                text,
+                width,
+                height,
+                left: x - (width / 2),
+                right: x + (width / 2),
+                top: y - (height / 2),
+                bottom: y + (height / 2),
+            }
+        }
+
+        function isInsideChart(box, margin = 3) {
+            return (
+                box.left >= chartArea.left + margin &&
+                box.right <= chartArea.right - margin &&
+                box.top >= chartArea.top + margin &&
+                box.bottom <= chartArea.bottom - margin
+            )
+        }
+
+        function isFree(box, padding = 4) {
+            return !placedBoxes.some((placed) => boxesOverlap(box, placed, padding))
+        }
+
+        function findBottomFreeBox(candidates, text, horizontalPadding = 5, height = 15) {
+            for (const candidate of candidates) {
+                const box = makeBox(
+                    candidate.x,
+                    candidate.y,
+                    text,
+                    horizontalPadding,
+                    height,
+                )
+
+                if (!isInsideChart(box)) continue
+                if (!isFree(box)) continue
+                return box
+            }
+
+            // Zero labels are never promoted to a top lane. If their first
+            // positions collide, search horizontally along the baseline only.
+            const bottomY = chartArea.bottom - 12
+            const originX = candidates[0]?.x ?? ((chartArea.left + chartArea.right) / 2)
+            const maxOffset = Math.max(chartArea.right - chartArea.left, 120)
+
+            for (let offset = 12; offset <= maxOffset; offset += 12) {
+                for (const direction of [1, -1]) {
+                    const box = makeBox(
+                        originX + (offset * direction),
+                        bottomY,
+                        text,
+                        horizontalPadding,
+                        height,
+                    )
+                    if (!isInsideChart(box)) continue
+                    if (!isFree(box)) continue
+                    return box
+                }
+            }
+
+            return null
+        }
+
+        function findFreeBox(candidates, text, horizontalPadding = 5, height = 15) {
+            for (const candidate of candidates) {
+                const box = makeBox(
+                    candidate.x,
+                    candidate.y,
+                    text,
+                    horizontalPadding,
+                    height,
+                )
+
+                // Do not clamp a candidate back on top of another label.
+                // An out-of-bounds position is skipped and the next nearby
+                // position is tried instead.
+                if (!isInsideChart(box)) continue
+                if (!isFree(box)) continue
+
+                return box
+            }
+
+            // Responsive fallback: search nearby lanes around the same point.
+            // This gives small screens more options without ever covering a
+            // Roadmap / Actual label.
+            const origin = candidates[0] || {
+                x: (chartArea.left + chartArea.right) / 2,
+                y: chartArea.top + 12,
+            }
+            const xOffsets = [0, 22, -22, 40, -40, 58, -58, 76, -76, 96, -96, 118, -118]
+            const yOffsets = [0, 18, 36, -18, 54, -36]
+
+            for (const yOffset of yOffsets) {
+                for (const xOffset of xOffsets) {
+                    const box = makeBox(
+                        origin.x + xOffset,
+                        origin.y + yOffset,
+                        text,
+                        horizontalPadding,
+                        height,
+                    )
+
+                    if (!isInsideChart(box)) continue
+                    if (!isFree(box)) continue
+
+                    return box
+                }
+            }
+
+            // Extremely narrow last-resort search across the top lanes. This
+            // still refuses to overlap any already reserved value label.
+            for (const y of [
+                chartArea.top + 11,
+                chartArea.top + 29,
+                chartArea.top + 47,
+                chartArea.top + 65,
+            ]) {
+                for (let x = chartArea.left + 18; x <= chartArea.right - 18; x += 12) {
+                    const box = makeBox(x, y, text, horizontalPadding, height)
+                    if (!isInsideChart(box)) continue
+                    if (!isFree(box)) continue
+                    return box
+                }
+            }
+
+            return null
+        }
+
+        function drawLabel(box, text, {
+            color,
+            borderColor = null,
+            index = null,
+            kind = "label",
+        } = {}) {
+            if (!box) return
+
+            ctx.save()
+            ctx.font = "700 10px Arial, sans-serif"
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
+
+            // Opaque backing means both the Fill Rate line and selected-month
+            // red border always remain visually behind the data labels.
+            ctx.fillStyle = "rgba(255, 255, 255, 0.98)"
+            ctx.fillRect(box.left, box.top, box.width, box.height)
+
+            if (borderColor) {
+                ctx.strokeStyle = borderColor
+                ctx.lineWidth = 1
+                ctx.strokeRect(box.left, box.top, box.width, box.height)
+            }
+
+            ctx.fillStyle = color || "#404040"
+            ctx.fillText(text, box.x, box.y)
+            ctx.restore()
+
+            placedBoxes.push({
+                ...box,
+                index,
+                kind,
+            })
+        }
+
+        // 1) Roadmap / Actual labels have first priority and reserve their
+        // exact drawing space before Fill Rate placement is considered.
         chart.data.datasets.forEach((dataset, datasetIndex) => {
-            if (!dataset.valueLabel) return
+            if (!dataset.valueLabel || dataset.type === "line") return
 
             const meta = chart.getDatasetMeta(datasetIndex)
             if (meta.hidden) return
@@ -217,67 +404,141 @@ const permanentValueLabelsPlugin = {
                 const value = Number(rawValue)
                 if (!Number.isFinite(value)) return
 
-                const isLine = dataset.type === "line"
-
+                const text = formatNumber(value)
                 const position = element.tooltipPosition()
-                let x = position.x
-                let y = position.y
-                let text = ""
+                const isZero = value === 0
+                const preferredY = isZero
+                    ? chartArea.bottom - 12
+                    : value > 0
+                        ? Math.max(position.y - 11, chartArea.top + 13)
+                        : Math.min(position.y + 13, chartArea.bottom - 13)
 
-                if (isLine) {
-                    const actualRate = Number(dataset.actualValues?.[index])
-                    if (!Number.isFinite(actualRate)) return
+                const sideStep = 16
+                const placementCandidates = isZero
+                    ? [
+                            // Zero values stay on the bottom baseline. If two
+                            // zero labels are too close, move them left/right
+                            // within the same bottom lane instead of stacking.
+                            { x: position.x, y: preferredY },
+                            { x: position.x - sideStep, y: preferredY },
+                            { x: position.x + sideStep, y: preferredY },
+                            { x: position.x - (sideStep * 2), y: preferredY },
+                            { x: position.x + (sideStep * 2), y: preferredY },
+                        ]
+                        : [
+                            { x: position.x, y: preferredY },
+                            // When labels share the same top position, keep
+                            // them on the same visual row and separate left / right.
+                            { x: position.x - sideStep, y: preferredY },
+                            { x: position.x + sideStep, y: preferredY },
+                            { x: position.x - (sideStep * 2), y: preferredY },
+                            { x: position.x + (sideStep * 2), y: preferredY },
+                            { x: position.x, y: preferredY - 18 },
+                            { x: position.x, y: preferredY + 18 },
+                        ]
 
-                    text = formatFillRateLabel(actualRate)
+                const box = isZero
+                    ? findBottomFreeBox(placementCandidates, text, 4, 14)
+                    : findFreeBox(placementCandidates, text, 4, 14)
 
-                    // Keep the percentage label inside the plotting area.
-                    // At 0% it sits above the baseline; at/near 110% it sits
-                    // below the point; normal values sit just above the line.
-                    const topGuard = chartArea.top + 18
-                    const bottomGuard = chartArea.bottom - 18
-                    if (y <= chartArea.top + 22) {
-                        y = topGuard + 10
-                    } else if (y >= chartArea.bottom - 22) {
-                        y = bottomGuard - 2
-                    } else {
-                        y = y - 15
-                    }
-                } else {
-                    text = formatNumber(value)
+                drawLabel(box, text, {
+                    color: "#404040",
+                    index,
+                    kind: "manpower",
+                })
+            })
+        })
 
-                    // Preserve numeric labels even when a series value is 0.
-                    // A zero bar label is placed just above the baseline.
-                    if (value === 0) {
-                        y = chartArea.bottom - 9
-                    } else {
-                        y = value >= 0
-                            ? Math.max(y - 9, chartArea.top + 12)
-                            : Math.min(y + 13, chartArea.bottom - 5)
-                    }
-                }
+        // 2) Fill Rate stays close to its red point, but Roadmap / Actual
+        // labels are hard protected. If the preferred top position is busy,
+        // the percentage moves beside the manpower value instead of covering
+        // or hiding it.
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            if (!dataset.valueLabel || dataset.type !== "line") return
 
-                ctx.save()
-                ctx.font = "600 10px Arial, sans-serif"
-                ctx.textAlign = "center"
-                ctx.textBaseline = "middle"
+            const meta = chart.getDatasetMeta(datasetIndex)
+            if (meta.hidden) return
 
-                if (isLine) {
-                    // Give percentage labels a clean white pill so they remain
-                    // readable even when the line crosses tall manpower bars.
-                    const width = ctx.measureText(text).width + 8
-                    const height = 14
-                    ctx.fillStyle = "rgba(255, 255, 255, 0.94)"
-                    ctx.strokeStyle = "rgba(159, 29, 32, 0.35)"
-                    ctx.lineWidth = 1
-                    ctx.fillRect(x - width / 2, y - height / 2, width, height)
-                    ctx.strokeRect(x - width / 2, y - height / 2, width, height)
-                    ctx.fillStyle = "#7F1D1D"
-                } else {
-                    ctx.fillStyle = "#404040"
-                }
+            meta.data.forEach((element, index) => {
+                const actualRate = Number(dataset.actualValues?.[index])
+                if (!Number.isFinite(actualRate)) return
 
-                ctx.fillText(text, x, y)
-                ctx.restore()
+                const text = formatFillRateLabel(actualRate)
+                const position = element.tooltipPosition()
+                const probe = makeBox(position.x, position.y, text, 5, 15)
+                const fillHalfWidth = probe.width / 2
+
+                const monthBoxes = placedBoxes.filter(
+                    (placed) => placed.index === index && placed.kind === "manpower",
+                )
+
+                const monthLeft = monthBoxes.length
+                    ? Math.min(...monthBoxes.map((box) => box.left))
+                    : position.x
+                const monthRight = monthBoxes.length
+                    ? Math.max(...monthBoxes.map((box) => box.right))
+                    : position.x
+                const topLabelY = monthBoxes.length
+                    ? Math.min(...monthBoxes.map((box) => box.y))
+                    : chartArea.top + 11
+
+                const isZero = actualRate === 0
+                const pointAboveY = Math.max(position.y - 15, chartArea.top + 13)
+                const topLane1 = chartArea.top + 13
+                const topLane2 = chartArea.top + 31
+                const topLane3 = chartArea.top + 49
+                const bottomLane = chartArea.bottom - 12
+                const safeGap = 8
+
+                // Dynamic side positions use the real measured label widths.
+                // This keeps long values such as 2622.2% beside, never on top
+                // of, the Roadmap / Actual number for the same month.
+                const rightOfMonth = monthRight + safeGap + fillHalfWidth
+                const leftOfMonth = monthLeft - safeGap - fillHalfWidth
+
+                const candidates = isZero
+                    ? [
+                        // 0% always belongs at the bottom. Keep it near its
+                        // month point and separate left/right if another zero
+                        // label already occupies that position.
+                        { x: position.x, y: bottomLane },
+                        { x: position.x + 24, y: bottomLane },
+                        { x: position.x - 24, y: bottomLane },
+                        { x: position.x + 42, y: bottomLane },
+                        { x: position.x - 42, y: bottomLane },
+                    ]
+                    : [
+                        // Preferred: directly above the Fill Rate point.
+                        { x: position.x, y: pointAboveY },
+
+                        // Collision response: same height, nearby left/right.
+                        // This is preferred over stacking labels vertically.
+                        { x: rightOfMonth, y: topLabelY },
+                        { x: leftOfMonth, y: topLabelY },
+                        { x: position.x + 32 + fillHalfWidth, y: pointAboveY },
+                        { x: position.x - 32 - fillHalfWidth, y: pointAboveY },
+                        { x: rightOfMonth, y: topLane1 },
+                        { x: leftOfMonth, y: topLane1 },
+
+                        // Only if the nearby row is full, use another top lane.
+                        { x: position.x, y: topLane2 },
+                        { x: rightOfMonth, y: topLane2 },
+                        { x: leftOfMonth, y: topLane2 },
+                        { x: position.x, y: topLane3 },
+                        { x: rightOfMonth, y: topLane3 },
+                        { x: leftOfMonth, y: topLane3 },
+                    ]
+
+                const box = isZero
+                    ? findBottomFreeBox(candidates, text, 5, 15)
+                    : findFreeBox(candidates, text, 5, 15)
+
+                drawLabel(box, text, {
+                    color: "#7F1D1D",
+                    borderColor: "rgba(159, 29, 32, 0.38)",
+                    index,
+                    kind: "fillRate",
+                })
             })
         })
     },
@@ -297,7 +558,7 @@ const chartOptions = computed(() => {
         },
         layout: {
             padding: {
-                top: 36,
+                top: 54,
                 right: 8,
                 bottom: 0,
                 left: 4,
@@ -403,15 +664,11 @@ const chartOptions = computed(() => {
     }
 })
 
-const plugins = [permanentValueLabelsPlugin, selectedMonthPlugin]
+const plugins = [selectedMonthPlugin, permanentValueLabelsPlugin]
 </script>
 
 <template>
     <div class="manpower-comparison-chart">
-        <div class="manpower-comparison-chart__title">
-            {{ t("excome.manpower.chartAria") }}
-        </div>
-
         <div class="manpower-comparison-chart__canvas">
             <Bar
                 :data="chartData"
@@ -431,24 +688,16 @@ const plugins = [permanentValueLabelsPlugin, selectedMonthPlugin]
     background: #ffffff;
 }
 
-.manpower-comparison-chart__title {
-    margin-bottom: 0.2rem;
-    color: #475569;
-    font-size: 0.94rem;
-    font-weight: 700;
-    line-height: 1.2;
-    text-align: center;
-}
 
 .manpower-comparison-chart__canvas {
     position: relative;
-    height: 330px;
+    height: 350px;
     min-width: 0;
 }
 
 @media (max-width: 900px) {
     .manpower-comparison-chart__canvas {
-        height: 280px;
+        height: 300px;
     }
 }
 </style>

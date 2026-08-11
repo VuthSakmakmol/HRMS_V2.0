@@ -224,40 +224,60 @@ function isSelectedPeriod(period) {
 
 <style scoped>
 .recruitment-table-shell {
+    width: 100%;
     min-width: 0;
     overflow: hidden;
     border: 1px solid #cbd5e1;
-    border-radius: 8px;
+    border-top: 0;
     background: #ffffff;
 }
 
 .recruitment-table-wrap {
     width: 100%;
     min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: hidden;
 }
 
+/*
+ * Fixed 100% layout: all 12 months always fit inside the Excome card.
+ * There is intentionally no min-width and no horizontal scrolling.
+ */
 .recruitment-table {
     width: 100%;
-    min-width: 72rem;
-    border-collapse: separate;
-    border-spacing: 0;
+    min-width: 0;
+    border-collapse: collapse;
     table-layout: fixed;
     color: #0f172a;
-    font-size: 0.68rem;
+    font-size: clamp(0.56rem, 0.48rem + 0.18vw, 0.72rem);
     font-weight: 650;
+}
+
+.recruitment-col-no {
+    width: 3%;
+}
+
+.recruitment-col-channel {
+    width: 20%;
+}
+
+.recruitment-col-previous,
+.recruitment-col-target,
+.recruitment-col-average {
+    width: 6%;
+}
+
+.recruitment-col-month {
+    width: 4.9167%;
 }
 
 .recruitment-table th,
 .recruitment-table td {
-    height: 1.75rem;
-    padding: 0.22rem 0.28rem;
+    height: 1.9rem;
+    padding: 0.22rem 0.16rem;
     border-right: 1px solid #cbd5e1;
     border-bottom: 1px solid #cbd5e1;
     text-align: center;
     vertical-align: middle;
-    white-space: nowrap;
 }
 
 .recruitment-table tr > *:last-child {
@@ -265,26 +285,23 @@ function isSelectedPeriod(period) {
 }
 
 .recruitment-table thead th {
-    position: sticky;
-    z-index: 4;
-    top: 0;
     background: #f8fafc;
     color: #0f172a;
-    font-weight: 800;
+    font-weight: 850;
+    line-height: 1.05;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .recruitment-table__year-row th {
-    top: 0;
-    height: 1.65rem;
-}
-
-.recruitment-table__header-row th {
-    top: 1.65rem;
+    height: 1.6rem;
+    padding-top: 0.15rem;
+    padding-bottom: 0.15rem;
 }
 
 .recruitment-table__year {
     background: #e8f8fb !important;
-    font-size: 0.72rem;
+    font-size: clamp(0.6rem, 0.52rem + 0.18vw, 0.74rem);
 }
 
 .recruitment-table__current-year,
@@ -296,66 +313,27 @@ function isSelectedPeriod(period) {
     background: #ffffff !important;
 }
 
-.recruitment-col-no {
-    width: 2.4rem;
-}
-
-.recruitment-col-channel {
-    width: 20rem;
-}
-
-.recruitment-col-previous,
-.recruitment-col-target,
-.recruitment-col-average {
-    width: 5.5rem;
-}
-
-.recruitment-col-month {
-    width: 4.15rem;
-}
-
 .recruitment-table__no {
-    position: sticky;
-    z-index: 3;
-    left: 0;
-    width: 2.4rem;
-    background: #ffffff;
+    text-align: center !important;
 }
 
 .recruitment-table__channel {
-    position: sticky;
-    z-index: 2;
-    left: 2.4rem;
-    background: #ffffff;
     text-align: left !important;
 }
 
-.recruitment-table thead .recruitment-table__channel,
-.recruitment-table thead .recruitment-table__no {
-    z-index: 6;
-    background: #f8fafc;
-}
-
 .recruitment-table__channel-name {
-    overflow: hidden;
     color: #075985;
-    font-size: 0.72rem;
-    font-weight: 750;
-    text-overflow: ellipsis;
+    font-weight: 800;
+    line-height: 1.12;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .recruitment-table tbody tr:nth-child(even) td {
     background: #f8fafc;
 }
 
-.recruitment-table tbody tr:nth-child(even) .recruitment-table__channel,
-.recruitment-table tbody tr:nth-child(even) .recruitment-table__no {
-    background: #f8fafc;
-}
-
-.recruitment-table tbody tr:hover td,
-.recruitment-table tbody tr:hover .recruitment-table__channel,
-.recruitment-table tbody tr:hover .recruitment-table__no {
+.recruitment-table tbody tr:hover td {
     background: #eff6ff;
 }
 
@@ -364,16 +342,15 @@ function isSelectedPeriod(period) {
     font-weight: 500;
 }
 
-/* Future months remain visible for comparison; only their text is muted. */
 .recruitment-table .is-future-period {
     color: #94a3b8;
     background: #fafafa !important;
 }
 
-/* Selected month is a complete red rectangle from header to total row. */
+/* Selected reporting month follows the same Excome red-range standard. */
 .recruitment-table .is-selected-period {
-    border-left: 2px solid #ef4444 !important;
     border-right: 2px solid #ef4444 !important;
+    border-left: 2px solid #ef4444 !important;
     background: #fff7ed !important;
 }
 
@@ -381,57 +358,62 @@ function isSelectedPeriod(period) {
     border-top: 2px solid #ef4444 !important;
 }
 
-.recruitment-table tfoot .is-selected-period,
-.recruitment-table tbody tr:last-child .is-selected-period:not(:has(+ *)) {
+.recruitment-table tfoot .is-selected-period {
     border-bottom: 2px solid #ef4444 !important;
 }
 
 .recruitment-table tfoot td {
-    position: sticky;
-    z-index: 3;
-    bottom: 0;
-}
-
-.recruitment-table__total td {
-    background: #dffafa !important;
-    border-top: 2px solid #475569;
-    border-bottom: 0;
+    background: #d9f7f7;
+    color: #0f172a;
     font-weight: 900;
-}
-
-.recruitment-table__total .recruitment-table__no,
-.recruitment-table__total .recruitment-table__channel {
-    z-index: 5;
-    background: #dffafa !important;
-}
-
-.recruitment-table__total .is-selected-period {
-    border-bottom: 2px solid #ef4444 !important;
-    background: #fff1e8 !important;
 }
 
 .recruitment-table__empty-row td {
     height: 4rem;
     color: #64748b;
-    font-weight: 600;
+    font-weight: 700;
+    text-align: center;
 }
 
-@media (max-width: 900px) {
-    .recruitment-table {
-        min-width: 66rem;
-        font-size: 0.62rem;
+@media (max-width: 1000px) {
+    .recruitment-col-no {
+        width: 2.5%;
     }
 
     .recruitment-col-channel {
-        width: 16rem;
+        width: 18.5%;
+    }
+
+    .recruitment-col-previous,
+    .recruitment-col-target,
+    .recruitment-col-average {
+        width: 5.5%;
     }
 
     .recruitment-col-month {
-        width: 3.7rem;
+        width: 5.2083%;
     }
 
-    .recruitment-table__channel-name {
-        font-size: 0.66rem;
+    .recruitment-table th,
+    .recruitment-table td {
+        padding-right: 0.1rem;
+        padding-left: 0.1rem;
+    }
+}
+
+@media (max-width: 700px) {
+    .recruitment-table {
+        font-size: 0.52rem;
+    }
+
+    .recruitment-table th,
+    .recruitment-table td {
+        height: 1.75rem;
+        padding: 0.15rem 0.05rem;
+    }
+
+    .recruitment-table__year {
+        font-size: 0.56rem;
     }
 }
 </style>

@@ -1,7 +1,7 @@
 <script setup>
+import { computed } from "vue"
 import { useI18n } from "vue-i18n"
 
-import DashboardSectionHeader from "../shared/DashboardSectionHeader.vue"
 import MovementChart from "./MovementChart.vue"
 
 const props = defineProps({
@@ -24,14 +24,82 @@ const props = defineProps({
 })
 
 const { t } = useI18n()
+
+const employeeTypeLabel = computed(() => String(props.subtitle || "").trim())
+
+const movementTitle = computed(() => {
+    if (!employeeTypeLabel.value) return props.title
+
+    return `${employeeTypeLabel.value} ${props.title}`
+})
+
+const inOutTitle = computed(() => {
+    const inLabel = t("excome.movement.in")
+    const outLabel = t("excome.movement.out")
+    const title = `${inLabel} & ${outLabel}`
+
+    if (!employeeTypeLabel.value) return title
+
+    return `${employeeTypeLabel.value} ${title}`
+})
+
+function roundAverage(value) {
+    return Math.round((Number(value) || 0) * 10) / 10
+}
+
+const averageSourceRows = computed(() => {
+    if (!props.rows.length) return []
+
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+    const rowYear = Number(props.rows[0]?.year || 0)
+
+    const selectedRow = props.rows.find((row) => row.key === props.selectedPeriodKey)
+    let cutoffMonth = Number(selectedRow?.month || 12)
+
+    if (rowYear === currentYear) {
+        cutoffMonth = Math.min(cutoffMonth, currentMonth)
+    }
+
+    return props.rows.filter((row) => Number(row.month) <= cutoffMonth)
+})
+
+const averages = computed(() => {
+    const rows = averageSourceRows.value
+
+    if (!rows.length) {
+        return { in: 0, out: 0, balance: 0 }
+    }
+
+    const totals = rows.reduce(
+        (result, row) => {
+            result.in += Number(row.in || 0)
+            result.out += Number(row.out || 0)
+            result.balance += Number(row.balance || 0)
+            return result
+        },
+        { in: 0, out: 0, balance: 0 },
+    )
+
+    return {
+        in: roundAverage(totals.in / rows.length),
+        out: roundAverage(totals.out / rows.length),
+        balance: roundAverage(totals.balance / rows.length),
+    }
+})
+
+function formatAverage(value) {
+    const number = Number(value || 0)
+    return Number.isInteger(number) ? String(number) : number.toFixed(1)
+}
 </script>
 
 <template>
     <section class="dashboard-section">
-        <DashboardSectionHeader
-            :title="title"
-            :subtitle="subtitle"
-        />
+        <div class="movement-titlebar">
+            {{ movementTitle }}
+        </div>
 
         <div class="movement-table-wrap">
             <table class="movement-table">
@@ -48,6 +116,8 @@ const { t } = useI18n()
                         >
                             {{ t(`excome.monthsShort.${row.month}`) }}
                         </th>
+
+                        <th class="movement-average-column">AVG</th>
                     </tr>
                 </thead>
 
@@ -64,6 +134,10 @@ const { t } = useI18n()
                         >
                             {{ row.in }}
                         </td>
+
+                        <td class="movement-average-column">
+                            {{ formatAverage(averages.in) }}
+                        </td>
                     </tr>
 
                     <tr class="movement-out">
@@ -77,6 +151,10 @@ const { t } = useI18n()
                             }"
                         >
                             {{ row.out }}
+                        </td>
+
+                        <td class="movement-average-column">
+                            {{ formatAverage(averages.out) }}
                         </td>
                     </tr>
 
@@ -94,14 +172,30 @@ const { t } = useI18n()
                         >
                             {{ row.balance }}
                         </td>
+
+                        <td
+                            class="movement-average-column"
+                            :class="{
+                                'is-negative': averages.balance < 0,
+                                'is-positive': averages.balance > 0,
+                            }"
+                        >
+                            {{ formatAverage(averages.balance) }}
+                        </td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
+        <div class="movement-titlebar movement-titlebar--chart">
+            {{ inOutTitle }}
+        </div>
+
         <MovementChart
             :rows="props.rows"
             :selected-period-key="selectedPeriodKey"
+            :title="inOutTitle"
+            :show-title="false"
         />
     </section>
 </template>
@@ -111,6 +205,25 @@ const { t } = useI18n()
     display: grid;
     gap: 0;
     min-width: 0;
+}
+
+.movement-titlebar {
+    display: flex;
+    min-height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.42rem 0.75rem;
+    background: #0b2d6b;
+    color: #ffffff;
+    font-size: 1.08rem;
+    font-weight: 900;
+    letter-spacing: 0.01em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.movement-titlebar--chart {
+    margin-top: 0.85rem;
 }
 
 .movement-table-wrap {
@@ -164,6 +277,16 @@ const { t } = useI18n()
     background: #e7e6e6;
 }
 
+.movement-table .movement-average-column {
+    font-weight: 900;
+    border-left: 2px solid #7f8fa6;
+}
+
+.movement-table thead .movement-average-column {
+    background: #002060;
+    color: #ffffff;
+}
+
 .movement-table .is-selected-period-key {
     border-right: 2px solid #ff0000;
     border-left: 2px solid #ff0000;
@@ -186,6 +309,10 @@ const { t } = useI18n()
 }
 
 @media (max-width: 760px) {
+    .movement-titlebar {
+        font-size: 0.92rem;
+    }
+
     .movement-table thead th:first-child,
     .movement-table tbody th {
         width: 6rem;

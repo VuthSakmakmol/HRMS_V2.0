@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from "vue"
+
 import RecruitmentChannelTable from "./RecruitmentChannelTable.vue"
 
 const props = defineProps({
@@ -15,12 +17,22 @@ const props = defineProps({
         default: null,
     },
 })
+
+const scopeLabel = computed(() =>
+    String(props.data?.selectedLabel || "All Employee Types")
+        .trim()
+        .toUpperCase(),
+)
+
+const sectionTitle = computed(() =>
+    `${scopeLabel.value} RECRUITMENT CHANNELS`,
+)
 </script>
 
 <template>
-    <section class="recruitment-section dashboard-section-card">
-        <div class="dashboard-section-card__title recruitment-section__title">
-            {{ props.title }}
+    <section class="recruitment-section">
+        <div class="recruitment-titlebar">
+            {{ sectionTitle }}
         </div>
 
         <div class="recruitment-section__body">
@@ -34,36 +46,40 @@ const props = defineProps({
 
 <style scoped>
 .recruitment-section {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    gap: 0;
+    width: 100%;
     min-width: 0;
     overflow: hidden;
-    border: 1px solid var(--p-content-border-color, #cbd5e1);
-    border-radius: 12px;
-    background: var(--p-content-background, #ffffff);
-    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+    background: #ffffff;
 }
 
-.recruitment-section__title {
-    flex: 0 0 auto;
-    padding: 0.65rem 0.9rem;
-    background: #0ea5d8;
+/* Same Excome title standard used by Absent, Movement and Turnover. */
+.recruitment-titlebar {
+    display: flex;
+    min-height: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.42rem 0.75rem;
+    background: #0b2d6b;
     color: #ffffff;
-    font-size: 0.84rem;
+    font-size: 1.08rem;
     font-weight: 900;
-    letter-spacing: 0.015em;
+    letter-spacing: 0.01em;
+    text-align: center;
     text-transform: uppercase;
 }
 
 .recruitment-section__body {
+    width: 100%;
     min-width: 0;
-    padding: 0.7rem;
-    background: var(--p-content-background, #ffffff);
+    padding: 0;
+    background: #ffffff;
 }
 
-@media (max-width: 700px) {
-    .recruitment-section__body {
-        padding: 0.45rem;
+@media (max-width: 760px) {
+    .recruitment-titlebar {
+        font-size: 0.92rem;
     }
 }
 </style>

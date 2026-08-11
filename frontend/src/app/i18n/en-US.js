@@ -258,7 +258,8 @@ export default {
             allPositions: "All positions",
             allLines: "All lines",
             allShifts: "All shifts",
-            allEmployeeTypes: "All employee types"
+            allEmployeeTypes: "All employee types",
+            allExitReasons: "All exit reasons"
         },
         sections: {
             generalData: "General Data",
@@ -388,6 +389,11 @@ export default {
             day: "Day",
             selectedScope: "Selected",
             absentData: "Absent Data",
+            absentSeparateByType: "{employeeType} ABSENT – Separate by type",
+            absentSeparateByDepartment: "{employeeType} ABSENT – Separate by department",
+            highToLow: "High → Low",
+            lowToHigh: "Low → High",
+            ytd: "YTD",
             absentRate: "Absent rate (%)",
             absentRateWithoutAnnualMaternity: "Absent rate (%)-ANL&MA",
             topAbsentTitle: "Top absent by department - {label}",
