@@ -116,6 +116,7 @@ export function useLineImport() {
 
                 importError.code = completedJob.error?.code
                 importError.messageKey = completedJob.error?.messageKey
+                importError.details = completedJob.error?.details || null
                 throw importError
             }
 

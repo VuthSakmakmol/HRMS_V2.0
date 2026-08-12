@@ -8,26 +8,13 @@ import LineForm from "./LineForm.vue"
 
 const props = defineProps({
     visible: Boolean,
-    mode: {
-        type: String,
-        default: "create",
-    },
-    form: {
-        type: Object,
-        required: true,
-    },
-    errors: {
-        type: Object,
-        default: () => ({}),
-    },
-    companyName: {
-        type: String,
-        default: "—",
-    },
-    branchName: {
-        type: String,
-        default: "—",
-    },
+    mode: { type: String, default: "create" },
+    form: { type: Object, required: true },
+    errors: { type: Object, default: () => ({}) },
+    companyName: { type: String, default: "—" },
+    branchName: { type: String, default: "—" },
+    departmentOptions: { type: Array, default: () => [] },
+    positionOptions: { type: Array, default: () => [] },
     saving: Boolean,
 })
 
@@ -36,10 +23,10 @@ const emit = defineEmits([
     "save",
     "clear-error",
     "normalize-code",
+    "department-change",
 ])
 
 const { t } = useI18n()
-
 const title = computed(() =>
     props.mode === "edit"
         ? t("organization.line.editTitle")
@@ -59,9 +46,12 @@ const title = computed(() =>
             :errors="errors"
             :company-name="companyName"
             :branch-name="branchName"
+            :department-options="departmentOptions"
+            :position-options="positionOptions"
             :disabled="saving"
             @clear-error="emit('clear-error', $event)"
             @normalize-code="emit('normalize-code')"
+            @department-change="emit('department-change')"
         />
 
         <template #footer>

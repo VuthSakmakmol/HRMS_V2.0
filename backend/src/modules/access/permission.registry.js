@@ -36,6 +36,7 @@ export const PERMISSION_REGISTRY = Object.freeze([
     ]),
     
     ...permissionGroup("ORGANIZATION.DEPARTMENT", [
+        "LOOKUP",
         "VIEW",
         "CREATE",
         "UPDATE",
@@ -45,6 +46,7 @@ export const PERMISSION_REGISTRY = Object.freeze([
     ]),
     
     ...permissionGroup("ORGANIZATION.POSITION", [
+        "LOOKUP",
         "VIEW",
         "CREATE",
         "UPDATE",
@@ -73,6 +75,7 @@ export const PERMISSION_REGISTRY = Object.freeze([
     ]),
 
     ...permissionGroup("ORGANIZATION.LINE", [
+        "LOOKUP",
         "VIEW",
         "CREATE",
         "UPDATE",

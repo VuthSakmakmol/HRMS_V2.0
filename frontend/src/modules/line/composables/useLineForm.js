@@ -1,18 +1,13 @@
-import {
-    computed,
-    reactive,
-    ref,
-} from "vue"
+import { computed, reactive, ref } from "vue"
 
-import {
-    createLine,
-    updateLine,
-} from "../api/line.api.js"
+import { createLine, updateLine } from "../api/line.api.js"
 
 export function createEmptyLineForm() {
     return {
         companyId: "",
         branchId: "",
+        departmentId: "",
+        positionId: "",
         code: "",
         name: "",
         description: "",
@@ -25,11 +20,7 @@ function clone(value) {
 }
 
 function mapFieldErrors(error) {
-    const fields =
-        error?.response?.data?.error?.fields ??
-        error?.fields ??
-        {}
-
+    const fields = error?.response?.data?.error?.fields ?? error?.fields ?? {}
     return Object.fromEntries(
         Object.entries(fields).map(([key, value]) => [
             key,
@@ -52,10 +43,9 @@ export function useLineForm() {
             ...clone(line),
             companyId: line.companyId ?? line.company?.id ?? "",
             branchId: line.branchId ?? line.branch?.id ?? "",
-            status:
-                line.status === "INACTIVE"
-                    ? "INACTIVE"
-                    : "ACTIVE",
+            departmentId: line.departmentId ?? line.department?.id ?? "",
+            positionId: line.positionId ?? line.position?.id ?? "",
+            status: line.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
         })
     }
 
@@ -77,13 +67,8 @@ export function useLineForm() {
     }
 
     function clearError(field) {
-        if (!errors.value[field]) {
-            return
-        }
-
-        const next = {
-            ...errors.value,
-        }
+        if (!errors.value[field]) return
+        const next = { ...errors.value }
         delete next[field]
         errors.value = next
     }
@@ -96,13 +81,28 @@ export function useLineForm() {
         clearError("code")
     }
 
+    function validateRequired() {
+        const next = {}
+        if (!form.departmentId) next.departmentId = "errors.organization.line.departmentRequired"
+        if (!form.positionId) next.positionId = "errors.organization.line.positionRequired"
+        if (!String(form.code || "").trim()) next.code = "errors.organization.line.codeRequired"
+        if (!String(form.name || "").trim()) next.name = "errors.organization.line.nameRequired"
+        errors.value = { ...errors.value, ...next }
+        return Object.keys(next).length === 0
+    }
+
     async function save() {
+        if (!validateRequired()) {
+            const error = new Error("Complete the required Line fields before saving.")
+            error.fields = errors.value
+            throw error
+        }
+
         saving.value = true
         errors.value = {}
 
         try {
             const payload = clone(form)
-
             if (isEdit.value) {
                 delete payload.companyId
                 delete payload.branchId

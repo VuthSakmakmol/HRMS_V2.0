@@ -721,8 +721,9 @@ async function findLineForEmployeeImport({
     companyId,
     branchId,
     departmentId,
+    positionId,
 }) {
-    if (!value || !companyId || !branchId || !departmentId) {
+    if (!value || !companyId || !branchId || !departmentId || !positionId) {
         return null
     }
 
@@ -732,21 +733,12 @@ async function findLineForEmployeeImport({
     return Line.findOne({
         companyId,
         branchId,
+        departmentId,
+        positionId,
         status: { $ne: "ARCHIVED" },
-        $and: [
-            {
-                $or: [
-                    { departmentId },
-                    { departmentIds: departmentId },
-                ],
-            },
-            {
-                $or: [
-                    { code },
-                    { name },
-                    { shortName: name },
-                ],
-            },
+        $or: [
+            { code },
+            { name },
         ],
     }).lean()
 }
@@ -826,7 +818,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
 
     for (const department of departments) addDocumentAliases(departmentMap, department)
     for (const position of positions) addDocumentAliases(positionMap, position, `${position.departmentId?.toString()}::`)
-    for (const line of lines) addDocumentAliases(lineMap, line)
+    for (const line of lines) addDocumentAliases(lineMap, line, `${line.positionId?.toString()}::`)
     for (const shift of shifts) addDocumentAliases(shiftMap, shift)
     for (const introducer of introducers) introducerMap.set(normalizeCode(introducer.employeeCode), introducer)
     for (const channel of recruitmentChannels) addDocumentAliases(recruitmentChannelMap, channel)
@@ -838,7 +830,8 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         const department = departmentMap.get(normalizeCode(row.departmentCode)) || null
         const departmentPrefix = department ? `${department._id.toString()}::` : ""
         const position = department ? positionMap.get(`${departmentPrefix}${normalizeCode(row.positionCode)}`) || null : null
-        const line = lineMap.get(normalizeCode(row.lineCode)) || null
+        const linePrefix = position ? `${position._id.toString()}::` : ""
+        const line = position ? lineMap.get(`${linePrefix}${normalizeCode(row.lineCode)}`) || null : null
         const shift = shiftMap.get(normalizeCode(row.shiftCode)) || null
         const introducer = row.introducerEmployeeCode ? introducerMap.get(normalizeCode(row.introducerEmployeeCode)) || null : null
         const recruitmentChannel = recruitmentChannelMap.get(normalizeCode(row.recruitmentChannelCode)) || null
@@ -851,7 +844,9 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         if (!position) summary.errors.push(buildError(row.rowNumber, "positionCode", "errors.employee.import.positionNotFound"))
         if (!line) summary.errors.push(buildError(row.rowNumber, "lineCode", "errors.employee.import.lineNotFound", {
             value: row.lineCode,
-            expected: `An active line in branch ${branch.code || branch.name}`,
+            expected: position
+                ? `An active line assigned to position ${position.code || position.title}`
+                : "Select a valid position before resolving the line",
         }))
         if (!shift) summary.errors.push(buildError(row.rowNumber, "shiftCode", "errors.employee.import.shiftNotFound"))
         if (row.introducerEmployeeCode && !introducer) summary.errors.push(buildError(row.rowNumber, "introducerEmployeeCode", "errors.employee.import.introducerNotFound"))

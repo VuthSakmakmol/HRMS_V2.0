@@ -16,6 +16,16 @@ export function createLineColumns(t) {
             minWidth: "12rem",
         },
         {
+            field: "department",
+            header: t("organization.line.department"),
+            minWidth: "12rem",
+        },
+        {
+            field: "position",
+            header: t("organization.line.position"),
+            minWidth: "14rem",
+        },
+        {
             field: "company",
             header: t("organization.line.company"),
             minWidth: "12rem",

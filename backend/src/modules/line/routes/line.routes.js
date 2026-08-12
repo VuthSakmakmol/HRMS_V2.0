@@ -15,6 +15,7 @@ import {
     importLinesController,
     startLineImportJobController,
     listLinesController,
+    lookupLinesController,
     updateLineController,
 } from "../controllers/line.controller.js"
 import {
@@ -95,6 +96,13 @@ router.post(
     upload.single("file"),
     validateRequest({ query: lineListQuerySchema }),
     asyncHandler(importLinesController),
+)
+
+router.get(
+    "/lookup",
+    requirePermission(LINE_PERMISSIONS.LOOKUP),
+    validateRequest({ query: lineListQuerySchema }),
+    asyncHandler(lookupLinesController),
 )
 
 router.get(

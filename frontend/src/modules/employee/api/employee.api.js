@@ -242,11 +242,13 @@ export function fetchEmployeePositions({ companyId, branchId, departmentId }) {
   });
 }
 
-export function fetchEmployeeLines({ companyId, branchId }) {
+export function fetchEmployeeLines({ companyId, branchId, departmentId, positionId }) {
   if (!companyId || !branchId) return Promise.resolve([]);
-  return fetchPage("/organization/lines", {
+  return fetchAllPages("/organization/lines/lookup", {
     companyId,
     branchId,
+    departmentId: departmentId || undefined,
+    positionId: positionId || undefined,
   });
 }
 

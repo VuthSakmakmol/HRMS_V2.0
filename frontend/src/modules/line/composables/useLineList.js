@@ -20,6 +20,10 @@ export function useLineList() {
     const query = reactive({
         page: 1,
         limit: 10,
+        companyId: "",
+        branchId: "",
+        departmentId: "",
+        positionId: "",
         search: "",
         status: "ALL",
         sortBy: "name",
@@ -38,7 +42,7 @@ export function useLineList() {
     const hasActiveFilters = computed(
         () =>
             Boolean(
-                query.search,
+                query.search || query.departmentId || query.positionId,
             ) || query.status !== "ALL",
     )
 
@@ -79,6 +83,8 @@ export function useLineList() {
     function clearFilters() {
         Object.assign(query, {
             page: 1,
+            departmentId: "",
+            positionId: "",
             search: "",
             status: "ALL",
         })

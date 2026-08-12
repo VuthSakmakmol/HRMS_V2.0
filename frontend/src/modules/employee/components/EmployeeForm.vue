@@ -31,6 +31,7 @@ const emit = defineEmits([
     "company-change",
     "branch-change",
     "department-change",
+    "position-change",
 ])
 
 const components = [
@@ -108,6 +109,7 @@ watch(
                 @company-change="emit('company-change')"
                 @branch-change="emit('branch-change')"
                 @department-change="emit('department-change')"
+                @position-change="emit('position-change')"
             />
         </section>
     </div>

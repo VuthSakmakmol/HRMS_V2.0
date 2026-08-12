@@ -14,15 +14,9 @@ const objectIdSchema = z.string().trim().regex(/^[0-9a-fA-F]{24}$/, {
     message: "Invalid MongoDB ObjectId.",
 })
 
-const nullableObjectIdSchema = z.preprocess(
-    (value) => {
-        if (value === "" || value === undefined) {
-            return null
-        }
-
-        return value
-    },
-    objectIdSchema.nullable(),
+const optionalObjectIdSchema = z.preprocess(
+    (value) => value === "" || value === null ? undefined : value,
+    objectIdSchema.optional(),
 )
 
 const codeSchema = z
@@ -59,8 +53,10 @@ export const lineIdParamSchema = z.object({
 export const lineListQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(10),
-    companyId: objectIdSchema.optional(),
-    branchId: objectIdSchema.optional(),
+    companyId: optionalObjectIdSchema,
+    branchId: optionalObjectIdSchema,
+    departmentId: optionalObjectIdSchema,
+    positionId: optionalObjectIdSchema,
     status: z.enum(["ALL", ...LINE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
     sortBy: z.enum(LINE_SORT_FIELDS).default("name"),
@@ -70,6 +66,8 @@ export const lineListQuerySchema = z.object({
 export const lineCreateSchema = z.object({
     companyId: objectIdSchema,
     branchId: objectIdSchema,
+    departmentId: objectIdSchema,
+    positionId: objectIdSchema,
     code: codeSchema,
     name: textSchema(2, 160),
     description: optionalTextSchema(500),
@@ -78,6 +76,8 @@ export const lineCreateSchema = z.object({
 
 export const lineUpdateSchema = z
     .object({
+        departmentId: objectIdSchema.optional(),
+        positionId: objectIdSchema.optional(),
         code: codeSchema.optional(),
         name: textSchema(2, 160).optional(),
         description: optionalTextSchema(500),

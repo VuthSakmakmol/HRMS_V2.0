@@ -43,6 +43,20 @@ export async function listLinesController(req, res) {
     return sendList(req, res, result)
 }
 
+export async function lookupLinesController(req, res) {
+    const result = await listLines({
+        query: {
+            ...req.validatedQuery,
+            page: req.validatedQuery.page || 1,
+            limit: req.validatedQuery.limit || 100,
+            status: "ACTIVE",
+        },
+        user: req.auth.user,
+    })
+
+    return sendList(req, res, result)
+}
+
 export async function getLineController(req, res) {
     const line = await getLineById({
         lineId: req.validatedParams.lineId,
@@ -212,8 +226,25 @@ async function processLineImportJob({
         })
 
         completeImportJob(jobId, summary)
+        updateImportJob(jobId, {
+            messageKey: "organization.line.importPhaseCompleted",
+        })
     } catch (error) {
-        failImportJob(jobId, error)
+        const normalizedError = error instanceof AppError
+            ? error
+            : new AppError({
+                statusCode: 500,
+                code: "ORGANIZATION_LINE_IMPORT_FAILED",
+                messageKey: "errors.organization.lineImport.failed",
+                details: {
+                    reason: error?.message || "Unexpected Line import failure.",
+                },
+            })
+
+        failImportJob(jobId, normalizedError)
+        updateImportJob(jobId, {
+            messageKey: "organization.line.importPhaseFailed",
+        })
     }
 }
 

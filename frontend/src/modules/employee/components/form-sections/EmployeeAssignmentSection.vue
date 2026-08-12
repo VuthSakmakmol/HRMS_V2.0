@@ -15,6 +15,7 @@ const emit = defineEmits([
     "company-change",
     "branch-change",
     "department-change",
+    "position-change",
 ])
 
 const { t, te } = useI18n()
@@ -45,7 +46,8 @@ function fieldDisabled(field) {
     if (["companyId", "branchId"].includes(field)) return true
     if (field === "departmentId") return !props.form.branchId
     if (field === "positionId") return !props.form.departmentId
-    if (["lineId", "shiftId"].includes(field)) return !props.form.branchId
+    if (field === "lineId") return !props.form.positionId
+    if (field === "shiftId") return !props.form.branchId
     return false
 }
 
@@ -54,6 +56,7 @@ function onChange(field) {
     if (field === "companyId") emit("company-change")
     if (field === "branchId") emit("branch-change")
     if (field === "departmentId") emit("department-change")
+    if (field === "positionId") emit("position-change")
 }
 </script>
 

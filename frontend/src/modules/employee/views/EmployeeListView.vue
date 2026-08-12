@@ -189,12 +189,26 @@ const formPositionOptions = computed(() =>
   }),
 );
 
+const formLineOptions = computed(() =>
+  map(
+    rows(lookups.lines).filter((item) => {
+      const lineDepartmentId = String(item.departmentId || item.department?.id || "");
+      const linePositionId = String(item.positionId || item.position?.id || "");
+      return (
+        Boolean(formState.form.positionId) &&
+        lineDepartmentId === String(formState.form.departmentId || "") &&
+        linePositionId === String(formState.form.positionId || "")
+      );
+    }),
+  ),
+);
+
 const formOptions = computed(() => ({
   companyId: map(lookups.companies),
   branchId: map(lookups.branches),
   departmentId: map(lookups.departments),
   positionId: formPositionOptions.value,
-  lineId: map(lookups.lines),
+  lineId: formLineOptions.value,
   shiftId: map(lookups.shifts),
   recruitmentChannelId: map(lookups.recruitmentChannels),
   exitReasonId: map(lookups.exitReasons),
@@ -426,7 +440,12 @@ async function onFormBranchChange() {
 }
 async function onFormDepartmentChange() {
   formState.form.positionId = "";
+  formState.form.lineId = "";
   await loadDepartmentChildren();
+}
+function onFormPositionChange() {
+  formState.form.lineId = "";
+  formState.clearError("lineId");
 }
 async function openCreateEmployee() {
   formState.openCreate();
@@ -934,6 +953,7 @@ onMounted(initialize);
     @company-change="onFormCompanyChange"
     @branch-change="onFormBranchChange"
     @department-change="onFormDepartmentChange"
+    @position-change="onFormPositionChange"
   />
   <EmployeeArchiveDialog
     :visible="archiveVisible"

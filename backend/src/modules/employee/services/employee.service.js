@@ -710,7 +710,7 @@ function employeeListPopulate(query) {
         .populate({ path: "branchId", select: "code name shortName status" })
         .populate({ path: "departmentId", select: "code name shortName status" })
         .populate({ path: "positionId", select: "code title shortName status" })
-        .populate({ path: "lineId", select: "code name shortName status" })
+        .populate({ path: "lineId", select: "companyId branchId departmentId positionId code name status" })
         .populate({ path: "shiftId", select: "code name shortName status" })
         .populate({ path: "employeeTypeId", select: "code name title displayName status recordStatus" })
         .populate({ path: "recruitmentChannelId", select: "companyId branchId code name status" })
@@ -723,7 +723,7 @@ function employeePopulate(query) {
         .populate({ path: "branchId", select: "companyId code name shortName status" })
         .populate({ path: "departmentId", select: "companyId branchId code name shortName status" })
         .populate({ path: "positionId", select: "companyId branchId departmentId code title shortName level isManager status" })
-        .populate({ path: "lineId", select: "companyId branchId departmentId code name shortName allowedPositionIds leaderPositionId status" })
+        .populate({ path: "lineId", select: "companyId branchId departmentId positionId code name status" })
         .populate({ path: "shiftId", select: "companyId branchId code name shortName startTime endTime workingMinutes isOvernight status" })
         .populate({ path: "recruitmentChannelId", select: "companyId branchId code name shortName targetMonthly status" })
         .populate({ path: "exitReasonId", select: "companyId branchId code name status" })
@@ -777,6 +777,17 @@ async function validateAssignment(payload, user) {
     if (!department) throw new AppError({ statusCode: 404, code: "EMPLOYEE_DEPARTMENT_NOT_FOUND", messageKey: "errors.organization.department.notFound", fields: { departmentId: ["errors.organization.department.notFound"] } })
     if (!position) throw new AppError({ statusCode: 404, code: "EMPLOYEE_POSITION_NOT_FOUND", messageKey: "errors.organization.position.notFound", fields: { positionId: ["errors.organization.position.notFound"] } })
     if (!line) throw new AppError({ statusCode: 404, code: "EMPLOYEE_LINE_NOT_FOUND", messageKey: "errors.organization.line.notFound", fields: { lineId: ["errors.organization.line.notFound"] } })
+    if (
+        String(line.departmentId || "") !== String(payload.departmentId || "") ||
+        String(line.positionId || "") !== String(payload.positionId || "")
+    ) {
+        throw new AppError({
+            statusCode: 409,
+            code: "EMPLOYEE_LINE_POSITION_MISMATCH",
+            messageKey: "errors.employee.profile.linePositionMismatch",
+            fields: { lineId: ["errors.employee.profile.linePositionMismatch"] },
+        })
+    }
     if (!shift) throw new AppError({ statusCode: 404, code: "EMPLOYEE_SHIFT_NOT_FOUND", messageKey: "errors.organization.shift.notFound", fields: { shiftId: ["errors.organization.shift.notFound"] } })
 
 }

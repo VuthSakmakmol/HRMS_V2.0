@@ -6,12 +6,16 @@ import { AppError } from "../../../shared/errors/AppError.js"
 
 import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
+import Department from "../../organization/models/Department.js"
+import Position from "../../organization/models/Position.js"
 import Line from "../models/Line.js"
 import { listLines } from "./line.service.js"
 
 const TEMPLATE_HEADERS = [
     "companyCode",
     "branchCode",
+    "departmentCode",
+    "positionCode",
     "lineCode",
     "lineName",
     "status",
@@ -38,24 +42,18 @@ function normalizeStatus(value) {
     return STATUS_VALUES.includes(status) ? status : null
 }
 
-
 function getCellValue(row, index) {
-    const cell = row.getCell(index)
-    const value = cell.value
+    const value = row.getCell(index).value
 
     if (value === null || value === undefined) {
         return ""
     }
 
     if (typeof value === "object") {
-        if (value.text) {
-            return String(value.text)
-        }
-
-        if (value.result) {
+        if (value.text) return String(value.text)
+        if (value.result !== undefined && value.result !== null) {
             return String(value.result)
         }
-
         if (value.richText) {
             return value.richText.map((item) => item.text).join("")
         }
@@ -74,38 +72,51 @@ function getRowObject(row) {
     return result
 }
 
-function buildImportError(rowNumber, field, messageKey, details = {}) {
+function buildImportError(
+    rowNumber,
+    field,
+    messageKey,
+    {
+        received = "",
+        expected = "",
+        reason = "",
+    } = {},
+) {
     return {
         rowNumber,
         field,
         messageKey,
-        ...details,
+        received: String(received ?? ""),
+        expected: String(expected ?? ""),
+        reason: String(reason ?? ""),
     }
 }
 
 function validateHeaderRow(worksheet) {
     const headerRow = worksheet.getRow(1)
-
     const actualHeaders = TEMPLATE_HEADERS.map((_, index) =>
         normalizeText(getCellValue(headerRow, index + 1)),
     )
 
-    const isValid = TEMPLATE_HEADERS.every(
+    const valid = TEMPLATE_HEADERS.every(
         (header, index) => actualHeaders[index] === header,
     )
 
-    if (!isValid) {
+    if (!valid) {
         throw new AppError({
             statusCode: 422,
             code: "ORGANIZATION_LINE_IMPORT_INVALID_TEMPLATE",
             messageKey: "errors.organization.lineImport.invalidTemplate",
+            details: {
+                expectedHeaders: TEMPLATE_HEADERS.join(", "),
+                actualHeaders: actualHeaders.filter(Boolean).join(", ") || "(blank)",
+            },
         })
     }
 }
 
 function buildWorkbookBase(title) {
     const workbook = new ExcelJS.Workbook()
-
     workbook.creator = "HRMS Enterprise"
     workbook.created = new Date()
     workbook.modified = new Date()
@@ -117,6 +128,8 @@ function buildWorkbookBase(title) {
     worksheet.columns = [
         { header: "companyCode", key: "companyCode", width: 18 },
         { header: "branchCode", key: "branchCode", width: 18 },
+        { header: "departmentCode", key: "departmentCode", width: 22 },
+        { header: "positionCode", key: "positionCode", width: 22 },
         { header: "lineCode", key: "lineCode", width: 18 },
         { header: "lineName", key: "lineName", width: 30 },
         { header: "status", key: "status", width: 14 },
@@ -124,10 +137,8 @@ function buildWorkbookBase(title) {
     ]
 
     const headerRow = worksheet.getRow(1)
-    headerRow.font = {
-        bold: true,
-        color: { argb: "FFFFFFFF" },
-    }
+    headerRow.height = 24
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } }
     headerRow.fill = {
         type: "pattern",
         pattern: "solid",
@@ -138,10 +149,18 @@ function buildWorkbookBase(title) {
         horizontal: "center",
     }
 
-    return {
-        workbook,
-        worksheet,
-    }
+    worksheet.eachRow((row) => {
+        row.eachCell((cell) => {
+            cell.border = {
+                top: { style: "thin", color: { argb: "FFE5E7EB" } },
+                left: { style: "thin", color: { argb: "FFE5E7EB" } },
+                bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+                right: { style: "thin", color: { argb: "FFE5E7EB" } },
+            }
+        })
+    })
+
+    return { workbook, worksheet }
 }
 
 export async function buildLineImportTemplateWorkbook() {
@@ -150,66 +169,65 @@ export async function buildLineImportTemplateWorkbook() {
     worksheet.addRow({
         companyCode: "TRAX",
         branchCode: "PP-HQ",
+        departmentCode: "SEWING",
+        positionCode: "SEWER",
         lineCode: "LINE_A",
         lineName: "Sewing Line A",
         status: "ACTIVE",
-        description: "Main sewing production line A",
-    })
-
-    worksheet.addRow({
-        companyCode: "TRAX",
-        branchCode: "PP-HQ",
-        lineCode: "LINE_B",
-        lineName: "Sewing Line B",
-        status: "ACTIVE",
-        description: "Available to every employee in the selected branch.",
+        description: "Line A for Sewer position",
     })
 
     const instructionSheet = workbook.addWorksheet("Instructions")
-
     instructionSheet.columns = [
         { header: "Field", key: "field", width: 28 },
         { header: "Required", key: "required", width: 14 },
-        { header: "Rule", key: "rule", width: 90 },
+        { header: "Rule", key: "rule", width: 94 },
     ]
 
     instructionSheet.addRows([
         {
             field: "companyCode",
             required: "Yes",
-            rule: "Must match an existing active company code.",
+            rule: "Must exactly match the ACTIVE company selected in the HRMS top bar.",
         },
         {
             field: "branchCode",
             required: "Yes",
-            rule: "Must match an existing active branch code inside the company.",
+            rule: "Must exactly match the ACTIVE branch selected in the HRMS top bar.",
+        },
+        {
+            field: "departmentCode",
+            required: "Yes",
+            rule: "Must exactly match an ACTIVE Department Code inside the selected branch.",
+        },
+        {
+            field: "positionCode",
+            required: "Yes",
+            rule: "Must exactly match an ACTIVE Position Code inside the selected Department. Every Line belongs to one Position.",
         },
         {
             field: "lineCode",
             required: "Yes",
-            rule: "Unique inside the selected company and branch.",
+            rule: "2-30 characters. Letters, numbers, dash, and underscore only. Unique under the selected Position. Existing matching rows are updated.",
         },
         {
             field: "lineName",
             required: "Yes",
-            rule: "Line display name.",
+            rule: "2-160 characters. This is the display name shown in HRMS.",
         },
         {
             field: "status",
             required: "No",
-            rule: "ACTIVE or INACTIVE. Blank means ACTIVE.",
+            rule: "Allowed values: ACTIVE or INACTIVE. Blank means ACTIVE.",
         },
         {
             field: "description",
             required: "No",
-            rule: "Optional description.",
+            rule: "Optional description, maximum 500 characters.",
         },
     ])
 
-    instructionSheet.getRow(1).font = {
-        bold: true,
-    }
-
+    instructionSheet.getRow(1).font = { bold: true }
     return workbook
 }
 
@@ -220,6 +238,8 @@ export async function buildLineExportWorkbook({ lines }) {
         worksheet.addRow({
             companyCode: line.company?.code || "",
             branchCode: line.branch?.code || "",
+            departmentCode: line.department?.code || "",
+            positionCode: line.position?.code || "",
             lineCode: line.code || "",
             lineName: line.name || "",
             status: line.status || "",
@@ -232,7 +252,19 @@ export async function buildLineExportWorkbook({ lines }) {
 
 export async function parseLineImportWorkbook(buffer) {
     const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(buffer)
+
+    try {
+        await workbook.xlsx.load(buffer)
+    } catch (error) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_LINE_IMPORT_INVALID_FILE",
+            messageKey: "errors.organization.lineImport.invalidFile",
+            details: {
+                reason: error?.message || "The workbook could not be read.",
+            },
+        })
+    }
 
     const worksheet = workbook.worksheets[0]
 
@@ -250,24 +282,21 @@ export async function parseLineImportWorkbook(buffer) {
     const errors = []
 
     worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) {
-            return
-        }
+        if (rowNumber === 1) return
 
         const raw = getRowObject(row)
+        const isEmpty = Object.values(raw).every(
+            (value) => normalizeText(value) === "",
+        )
 
-        const isEmptyRow = Object.entries(raw).every(([, value]) => {
-            return String(value || "").trim() === ""
-        })
-
-        if (isEmptyRow) {
-            return
-        }
+        if (isEmpty) return
 
         const normalized = {
             rowNumber,
             companyCode: normalizeCode(raw.companyCode),
             branchCode: normalizeCode(raw.branchCode),
+            departmentCode: normalizeCode(raw.departmentCode),
+            positionCode: normalizeCode(raw.positionCode),
             lineCode: normalizeCode(raw.lineCode),
             lineName: normalizeText(raw.lineName),
             status: normalizeStatus(raw.status),
@@ -275,84 +304,135 @@ export async function parseLineImportWorkbook(buffer) {
         }
 
         if (!normalized.companyCode) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "companyCode",
-                    "errors.organization.lineImport.companyCodeRequired",
-                ),
-            )
+            errors.push(buildImportError(
+                rowNumber,
+                "companyCode",
+                "errors.organization.lineImport.companyCodeRequired",
+                { received: raw.companyCode },
+            ))
         }
 
         if (!normalized.branchCode) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "branchCode",
-                    "errors.organization.lineImport.branchCodeRequired",
-                ),
-            )
+            errors.push(buildImportError(
+                rowNumber,
+                "branchCode",
+                "errors.organization.lineImport.branchCodeRequired",
+                { received: raw.branchCode },
+            ))
+        }
+
+        if (!normalized.departmentCode) {
+            errors.push(buildImportError(
+                rowNumber,
+                "departmentCode",
+                "errors.organization.lineImport.departmentCodeRequired",
+                { received: raw.departmentCode },
+            ))
+        }
+
+        if (!normalized.positionCode) {
+            errors.push(buildImportError(
+                rowNumber,
+                "positionCode",
+                "errors.organization.lineImport.positionCodeRequired",
+                { received: raw.positionCode },
+            ))
         }
 
         if (!normalized.lineCode) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "lineCode",
-                    "errors.organization.lineImport.lineCodeRequired",
-                ),
-            )
+            errors.push(buildImportError(
+                rowNumber,
+                "lineCode",
+                "errors.organization.lineImport.lineCodeRequired",
+                { received: raw.lineCode },
+            ))
+        } else if (
+            normalized.lineCode.length < 2 ||
+            normalized.lineCode.length > 30 ||
+            !/^[A-Z0-9_-]+$/.test(normalized.lineCode)
+        ) {
+            errors.push(buildImportError(
+                rowNumber,
+                "lineCode",
+                "errors.organization.lineImport.lineCodeInvalid",
+                {
+                    received: raw.lineCode,
+                    expected: "2-30 characters: A-Z, 0-9, - or _",
+                },
+            ))
         }
 
         if (!normalized.lineName) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "lineName",
-                    "errors.organization.lineImport.lineNameRequired",
-                ),
-            )
+            errors.push(buildImportError(
+                rowNumber,
+                "lineName",
+                "errors.organization.lineImport.lineNameRequired",
+                { received: raw.lineName },
+            ))
+        } else if (
+            normalized.lineName.length < 2 ||
+            normalized.lineName.length > 160
+        ) {
+            errors.push(buildImportError(
+                rowNumber,
+                "lineName",
+                "errors.organization.lineImport.lineNameInvalid",
+                {
+                    received: raw.lineName,
+                    expected: "2-160 characters",
+                },
+            ))
         }
 
         if (!normalized.status) {
-            errors.push(
-                buildImportError(
-                    rowNumber,
-                    "status",
-                    "errors.organization.lineImport.statusInvalid",
-                ),
-            )
+            errors.push(buildImportError(
+                rowNumber,
+                "status",
+                "errors.organization.lineImport.statusInvalid",
+                {
+                    received: raw.status,
+                    expected: "ACTIVE or INACTIVE",
+                },
+            ))
+        }
+
+        if (normalized.description.length > 500) {
+            errors.push(buildImportError(
+                rowNumber,
+                "description",
+                "errors.organization.lineImport.descriptionTooLong",
+                {
+                    received: raw.description,
+                    expected: "Maximum 500 characters",
+                },
+            ))
         }
 
         rows.push(normalized)
     })
 
-    if (rows.length === 0) {
-        errors.push(
-            buildImportError(
-                1,
-                "file",
-                "errors.organization.lineImport.noDataRows",
-            ),
-        )
+    if (!rows.length) {
+        errors.push(buildImportError(
+            1,
+            "file",
+            "errors.organization.lineImport.noDataRows",
+        ))
     }
 
-    return {
-        rows,
-        errors,
-    }
+    return { rows, errors }
 }
 
 function mongooseValidationErrors(error, row) {
     if (!error?.errors) {
-        return [
-            buildImportError(
-                row.rowNumber,
-                "row",
-                "errors.organization.lineImport.rowInvalid",
-                { received: row.lineCode },
-            ),
-        ]
+        return [buildImportError(
+            row.rowNumber,
+            "row",
+            "errors.organization.lineImport.rowInvalid",
+            {
+                received: row.lineCode,
+                reason: error?.message || "Line validation failed.",
+            },
+        )]
     }
 
     return Object.values(error.errors).map((item) =>
@@ -362,19 +442,21 @@ function mongooseValidationErrors(error, row) {
             "errors.organization.lineImport.fieldInvalid",
             {
                 received: item.value ?? "",
-                reason: item.message,
+                reason: item.message || "",
             },
         ),
     )
 }
 
-async function validateResolvedRows({ rows, company, branch, user }) {
+async function validateResolvedRows({ rows, user }) {
     const errors = []
 
     for (const [index, row] of rows.entries()) {
         const candidate = new Line({
-            companyId: company._id,
-            branchId: branch._id,
+            companyId: row.company._id,
+            branchId: row.branch._id,
+            departmentId: row.department._id,
+            positionId: row.position._id,
             code: row.lineCode,
             name: row.lineName,
             status: row.status,
@@ -397,6 +479,20 @@ async function validateResolvedRows({ rows, company, branch, user }) {
     return errors
 }
 
+function mapByCode(documents) {
+    const map = new Map()
+
+    for (const document of documents) {
+        map.set(normalizeCode(document.code), document)
+    }
+
+    return map
+}
+
+function makePositionKey(departmentId, positionCode) {
+    return `${departmentId.toString()}::${normalizeCode(positionCode)}`
+}
+
 export async function importLinesFromRows({
     rows,
     parseErrors,
@@ -412,66 +508,190 @@ export async function importLinesFromRows({
         errors: [...parseErrors],
     }
 
-    if (summary.errors.length > 0) {
+    // Atomic import: validation errors prevent every row from being saved.
+    if (summary.errors.length) {
         summary.skipped = rows.length
-        onProgress?.({ phase: "VALIDATED", percent: 55, processedRows: rows.length, totalRows: rows.length })
+        onProgress?.({
+            phase: "VALIDATION_FAILED",
+            percent: 55,
+            processedRows: rows.length,
+            totalRows: rows.length,
+            messageKey: "organization.line.importPhaseValidationFailed",
+        })
         return summary
     }
 
-    const [company, branch, existingLines] = await Promise.all([
-        Company.findOne({ _id: workspace.companyId, status: { $ne: "ARCHIVED" } }).lean(),
-        Branch.findOne({ _id: workspace.branchId, companyId: workspace.companyId, status: { $ne: "ARCHIVED" } }).lean(),
-        Line.find({ companyId: workspace.companyId, branchId: workspace.branchId, status: { $ne: "ARCHIVED" } }).lean(),
+    onProgress?.({
+        phase: "VALIDATING_WORKSPACE",
+        percent: 25,
+        processedRows: 0,
+        totalRows: rows.length,
+        messageKey: "organization.line.importPhaseValidatingWorkspace",
+    })
+
+    const [company, branch] = await Promise.all([
+        Company.findOne({
+            _id: workspace.companyId,
+            status: "ACTIVE",
+        }).lean(),
+        Branch.findOne({
+            _id: workspace.branchId,
+            companyId: workspace.companyId,
+            status: "ACTIVE",
+        }).lean(),
     ])
 
     if (!company || !branch) {
-        summary.errors.push(buildImportError(1, "workspace", "errors.organization.line.workspaceRequired"))
+        summary.errors.push(buildImportError(
+            1,
+            "workspace",
+            "errors.organization.line.workspaceRequired",
+        ))
         summary.skipped = rows.length
         return summary
+    }
+
+    const expectedCompanyCode = normalizeCode(company.code)
+    const expectedBranchCode = normalizeCode(branch.code)
+
+    for (const row of rows) {
+        if (row.companyCode !== expectedCompanyCode) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "companyCode",
+                "errors.organization.lineImport.companyWorkspaceMismatch",
+                {
+                    received: row.companyCode,
+                    expected: expectedCompanyCode,
+                },
+            ))
+        }
+
+        if (row.branchCode !== expectedBranchCode) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "branchCode",
+                "errors.organization.lineImport.branchWorkspaceMismatch",
+                {
+                    received: row.branchCode,
+                    expected: expectedBranchCode,
+                },
+            ))
+        }
+    }
+
+    if (summary.errors.length) {
+        summary.skipped = rows.length
+        return summary
+    }
+
+    onProgress?.({
+        phase: "VALIDATING_REFERENCES",
+        percent: 35,
+        processedRows: 0,
+        totalRows: rows.length,
+        messageKey: "organization.line.importPhaseValidatingReferences",
+    })
+
+    const [departments, positions] = await Promise.all([
+        Department.find({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+            status: "ACTIVE",
+        }).lean(),
+        Position.find({
+            companyId: workspace.companyId,
+            branchId: workspace.branchId,
+            status: "ACTIVE",
+        }).lean(),
+    ])
+
+    const departmentMap = mapByCode(departments)
+    const positionMap = new Map()
+
+    for (const position of positions) {
+        positionMap.set(
+            makePositionKey(position.departmentId, position.code),
+            position,
+        )
     }
 
     const resolvedRows = rows.map((row) => {
-        if (row.companyCode !== company.code) {
-            summary.errors.push(buildImportError(row.rowNumber, "companyCode", "errors.organization.lineImport.companyNotFound"))
+        const department = departmentMap.get(row.departmentCode) || null
+
+        if (!department) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "departmentCode",
+                "errors.organization.lineImport.departmentNotFound",
+                {
+                    received: row.departmentCode,
+                    expected: "An ACTIVE Department Code in the selected branch",
+                },
+            ))
         }
-        if (row.branchCode !== branch.code) {
-            summary.errors.push(buildImportError(row.rowNumber, "branchCode", "errors.organization.lineImport.branchNotFound"))
+
+        const position = department
+            ? positionMap.get(makePositionKey(department._id, row.positionCode)) || null
+            : null
+
+        if (!position) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "positionCode",
+                "errors.organization.lineImport.positionNotFound",
+                {
+                    received: row.positionCode,
+                    expected: department
+                        ? `An ACTIVE Position Code inside ${department.code}`
+                        : "A Position inside a valid Department",
+                },
+            ))
         }
-        return { ...row, company, branch }
+
+        return {
+            ...row,
+            company,
+            branch,
+            department,
+            position,
+        }
     })
 
-    if (summary.errors.length > 0) {
+    if (summary.errors.length) {
         summary.skipped = rows.length
         return summary
     }
-    const lineMap = new Map(existingLines.map((line) => [line.code, line]))
-    const seenLineKeys = new Set()
+
+    const seenLineKeys = new Map()
 
     for (const row of resolvedRows) {
-        const lineKey = row.lineCode
+        const lineKey = `${row.position._id.toString()}::${row.lineCode}`
+        const firstRowNumber = seenLineKeys.get(lineKey)
 
-        if (seenLineKeys.has(lineKey)) {
-            summary.errors.push(
-                buildImportError(
-                    row.rowNumber,
-                    "lineCode",
-                    "errors.organization.lineImport.duplicateInFile",
-                ),
-            )
+        if (firstRowNumber) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "lineCode",
+                "errors.organization.lineImport.duplicateInFile",
+                {
+                    received: row.lineCode,
+                    expected: `Unique under Position ${row.position.code}; first used on row ${firstRowNumber}`,
+                },
+            ))
+        } else {
+            seenLineKeys.set(lineKey, row.rowNumber)
         }
-
-        seenLineKeys.add(lineKey)
-
     }
 
-    if (summary.errors.length > 0) {
+    if (summary.errors.length) {
         summary.skipped = rows.length
         return summary
     }
 
     onProgress?.({
         phase: "VALIDATING_ROWS",
-        percent: 35,
+        percent: 50,
         processedRows: 0,
         totalRows: resolvedRows.length,
         messageKey: "organization.line.importPhaseValidatingRows",
@@ -479,26 +699,43 @@ export async function importLinesFromRows({
 
     const modelErrors = await validateResolvedRows({
         rows: resolvedRows,
-        company,
-        branch,
         user,
     })
 
-    if (modelErrors.length > 0) {
+    if (modelErrors.length) {
         summary.errors.push(...modelErrors)
         summary.skipped = rows.length
         return summary
     }
+
+    const existingLines = await Line.find({
+        companyId: company._id,
+        branchId: branch._id,
+        positionId: { $in: resolvedRows.map((row) => row.position._id) },
+        status: { $ne: "ARCHIVED" },
+    })
+        .select("_id positionId code")
+        .lean()
+
+    const existingKeys = new Set(
+        existingLines.map(
+            (line) => `${line.positionId.toString()}::${normalizeCode(line.code)}`,
+        ),
+    )
 
     const operations = resolvedRows.map((row) => ({
         updateOne: {
             filter: {
                 companyId: company._id,
                 branchId: branch._id,
+                departmentId: row.department._id,
+                positionId: row.position._id,
                 code: row.lineCode,
             },
             update: {
                 $set: {
+                    departmentId: row.department._id,
+                    positionId: row.position._id,
                     name: row.lineName,
                     status: row.status,
                     description: row.description,
@@ -517,32 +754,43 @@ export async function importLinesFromRows({
 
     onProgress?.({
         phase: "SAVING_ROWS",
-        percent: 75,
+        percent: 78,
         processedRows: 0,
         totalRows: resolvedRows.length,
         messageKey: "organization.line.importPhaseSavingRows",
     })
 
     const session = await mongoose.startSession()
-    let writeResult
 
     try {
         await session.withTransaction(async () => {
-            writeResult = await Line.bulkWrite(operations, {
+            await Line.bulkWrite(operations, {
                 ordered: true,
                 session,
             })
+        })
+    } catch (error) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_LINE_IMPORT_SAVE_FAILED",
+            messageKey: "errors.organization.lineImport.saveFailed",
+            details: {
+                reason: error?.message || "The database rejected the Line import.",
+            },
         })
     } finally {
         await session.endSession()
     }
 
-    summary.created = Number(writeResult?.upsertedCount ?? 0)
+    summary.created = resolvedRows.reduce((count, row) => {
+        const key = `${row.position._id.toString()}::${row.lineCode}`
+        return count + (existingKeys.has(key) ? 0 : 1)
+    }, 0)
     summary.updated = resolvedRows.length - summary.created
 
     onProgress?.({
         phase: "SAVING_ROWS",
-        percent: 95,
+        percent: 96,
         processedRows: resolvedRows.length,
         totalRows: resolvedRows.length,
         messageKey: "organization.line.importPhaseSavingRows",

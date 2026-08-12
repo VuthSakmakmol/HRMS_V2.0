@@ -95,6 +95,36 @@ export default {
         "workforceRatioSetup": "Workforce Ratio Setup",
         "exitReasons": "Exit Reasons"
     },
+    "exitReason": {
+        "actions": "Actions",
+        "archive": "Archive",
+        "archiveFailed": "Unable to archive exit reason",
+        "archiveMessage": "Are you sure you want to archive {name}? Archived exit reasons will no longer be available for new employee exits.",
+        "archiveTitle": "Archive Exit Reason",
+        "archived": "Exit reason archived successfully.",
+        "branch": "Branch",
+        "code": "Exit Reason Code",
+        "codeLockedHint": "The code cannot be changed after the exit reason is created.",
+        "company": "Company",
+        "create": "New Exit Reason",
+        "createTitle": "Create Exit Reason",
+        "created": "Exit reason created successfully.",
+        "descriptionLabel": "Description",
+        "editTitle": "Edit Exit Reason",
+        "empty": "No exit reasons found",
+        "emptyDescription": "Create an exit reason so employee exits can be recorded consistently.",
+        "loadFailed": "Unable to load exit reasons",
+        "loadOneFailed": "Unable to load exit reason",
+        "name": "Exit Reason Name",
+        "saveFailed": "Unable to save exit reason",
+        "searchPlaceholder": "Search by code or name",
+        "status": "Status",
+        "statusActive": "Active",
+        "statusInactive": "Inactive",
+        "thisReason": "this exit reason",
+        "updated": "Exit reason updated successfully.",
+        "workspaceRequiredTitle": "Company and Branch Required"
+    },
     "attendance": {
         "title": "Attendance Records",
         "description": "Import, review, and correct daily employee attendance.",
@@ -419,7 +449,8 @@ export default {
                 "AB": "AB",
                 "SL": "SL",
                 "ML": "ML"
-            }
+            },
+            "wholeYear": "Whole Year"
         },
         "noData": "No dashboard data matched this filter.",
         "recruitment": {
@@ -610,7 +641,9 @@ export default {
             "city": "City",
             "stateProvince": "State / Province",
             "postalCode": "Postal Code",
-            "countryCode": "Country Code"
+            "countryCode": "Country Code",
+            "archive": "Archive",
+            "emptyDescription": "No company records match the current filters."
         },
         "branch": {
             "eyebrow": "Organization Setup",
@@ -662,7 +695,8 @@ export default {
             "city": "City",
             "stateProvince": "State / Province",
             "postalCode": "Postal Code",
-            "countryCode": "Country Code"
+            "countryCode": "Country Code",
+            "emptyDescription": "No branch records match the current filters."
         },
         "department": {
             "eyebrow": "Organization Setup",
@@ -732,7 +766,12 @@ export default {
             "templateDownloadFailed": "Unable to download sample",
             "exportStarted": "Export downloaded",
             "exportStartedDetail": "Department export file has been downloaded.",
-            "exportFailed": "Unable to export departments"
+            "exportFailed": "Unable to export departments",
+            "parentDepartment": "Parent Department",
+            "emptyDescription": "No department records match the current filters.",
+            "downloadTemplate": "Download Sample",
+            "import": "Import",
+            "export": "Export"
         },
         "position": {
             "eyebrow": "Organization Setup",
@@ -861,7 +900,9 @@ export default {
             "exportStartedDetail": "Position export file has been downloaded.",
             "exported": "Export ready",
             "exportedDetail": "The positions export has been downloaded.",
-            "exportFailed": "Unable to export Position records."
+            "exportFailed": "Unable to export Position records.",
+            "name": "Position Name",
+            "managerPosition": "Manager Position"
         },
         "line": {
             "eyebrow": "Organization Setup",
@@ -973,7 +1014,8 @@ export default {
             "validationErrors": "Validation Errors",
             "rowNumber": "Row",
             "field": "Field",
-            "issue": "Issue"
+            "issue": "Issue",
+            "position": "Position"
         },
         "shift": {
             "eyebrow": "Organization Setup",
@@ -1057,7 +1099,13 @@ export default {
             "validationErrors": "Validation Errors",
             "rowNumber": "Row",
             "field": "Field",
-            "issue": "Issue"
+            "issue": "Issue",
+            "name": "Shift Name",
+            "emptyDescription": "No shift records match the current filters.",
+            "downloadTemplate": "Download Sample",
+            "import": "Import",
+            "export": "Export",
+            "archiveConfirmation": "Are you sure you want to archive this shift?"
         },
         "employeeType": {
             "title": "Employee Types",
@@ -1265,7 +1313,15 @@ export default {
             "importCreated": "Created",
             "importFailedCount": "Failed",
             "importErrors": "Validation Errors",
-            "pagination": "Page {page} of {totalPages} · {total} records"
+            "pagination": "Page {page} of {totalPages} · {total} records",
+            "emptyDescription": "No location records match the current filters.",
+            "singular": {
+                "countries": "Country",
+                "provinces": "Province",
+                "districts": "District",
+                "communes": "Commune",
+                "villages": "Village"
+            }
         },
         "employee": {
             "profile": {
@@ -1734,6 +1790,22 @@ export default {
             }
         },
         "organization": {
+            "exitReason": {
+                "invalidId": "Invalid exit reason ID.",
+                "notFound": "Exit reason was not found.",
+                "archived": "This exit reason is archived and cannot be used.",
+                "codeExists": "This exit reason code already exists in the selected company and branch.",
+                "scopeRequired": "Select a company and branch before working with exit reasons.",
+                "companyNotFound": "The selected company was not found or is archived.",
+                "branchNotFound": "The selected branch was not found or is archived.",
+                "codeRequired": "Exit reason code is required.",
+                "codeInvalid": "Exit reason code can contain only letters, numbers, dash, or underscore.",
+                "codeTooLong": "Exit reason code is too long.",
+                "nameRequired": "Exit reason name is required.",
+                "nameTooLong": "Exit reason name is too long.",
+                "descriptionTooLong": "Exit reason description is too long.",
+                "updateRequired": "Enter at least one change before saving."
+            },
             "company": {
                 "invalidId": "Invalid company ID.",
                 "notFound": "Company was not found.",

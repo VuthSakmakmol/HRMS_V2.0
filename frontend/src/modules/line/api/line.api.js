@@ -8,6 +8,14 @@ function unwrapData(response) {
     return response?.data?.data ?? {}
 }
 
+function compactParams(params = {}) {
+    return Object.fromEntries(
+        Object.entries(params).filter(([, value]) =>
+            value !== "" && value !== null && value !== undefined,
+        ),
+    )
+}
+
 function downloadBlob(blob, filename) {
     const url = window.URL.createObjectURL(blob)
     const anchor = document.createElement("a")
@@ -22,7 +30,7 @@ function downloadBlob(blob, filename) {
 
 export async function listLines(params = {}, signal) {
     const response = await apiClient.get(ENDPOINT, {
-        params,
+        params: compactParams(params),
         signal,
     })
     const data = unwrapData(response)
@@ -59,16 +67,38 @@ export async function archiveLine(lineId) {
 }
 
 async function lookup(endpoint, params = {}, signal) {
-    const response = await apiClient.get(`${endpoint}/lookup`, {
-        params: {
-            limit: 100,
-            status: "ACTIVE",
-            ...params,
-        },
-        signal,
-    })
+    const items = []
+    const seen = new Set()
+    let page = 1
+    let totalPages = 1
 
-    return unwrapData(response).items ?? []
+    do {
+        const response = await apiClient.get(`${endpoint}/lookup`, {
+            params: {
+                page,
+                limit: 100,
+                status: "ACTIVE",
+                ...params,
+            },
+            signal,
+        })
+
+        const payload = unwrapData(response)
+        const pageItems = Array.isArray(payload.items) ? payload.items : []
+
+        for (const item of pageItems) {
+            const id = String(item?.id || item?._id || "")
+            if (id && seen.has(id)) continue
+            if (id) seen.add(id)
+            items.push(item)
+        }
+
+        totalPages = Math.max(1, Number(payload.pagination?.totalPages || 1))
+        if (!payload.pagination || pageItems.length === 0) break
+        page += 1
+    } while (page <= totalPages)
+
+    return items
 }
 
 export const lookupDepartments = (params, signal) =>
@@ -88,7 +118,7 @@ export async function downloadLineTemplate() {
 
 export async function exportLines(params = {}) {
     const response = await apiClient.get(`${ENDPOINT}/export`, {
-        params,
+        params: compactParams(params),
         responseType: "blob",
         timeout: 0,
     })

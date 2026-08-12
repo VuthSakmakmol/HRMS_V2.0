@@ -11,6 +11,7 @@ import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
 import Department from "../../organization/models/Department.js"
 import Position from "../../organization/models/Position.js"
+import Employee from "../../employee/models/Employee.js"
 
 import Line from "../models/Line.js"
 
@@ -39,27 +40,16 @@ function getUserCompanyIds(user) {
 }
 
 function getCompanyScopeFilter(user) {
-    if (user?.isRootAdmin) {
-        return {}
-    }
+    if (user?.isRootAdmin) return {}
 
     const companyIds = getUserCompanyIds(user)
-
-    if (companyIds.length === 0) {
-        return {
-            _id: { $in: [] },
-        }
-    }
-
-    return {
-        _id: { $in: companyIds },
-    }
+    return companyIds.length
+        ? { _id: { $in: companyIds } }
+        : { _id: { $in: [] } }
 }
 
 function getBranchScopeFilter(user) {
-    if (user?.isRootAdmin) {
-        return {}
-    }
+    if (user?.isRootAdmin) return {}
 
     const allBranchCompanyIds = []
     const branchIds = []
@@ -68,41 +58,22 @@ function getBranchScopeFilter(user) {
         if (assignment.allBranches && assignment.companyId) {
             allBranchCompanyIds.push(assignment.companyId)
         }
-
-        for (const branchId of assignment.branchIds || []) {
-            branchIds.push(branchId)
-        }
+        for (const branchId of assignment.branchIds || []) branchIds.push(branchId)
     }
 
     const filters = []
-
-    if (allBranchCompanyIds.length > 0) {
-        filters.push({
-            companyId: { $in: [...new Set(allBranchCompanyIds)] },
-        })
+    if (allBranchCompanyIds.length) {
+        filters.push({ companyId: { $in: [...new Set(allBranchCompanyIds)] } })
+    }
+    if (branchIds.length) {
+        filters.push({ _id: { $in: [...new Set(branchIds)] } })
     }
 
-    if (branchIds.length > 0) {
-        filters.push({
-            _id: { $in: [...new Set(branchIds)] },
-        })
-    }
-
-    if (filters.length === 0) {
-        return {
-            _id: { $in: [] },
-        }
-    }
-
-    return {
-        $or: filters,
-    }
+    return filters.length ? { $or: filters } : { _id: { $in: [] } }
 }
 
 function getLineScopeFilter(user) {
-    if (user?.isRootAdmin) {
-        return {}
-    }
+    if (user?.isRootAdmin) return {}
 
     const allBranchCompanyIds = []
     const branchIds = []
@@ -111,46 +82,25 @@ function getLineScopeFilter(user) {
         if (assignment.allBranches && assignment.companyId) {
             allBranchCompanyIds.push(assignment.companyId)
         }
-
-        for (const branchId of assignment.branchIds || []) {
-            branchIds.push(branchId)
-        }
+        for (const branchId of assignment.branchIds || []) branchIds.push(branchId)
     }
 
     const filters = []
-
-    if (allBranchCompanyIds.length > 0) {
-        filters.push({
-            companyId: { $in: [...new Set(allBranchCompanyIds)] },
-        })
+    if (allBranchCompanyIds.length) {
+        filters.push({ companyId: { $in: [...new Set(allBranchCompanyIds)] } })
+    }
+    if (branchIds.length) {
+        filters.push({ branchId: { $in: [...new Set(branchIds)] } })
     }
 
-    if (branchIds.length > 0) {
-        filters.push({
-            branchId: { $in: [...new Set(branchIds)] },
-        })
-    }
-
-    if (filters.length === 0) {
-        return {
-            _id: { $in: [] },
-        }
-    }
-
-    return {
-        $or: filters,
-    }
+    return filters.length ? { $or: filters } : { _id: { $in: [] } }
 }
 
 function buildLineSearchFilter(search) {
     const normalizedSearch = String(search || "").trim()
-
-    if (!normalizedSearch) {
-        return {}
-    }
+    if (!normalizedSearch) return {}
 
     const searchRegex = new RegExp(escapeRegExp(normalizedSearch), "i")
-
     return {
         $or: [
             { code: searchRegex },
@@ -160,21 +110,8 @@ function buildLineSearchFilter(search) {
     }
 }
 
-function uniqueObjectIds(ids = []) {
-    return [
-        ...new Set(
-            ids
-                .filter(Boolean)
-                .map((id) => id.toString()),
-        ),
-    ]
-}
-
 function serializeCompany(company) {
-    if (!company || typeof company !== "object") {
-        return null
-    }
-
+    if (!company || typeof company !== "object") return null
     return {
         id: company._id?.toString?.() || company.id,
         code: company.code,
@@ -185,26 +122,19 @@ function serializeCompany(company) {
 }
 
 function serializeBranch(branch) {
-    if (!branch || typeof branch !== "object") {
-        return null
-    }
-
+    if (!branch || typeof branch !== "object") return null
     return {
         id: branch._id?.toString?.() || branch.id,
         companyId: branch.companyId?.toString?.() || branch.companyId,
         code: branch.code,
         name: branch.name,
-        shortName: branch.shortName,
         status: branch.status,
         isHeadOffice: Boolean(branch.isHeadOffice),
     }
 }
 
 function serializeDepartment(department) {
-    if (!department || typeof department !== "object") {
-        return null
-    }
-
+    if (!department || typeof department !== "object") return null
     return {
         id: department._id?.toString?.() || department.id,
         companyId: department.companyId?.toString?.() || department.companyId,
@@ -216,101 +146,81 @@ function serializeDepartment(department) {
 }
 
 function serializePosition(position) {
-    if (!position || typeof position !== "object") {
-        return null
-    }
-
+    if (!position || typeof position !== "object") return null
     return {
         id: position._id?.toString?.() || position.id,
         companyId: position.companyId?.toString?.() || position.companyId,
         branchId: position.branchId?.toString?.() || position.branchId,
-        departmentId:
-            position.departmentId?.toString?.() || position.departmentId,
+        departmentId: position.departmentId?.toString?.() || position.departmentId,
         code: position.code,
         title: position.title,
-        level: Number(position.level || 0),
-        isManager: Boolean(position.isManager),
         status: position.status,
     }
 }
 
 export function serializeLine(line) {
-    if (!line) {
-        return null
-    }
+    if (!line) return null
 
-    const raw =
-        typeof line.toJSON === "function"
-            ? line.toJSON()
-            : {
-                  ...line,
-              }
-
-    const populatedCompany =
-        raw.companyId && typeof raw.companyId === "object"
-            ? serializeCompany(raw.companyId)
-            : null
-
-    const populatedBranch =
-        raw.branchId && typeof raw.branchId === "object"
-            ? serializeBranch(raw.branchId)
-            : null
+    const raw = typeof line.toJSON === "function" ? line.toJSON() : { ...line }
+    const company = raw.companyId && typeof raw.companyId === "object"
+        ? serializeCompany(raw.companyId)
+        : null
+    const branch = raw.branchId && typeof raw.branchId === "object"
+        ? serializeBranch(raw.branchId)
+        : null
+    const department = raw.departmentId && typeof raw.departmentId === "object"
+        ? serializeDepartment(raw.departmentId)
+        : null
+    const position = raw.positionId && typeof raw.positionId === "object"
+        ? serializePosition(raw.positionId)
+        : null
 
     return {
         id: raw._id?.toString?.() || raw.id,
-        companyId:
-            populatedCompany?.id ||
-            raw.companyId?.toString?.() ||
-            raw.companyId,
-        branchId:
-            populatedBranch?.id || raw.branchId?.toString?.() || raw.branchId,
+        companyId: company?.id || raw.companyId?.toString?.() || raw.companyId,
+        branchId: branch?.id || raw.branchId?.toString?.() || raw.branchId,
+        departmentId: department?.id || raw.departmentId?.toString?.() || raw.departmentId,
+        positionId: position?.id || raw.positionId?.toString?.() || raw.positionId,
         code: raw.code,
         name: raw.name,
         description: raw.description || "",
         status: raw.status,
-
-        allowsAllPositions: true,
-
-        company: populatedCompany,
-        branch: populatedBranch,
-
+        company,
+        branch,
+        department,
+        position,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
     }
 }
 
 function buildUpdatePayload(payload, accountId) {
-    const updatePayload = {
-        updatedByAccountId: accountId,
-    }
-
+    const updatePayload = { updatedByAccountId: accountId }
     for (const field of [
+        "departmentId",
+        "positionId",
         "code",
         "name",
         "description",
         "status",
     ]) {
-        if (payload[field] !== undefined) {
-            updatePayload[field] = payload[field]
-        }
+        if (payload[field] !== undefined) updatePayload[field] = payload[field]
     }
-
     return updatePayload
 }
 
-function handleDuplicateError(error) {
-    if (error?.code !== 11000) {
-        throw error
-    }
-
+function throwLineCodeExists() {
     throw new AppError({
         statusCode: 409,
         code: "ORGANIZATION_LINE_CODE_EXISTS",
         messageKey: "errors.organization.line.codeExists",
-        fields: {
-            code: ["errors.organization.line.codeExists"],
-        },
+        fields: { code: ["errors.organization.line.codeExists"] },
     })
+}
+
+function handleDuplicateError(error) {
+    if (error?.code === 11000) throwLineCodeExists()
+    throw error
 }
 
 async function ensureCompanyExists({ companyId, user }) {
@@ -332,7 +242,6 @@ async function ensureCompanyExists({ companyId, user }) {
             messageKey: "errors.organization.company.notFound",
         })
     }
-
     if (company.status === "ARCHIVED") {
         throw new AppError({
             statusCode: 409,
@@ -340,7 +249,6 @@ async function ensureCompanyExists({ companyId, user }) {
             messageKey: "errors.organization.company.archived",
         })
     }
-
     return company
 }
 
@@ -364,7 +272,6 @@ async function ensureBranchExists({ companyId, branchId, user }) {
             messageKey: "errors.organization.branch.notFound",
         })
     }
-
     if (branch.status === "ARCHIVED") {
         throw new AppError({
             statusCode: 409,
@@ -372,16 +279,10 @@ async function ensureBranchExists({ companyId, branchId, user }) {
             messageKey: "errors.organization.branch.archived",
         })
     }
-
     return branch
 }
 
-async function ensureDepartmentExists({
-    companyId,
-    branchId,
-    departmentId,
-    user,
-}) {
+async function ensureDepartmentExists({ companyId, branchId, departmentId }) {
     ensureValidObjectId(
         departmentId,
         "ORGANIZATION_DEPARTMENT_INVALID_ID",
@@ -393,69 +294,76 @@ async function ensureDepartmentExists({
         companyId,
         branchId,
         status: { $ne: "ARCHIVED" },
-        ...getLineScopeFilter(user),
     }).lean()
 
     if (!department) {
         throw new AppError({
             statusCode: 404,
-            code: "ORGANIZATION_DEPARTMENT_NOT_FOUND",
-            messageKey: "errors.organization.department.notFound",
+            code: "ORGANIZATION_LINE_DEPARTMENT_NOT_FOUND",
+            messageKey: "errors.organization.line.departmentNotFound",
+            fields: { departmentId: ["errors.organization.line.departmentNotFound"] },
         })
     }
-
     return department
 }
 
-async function validateLeaderPosition({
-    companyId,
-    branchId,
-    departmentId,
-    leaderPositionId,
-    user,
-}) {
-    if (!leaderPositionId) {
-        return null
-    }
-
+async function ensurePositionExists({ companyId, branchId, departmentId, positionId }) {
     ensureValidObjectId(
-        leaderPositionId,
+        positionId,
         "ORGANIZATION_POSITION_INVALID_ID",
         "errors.organization.position.invalidId",
     )
 
     const position = await Position.findOne({
-        _id: leaderPositionId,
+        _id: positionId,
         companyId,
         branchId,
         departmentId,
         status: { $ne: "ARCHIVED" },
-        ...getLineScopeFilter(user),
     }).lean()
 
     if (!position) {
         throw new AppError({
             statusCode: 404,
-            code: "ORGANIZATION_LINE_LEADER_POSITION_NOT_FOUND",
-            messageKey: "errors.organization.line.leaderPositionNotFound",
-            fields: {
-                leaderPositionId: [
-                    "errors.organization.line.leaderPositionNotFound",
-                ],
-            },
+            code: "ORGANIZATION_LINE_POSITION_NOT_FOUND",
+            messageKey: "errors.organization.line.positionNotFound",
+            fields: { positionId: ["errors.organization.line.positionNotFound"] },
         })
     }
+    return position
+}
 
-    return position._id
+async function ensureLineAssociation({ companyId, branchId, departmentId, positionId }) {
+    const [department, position] = await Promise.all([
+        ensureDepartmentExists({ companyId, branchId, departmentId }),
+        ensurePositionExists({ companyId, branchId, departmentId, positionId }),
+    ])
+    return { department, position }
+}
+
+async function ensureLineNotUsed(lineId, { forArchive = false } = {}) {
+    const used = await Employee.exists({
+        lineId,
+        recordStatus: "ACTIVE",
+    })
+
+    if (!used) return
+
+    throw new AppError({
+        statusCode: 409,
+        code: forArchive
+            ? "ORGANIZATION_LINE_IN_USE_CANNOT_ARCHIVE"
+            : "ORGANIZATION_LINE_IN_USE_CANNOT_REASSIGN",
+        messageKey: forArchive
+            ? "errors.organization.line.inUseCannotArchive"
+            : "errors.organization.line.inUseCannotReassign",
+    })
 }
 
 export async function listLines({ query, user }) {
     const cacheKey = `line:list:${user?.accountId || "anonymous"}:${JSON.stringify(query)}`
     const cachedResult = getCache(cacheKey)
-
-    if (cachedResult) {
-        return cachedResult
-    }
+    if (cachedResult) return cachedResult
 
     const filter = {
         ...getLineScopeFilter(user),
@@ -463,11 +371,7 @@ export async function listLines({ query, user }) {
     }
 
     if (query.companyId) {
-        await ensureCompanyExists({
-            companyId: query.companyId,
-            user,
-        })
-
+        await ensureCompanyExists({ companyId: query.companyId, user })
         filter.companyId = query.companyId
     }
 
@@ -479,28 +383,27 @@ export async function listLines({ query, user }) {
                 user,
             })
         }
-
         filter.branchId = query.branchId
     }
 
-    if (query.status !== "ALL") {
-        filter.status = query.status
-    }
+    if (query.departmentId) filter.departmentId = query.departmentId
+    if (query.positionId) filter.positionId = query.positionId
+    if (query.status !== "ALL") filter.status = query.status
 
     const page = query.page
     const limit = query.limit
     const skip = (page - 1) * limit
 
+    const populate = [
+        { path: "companyId", select: "code displayName legalName status" },
+        { path: "branchId", select: "companyId code name status isHeadOffice" },
+        { path: "departmentId", select: "companyId branchId code name status" },
+        { path: "positionId", select: "companyId branchId departmentId code title status" },
+    ]
+
     const [items, total] = await Promise.all([
         Line.find(filter)
-            .populate({
-                path: "companyId",
-                select: "code displayName legalName status",
-            })
-            .populate({
-                path: "branchId",
-                select: "companyId code name shortName status isHeadOffice",
-            })
+            .populate(populate)
             .sort({
                 [query.sortBy]: query.sortOrder === "desc" ? -1 : 1,
                 _id: 1,
@@ -537,14 +440,10 @@ export async function getLineById({ lineId, user }) {
         _id: lineId,
         ...getLineScopeFilter(user),
     })
-        .populate({
-            path: "companyId",
-            select: "code displayName legalName status",
-        })
-        .populate({
-            path: "branchId",
-            select: "companyId code name shortName status isHeadOffice",
-        })
+        .populate({ path: "companyId", select: "code displayName legalName status" })
+        .populate({ path: "branchId", select: "companyId code name status isHeadOffice" })
+        .populate({ path: "departmentId", select: "companyId branchId code name status" })
+        .populate({ path: "positionId", select: "companyId branchId departmentId code title status" })
         .lean()
 
     if (!line) {
@@ -559,29 +458,35 @@ export async function getLineById({ lineId, user }) {
 }
 
 export async function createLine({ payload, user }) {
-    await ensureCompanyExists({
-        companyId: payload.companyId,
-        user,
-    })
-
+    await ensureCompanyExists({ companyId: payload.companyId, user })
     await ensureBranchExists({
         companyId: payload.companyId,
         branchId: payload.branchId,
         user,
     })
+    await ensureLineAssociation({
+        companyId: payload.companyId,
+        branchId: payload.branchId,
+        departmentId: payload.departmentId,
+        positionId: payload.positionId,
+    })
 
     const duplicate = await Line.exists({
         companyId: payload.companyId,
         branchId: payload.branchId,
+        departmentId: payload.departmentId,
+        positionId: payload.positionId,
         code: payload.code,
         status: { $ne: "ARCHIVED" },
     })
-    if (duplicate) handleDuplicateError({ code: 11000 })
+    if (duplicate) throwLineCodeExists()
 
     try {
         const line = await Line.create({
             companyId: payload.companyId,
             branchId: payload.branchId,
+            departmentId: payload.departmentId,
+            positionId: payload.positionId,
             code: payload.code,
             name: payload.name,
             description: payload.description || "",
@@ -591,12 +496,9 @@ export async function createLine({ payload, user }) {
         })
 
         clearCacheByPrefix("line:list:")
-    clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excome:")
 
-        return getLineById({
-            lineId: line._id,
-            user,
-        })
+        return getLineById({ lineId: line._id, user })
     } catch (error) {
         handleDuplicateError(error)
     }
@@ -621,7 +523,6 @@ export async function updateLine({ lineId, payload, user }) {
             messageKey: "errors.organization.line.notFound",
         })
     }
-
     if (existingLine.status === "ARCHIVED") {
         throw new AppError({
             statusCode: 409,
@@ -630,37 +531,61 @@ export async function updateLine({ lineId, payload, user }) {
         })
     }
 
-    if (payload.code && payload.code !== existingLine.code) {
-        const duplicate = await Line.exists({
-            _id: { $ne: existingLine._id },
-            companyId: existingLine.companyId,
-            branchId: existingLine.branchId,
-            code: payload.code,
-            status: { $ne: "ARCHIVED" },
+    const departmentId = payload.departmentId || existingLine.departmentId
+    const positionId = payload.positionId || existingLine.positionId
+
+    // Existing development data may pre-date the Position-owned Line rule.
+    // Editing such a row requires HR to assign both values once.
+    if (!departmentId || !positionId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "ORGANIZATION_LINE_POSITION_REQUIRED",
+            messageKey: "errors.organization.line.positionRequired",
+            fields: {
+                departmentId: ["errors.organization.line.departmentRequired"],
+                positionId: ["errors.organization.line.positionRequired"],
+            },
         })
-        if (duplicate) handleDuplicateError({ code: 11000 })
     }
+
+    await ensureLineAssociation({
+        companyId: existingLine.companyId,
+        branchId: existingLine.branchId,
+        departmentId,
+        positionId,
+    })
+
+    const associationChanged =
+        String(departmentId) !== String(existingLine.departmentId || "") ||
+        String(positionId) !== String(existingLine.positionId || "")
+
+    if (associationChanged) {
+        await ensureLineNotUsed(existingLine._id)
+    }
+
+    const effectiveCode = payload.code || existingLine.code
+    const duplicate = await Line.exists({
+        _id: { $ne: existingLine._id },
+        companyId: existingLine.companyId,
+        branchId: existingLine.branchId,
+        departmentId,
+        positionId,
+        code: effectiveCode,
+        status: { $ne: "ARCHIVED" },
+    })
+    if (duplicate) throwLineCodeExists()
 
     try {
         const updatedLine = await Line.findByIdAndUpdate(
             existingLine._id,
-            {
-                $set: buildUpdatePayload(payload, user.accountId),
-            },
-            {
-                new: true,
-                runValidators: true,
-                context: "query",
-            },
+            { $set: buildUpdatePayload(payload, user.accountId) },
+            { new: true, runValidators: true, context: "query" },
         ).lean()
 
         clearCacheByPrefix("line:list:")
-    clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excome:")
 
-        return getLineById({
-            lineId: updatedLine._id,
-            user,
-        })
+        return getLineById({ lineId: updatedLine._id, user })
     } catch (error) {
         handleDuplicateError(error)
     }
@@ -686,6 +611,8 @@ export async function archiveLine({ lineId, user }) {
         })
     }
 
+    await ensureLineNotUsed(existingLine._id, { forArchive: true })
+
     const archivedLine = await Line.findByIdAndUpdate(
         existingLine._id,
         {
@@ -694,18 +621,11 @@ export async function archiveLine({ lineId, user }) {
                 updatedByAccountId: user.accountId,
             },
         },
-        {
-            new: true,
-            runValidators: true,
-            context: "query",
-        },
+        { new: true, runValidators: true, context: "query" },
     ).lean()
 
     clearCacheByPrefix("line:list:")
     clearCacheByPrefix("excome:")
 
-    return getLineById({
-        lineId: archivedLine._id,
-        user,
-    })
+    return getLineById({ lineId: archivedLine._id, user })
 }
