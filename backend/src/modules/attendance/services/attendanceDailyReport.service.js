@@ -2,6 +2,11 @@ import ExcelJS from "exceljs";
 import mongoose from "mongoose";
 
 import Employee from "../../employee/models/Employee.js";
+import {
+  buildMaternityPeriodMap,
+  employeeIsOnMaternityDate,
+  getMaternityPeriodsForEmployees,
+} from "../../employee/services/employeeLifecycle.service.js";
 import Department from "../../organization/models/Department.js";
 import Position from "../../organization/models/Position.js";
 import Shift from "../../shift/models/Shift.js";
@@ -22,8 +27,6 @@ import {
 } from "../utils/attendanceDate.util.js";
 
 const LEAVE_CODES = ["ML", "AL", "UL", "SL"];
-const FACE_SCAN_EMPLOYMENT_STATUS = "WORKING";
-const MATERNITY_LEAVE_EMPLOYMENT_STATUS = "MATERNITY_LEAVE";
 const SEWER_POSITION_TITLES = new Set(["SEWER", "SEWER-JUMPER"]);
 const CODE_ALIASES = {
   MATERNITY: "ML",
@@ -246,7 +249,7 @@ export async function buildAttendanceDailyReport({
       Employee.find({
         ...dimension,
         ...attendanceScopeFilter(user),
-        recordStatus: { $ne: "ARCHIVED" },
+        recordStatus: "ACTIVE",
         joinDate: { $lte: end },
         $or: [{ resignDate: null }, { resignDate: { $gte: start } }],
       })
@@ -295,146 +298,42 @@ export async function buildAttendanceDailyReport({
   const employees = selectedShiftId
     ? allEmployees.filter((employee) => String(employee.shiftId || "") === selectedShiftId)
     : allEmployees;
-  const allWorkingEmployees = allEmployees.filter(
-    (employee) => employee.employmentStatus === FACE_SCAN_EMPLOYMENT_STATUS,
-  );
-  const workingEmployees = employees.filter(
-    (employee) => employee.employmentStatus === FACE_SCAN_EMPLOYMENT_STATUS,
-  );
-  const maternityEmployees = allEmployees.filter(
-    (employee) => employee.employmentStatus === MATERNITY_LEAVE_EMPLOYMENT_STATUS,
-  );
 
   const allEmployeeIds = allEmployees.map((employee) => employee._id);
-  const workingEmployeeIds = allWorkingEmployees.map((employee) => employee._id);
-  const maternityEmployeeIds = maternityEmployees.map((employee) => employee._id);
+  const employeeById = new Map(
+    allEmployees.map((employee) => [String(employee._id), employee]),
+  );
+  const maternityPeriods = await getMaternityPeriodsForEmployees({
+    employeeIds: allEmployeeIds,
+    dateFrom: days[0].key,
+    dateTo: days.at(-1).key,
+  });
+  const maternityPeriodMap = buildMaternityPeriodMap(maternityPeriods);
+
+  const expectedToWorkOnDay = (employee, dayKey, dayStart, dayEnd) =>
+    activeOnDay(employee, dayStart, dayEnd) &&
+    !employeeIsOnMaternityDate(employee._id, dayKey, maternityPeriodMap);
 
   onProgress({ phase: "AGGREGATING_ATTENDANCE", percent: 35, processedRows: 0, totalRows: allEmployees.length });
 
-  const aggregateBaseProject = {
-    employeeId: 1,
-    departmentId: 1,
-    positionId: 1,
-    shiftId: 1,
-    dateKey: {
-      $dateToString: {
-        date: "$attendanceDate",
-        format: "%Y-%m-%d",
-        timezone: getBusinessTimeZone(),
-      },
-    },
-    hasScan: {
-      $or: [
-        { $ne: ["$firstInAt", null] },
-        { $ne: ["$lastOutAt", null] },
-      ],
-    },
-    leaveCode: 1,
-  };
-  const groupId = {
-    dateKey: "$dateKey",
-    departmentId: "$departmentId",
-    positionId: "$positionId",
-    shiftId: "$shiftId",
-  };
-
-  const allAttendancePromise = allEmployeeIds.length
-    ? AttendanceRecord.aggregate([
-        {
-          $match: {
-            ...aggregateDimension,
-            attendanceDate: { $gte: start, $lte: end },
-            employeeId: { $in: allEmployeeIds },
-          },
-        },
-        { $project: aggregateBaseProject },
-        {
-          $group: {
-            _id: groupId,
-            recordCount: { $sum: 1 },
-            ML: { $sum: { $cond: [{ $eq: ["$leaveCode", "ML"] }, 1, 0] } },
-            AL: { $sum: { $cond: [{ $eq: ["$leaveCode", "AL"] }, 1, 0] } },
-            UL: { $sum: { $cond: [{ $eq: ["$leaveCode", "UL"] }, 1, 0] } },
-            SL: { $sum: { $cond: [{ $eq: ["$leaveCode", "SL"] }, 1, 0] } },
-          },
-        },
-      ]).allowDiskUse(false)
-    : Promise.resolve([]);
-
-  const workingAttendancePromise = workingEmployeeIds.length
-    ? AttendanceRecord.aggregate([
-        {
-          $match: {
-            ...aggregateDimension,
-            attendanceDate: { $gte: start, $lte: end },
-            employeeId: { $in: workingEmployeeIds },
-          },
-        },
-        { $project: aggregateBaseProject },
-        {
-          $group: {
-            _id: groupId,
-            faceScans: { $sum: { $cond: ["$hasScan", 1, 0] } },
-            informedMissing: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $not: ["$hasScan"] },
-                      { $in: ["$leaveCode", LEAVE_CODES] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-          },
-        },
-      ]).allowDiskUse(false)
-    : Promise.resolve([]);
-
-  // Payroll changes maternity employees out of WORKING. Their blank attendance
-  // row still represents maternity leave, even when leaveCode itself is blank.
-  // Count only the blank/non-ML maternity rows here to avoid double counting ML.
-  const maternityAttendancePromise = maternityEmployeeIds.length
-    ? AttendanceRecord.aggregate([
-        {
-          $match: {
-            ...aggregateDimension,
-            attendanceDate: { $gte: start, $lte: end },
-            employeeId: { $in: maternityEmployeeIds },
-            $or: [{ leaveCode: { $ne: "ML" } }, { leaveCode: null }],
-          },
-        },
-        { $project: aggregateBaseProject },
-        {
-          $group: {
-            _id: groupId,
-            maternityBlankCount: { $sum: 1 },
-          },
-        },
-      ]).allowDiskUse(false)
-    : Promise.resolve([]);
-
-  const [allAttendanceStats, workingAttendanceStats, maternityAttendanceStats] = await Promise.all([
-    allAttendancePromise,
-    workingAttendancePromise,
-    maternityAttendancePromise,
-  ]);
+  const attendanceRows = allEmployeeIds.length
+    ? await AttendanceRecord.find({
+        ...aggregateDimension,
+        attendanceDate: { $gte: start, $lte: end },
+        employeeId: { $in: allEmployeeIds },
+      })
+        .select("employeeId attendanceDate departmentId positionId shiftId firstInAt lastOutAt leaveCode")
+        .lean()
+    : [];
 
   const detailedStatByKey = new Map();
-  const mergeDetailed = (row, fields) => {
-    const day = row._id.dateKey;
-    const departmentId = String(row._id.departmentId || "");
-    const positionId = String(row._id.positionId || "");
-    const shiftId = String(row._id.shiftId || "");
+  const mergeDetailed = ({ day, departmentId, positionId, shiftId }, fields) => {
     const key = statKey(day, departmentId, positionId, shiftId);
     const current = detailedStatByKey.get(key) || {
       day,
-      departmentId,
-      positionId,
-      shiftId,
+      departmentId: String(departmentId || ""),
+      positionId: String(positionId || ""),
+      shiftId: String(shiftId || ""),
       ...emptyStat(),
     };
     for (const [field, value] of Object.entries(fields)) {
@@ -443,23 +342,68 @@ export async function buildAttendanceDailyReport({
     detailedStatByKey.set(key, current);
   };
 
-  for (const row of allAttendanceStats) {
-    mergeDetailed(row, {
-      recordCount: row.recordCount,
-      ML: row.ML,
-      AL: row.AL,
-      UL: row.UL,
-      SL: row.SL,
-    });
+  const daysWithAttendance = new Set();
+  for (const row of attendanceRows) {
+    const employee = employeeById.get(String(row.employeeId || ""));
+    if (!employee) continue;
+
+    const day = dateKey(row.attendanceDate);
+    const dayStart = startOfBusinessDay(day);
+    const dayEnd = endOfBusinessDay(day);
+    if (!activeOnDay(employee, dayStart, dayEnd)) continue;
+
+    daysWithAttendance.add(day);
+    const onMaternity = employeeIsOnMaternityDate(
+      employee._id,
+      day,
+      maternityPeriodMap,
+    );
+    const hasScan = hasAnyFaceScan(row);
+    const leaveCode = String(row.leaveCode || "").toUpperCase();
+    const fields = { recordCount: 1 };
+
+    // Employee lifecycle is authoritative for maternity. Payroll Vacation ML
+    // remains stored on AttendanceRecord as evidence, but does not create or
+    // extend a maternity lifecycle period.
+    if (!onMaternity && hasScan) fields.faceScans = 1;
+    if (!onMaternity && ["AL", "UL", "SL"].includes(leaveCode)) fields[leaveCode] = 1;
+    if (!onMaternity && !hasScan && LEAVE_CODES.includes(leaveCode)) {
+      fields.informedMissing = 1;
+    }
+
+    mergeDetailed(
+      {
+        day,
+        departmentId: row.departmentId,
+        positionId: row.positionId,
+        shiftId: row.shiftId,
+      },
+      fields,
+    );
   }
-  for (const row of workingAttendanceStats) {
-    mergeDetailed(row, {
-      faceScans: row.faceScans,
-      informedMissing: row.informedMissing,
-    });
-  }
-  for (const row of maternityAttendanceStats) {
-    mergeDetailed(row, { ML: row.maternityBlankCount });
+
+  // System maternity periods are the reporting source of truth. Count ML by
+  // date even after the Employee has automatically returned to WORKING. Only
+  // populate days for which attendance was actually imported, avoiding future
+  // schedule dates appearing as completed attendance.
+  for (const employee of allEmployees) {
+    for (const day of days) {
+      if (!daysWithAttendance.has(day.key)) continue;
+      const dayStart = startOfBusinessDay(day.key);
+      const dayEnd = endOfBusinessDay(day.key);
+      if (!activeOnDay(employee, dayStart, dayEnd)) continue;
+      if (!employeeIsOnMaternityDate(employee._id, day.key, maternityPeriodMap)) continue;
+
+      mergeDetailed(
+        {
+          day: day.key,
+          departmentId: employee.departmentId,
+          positionId: employee.positionId,
+          shiftId: employee.shiftId,
+        },
+        { ML: 1 },
+      );
+    }
   }
 
   const attendanceStats = [...detailedStatByKey.values()];
@@ -525,8 +469,14 @@ export async function buildAttendanceDailyReport({
       targetByEmployeeType.set(key, target);
     }
   }
+  const targetDayKey = days.at(-1).key;
+  const targetDayStart = startOfBusinessDay(targetDayKey);
+  const targetDayEnd = endOfBusinessDay(targetDayKey);
+  const targetEmployees = employees.filter((employee) =>
+    expectedToWorkOnDay(employee, targetDayKey, targetDayStart, targetDayEnd),
+  );
   const employeeTypeCounts = new Map();
-  for (const employee of workingEmployees) {
+  for (const employee of targetEmployees) {
     const key = targetKey(employee);
     if (employee.employeeTypeId) {
       employeeTypeCounts.set(key, (employeeTypeCounts.get(key) || 0) + 1);
@@ -573,7 +523,7 @@ export async function buildAttendanceDailyReport({
   const daily = reportDays.map((day) => {
     const dayStart = startOfBusinessDay(day.key);
     const dayEnd = endOfBusinessDay(day.key);
-    const activeEmployees = workingEmployees.filter((employee) => activeOnDay(employee, dayStart, dayEnd));
+    const activeEmployees = employees.filter((employee) => expectedToWorkOnDay(employee, day.key, dayStart, dayEnd));
     const stat = selectedDayStat(day.key);
     const hasAttendanceData = stat.recordCount > 0;
     const faceScans = hasAttendanceData ? Math.min(stat.faceScans, activeEmployees.length) : 0;
@@ -612,7 +562,7 @@ export async function buildAttendanceDailyReport({
       .map((item) => String(item._id)),
   );
 
-  const sewerEmployees = workingEmployees.filter(
+  const sewerEmployees = employees.filter(
     (employee) =>
       sewingDepartmentIds.has(String(employee.departmentId || "")) &&
       sewerPositionIds.has(String(employee.positionId || "")),
@@ -637,7 +587,7 @@ export async function buildAttendanceDailyReport({
 
     const dayStart = startOfBusinessDay(day.key);
     const dayEnd = endOfBusinessDay(day.key);
-    const totalSewer = sewerEmployees.filter((employee) => activeOnDay(employee, dayStart, dayEnd)).length;
+    const totalSewer = sewerEmployees.filter((employee) => expectedToWorkOnDay(employee, day.key, dayStart, dayEnd)).length;
     const sewerStat = detailedStats
       .filter(
         (stat) =>
@@ -691,7 +641,7 @@ export async function buildAttendanceDailyReport({
 
   const employeesByDepartment = new Map();
   const employeesByPosition = new Map();
-  for (const employee of workingEmployees) {
+  for (const employee of employees) {
     const departmentKey = String(employee.departmentId || "");
     const positionKey = String(employee.positionId || "");
     if (!employeesByDepartment.has(departmentKey)) employeesByDepartment.set(departmentKey, []);
@@ -738,7 +688,7 @@ export async function buildAttendanceDailyReport({
       if (!dayGlobalStat.recordCount) return { count: 0, rate: 0 };
       const dayStart = startOfBusinessDay(day.key);
       const dayEnd = endOfBusinessDay(day.key);
-      const totalEmployees = groupEmployees.filter((employee) => activeOnDay(employee, dayStart, dayEnd)).length;
+      const totalEmployees = groupEmployees.filter((employee) => expectedToWorkOnDay(employee, day.key, dayStart, dayEnd)).length;
       const groupStat = groupDayStat(day.key, group);
       const faceScans = Math.min(groupStat.faceScans, totalEmployees);
       const absent = Math.max(totalEmployees - faceScans, 0);
@@ -776,10 +726,15 @@ export async function buildAttendanceDailyReport({
   const selectedDateAllStat = statsByDay.get(selectedReportDateKey) || emptyStat();
   const shiftComparison = shifts.map((shift) => {
     const shiftId = String(shift._id);
-    const shiftEmployees = allWorkingEmployees.filter(
+    const shiftEmployees = allEmployees.filter(
       (employee) =>
         String(employee.shiftId || "") === shiftId &&
-        activeOnDay(employee, selectedDayStart, selectedDayEnd),
+        expectedToWorkOnDay(
+          employee,
+          selectedReportDateKey,
+          selectedDayStart,
+          selectedDayEnd,
+        ),
     );
     const shiftStat = statsByDayShift.get(statKey(selectedReportDateKey, shiftId)) || emptyStat();
     const faceScans = selectedReportDay?.working && selectedDateAllStat.recordCount
@@ -816,7 +771,7 @@ export async function buildAttendanceDailyReport({
           method: "OVERALL",
           month: Number(overallTarget.month),
           coveredEmployees,
-          totalEmployees: workingEmployees.length,
+          totalEmployees: targetEmployees.length,
           sources: targetSources,
         }
       : null,

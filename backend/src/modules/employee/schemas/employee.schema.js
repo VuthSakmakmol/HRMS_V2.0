@@ -210,6 +210,9 @@ export const employeeCreateSchema = z.object({
     employmentStatus: z.enum(employmentStatuses).optional(),
     resignDate: optionalDateSchema.optional(),
     resignReason: optionalTextSchema(240),
+    maternityLeaveStartDate: optionalDateSchema.optional(),
+    maternityLeaveEndDate: optionalDateSchema.optional(),
+    maternityExpectedReturnDate: optionalDateSchema.optional(),
     exitReasonId: nullableObjectIdSchema.optional(),
     remark: optionalTextSchema(1000),
 

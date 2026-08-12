@@ -22,6 +22,10 @@ import Employee from "../models/Employee.js"
 import { listEmployeesForExport } from "./employee.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
 import { syncUnmatchedAttendance } from "../../attendance/services/attendanceUnmatchedSync.service.js"
+import {
+    buildMaternityEmployeeFields,
+    syncMaternityPeriodAfterEmployeeChange,
+} from "./employeeLifecycle.service.js"
 
 const TEMPLATE_HEADERS = [
     "employeeCode",
@@ -61,6 +65,7 @@ const TEMPLATE_HEADERS = [
     "joinDate",
     "recruitmentChannelCode",
     "employmentStatus",
+    "maternityLeaveStartDate",
     "resignDate",
     "exitReasonCode",
     "resignReason",
@@ -152,6 +157,9 @@ const EXPORT_HEADERS = [
     "shiftName",
     "joinDate",
     "employmentStatus",
+    "maternityLeaveStartDate",
+    "maternityLeaveEndDate",
+    "maternityExpectedReturnDate",
     "resignDate",
     "resignReason",
     "exitReasonCode",
@@ -226,6 +234,8 @@ const HEADER_ALIASES = new Map([
     ["exit reason", "exitReasonCode"],
     ["exit reason code", "exitReasonCode"],
     ["status", "employmentStatus"],
+    ["maternity leave start date", "maternityLeaveStartDate"],
+    ["maternity start date", "maternityLeaveStartDate"],
     ["resign date", "resignDate"],
     ["resign reason", "resignReason"],
     ["id card", "idCardNo"],
@@ -505,6 +515,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         joinDate: "15/08/2024",
         recruitmentChannelCode: "TELEGRAM",
         employmentStatus: "WORKING",
+        maternityLeaveStartDate: "",
         resignDate: "",
         exitReasonCode: "",
         singleNeedle: 1,
@@ -522,7 +533,7 @@ export async function buildEmployeeImportTemplateWorkbook() {
         { rule: "Required codes", description: "Use departmentCode, positionCode, lineCode, shiftCode, recruitmentChannelCode and employmentStatus. Company/Branch come from the active workspace." },
         { rule: "Address columns", description: "Only Birth Address and Permanent Address are supported. Living, emergency contact, and family address columns are no longer imported." },
         { rule: "Age", description: "Do not import age. Backend calculates age from dateOfBirth." },
-        { rule: "Required employee data", description: "phoneNumber, dateOfBirth, recruitmentChannelCode, employmentStatus and joinDate are required for every employee. Exit statuses also require resignDate and exitReasonCode." },
+        { rule: "Required employee data", description: "phoneNumber, dateOfBirth, recruitmentChannelCode, employmentStatus and joinDate are required for every employee. MATERNITY_LEAVE also requires maternityLeaveStartDate. Exit statuses require resignDate and exitReasonCode." },
         { rule: "Team/Section", description: "Team and Section are ignored because the project structure is Department => Position => Line." },
         { rule: "Status", description: "Use WORKING, MATERNITY_LEAVE, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED. Old values Working, Maternity, Resign, Terminate, Abandon, Pass Away, and Retirement are accepted." },
         { rule: "Login account", description: "Set createAccount to YES to create login. Login ID = employeeCode. Initial password = employeeCode + phoneNumber. If the column is missing, YES is used." },
@@ -602,6 +613,7 @@ export async function parseEmployeeImportWorkbook(buffer) {
             joinDate: normalizeDate(raw.joinDate),
             recruitmentChannelCode: normalizeCode(raw.recruitmentChannelCode),
             employmentStatus: normalizeEmploymentStatus(raw.employmentStatus),
+            maternityLeaveStartDate: normalizeDate(raw.maternityLeaveStartDate),
             resignDate: normalizeDate(raw.resignDate),
             exitReasonCode: normalizeCode(raw.exitReasonCode),
             resignReason: normalizeText(raw.resignReason),
@@ -638,6 +650,7 @@ export async function parseEmployeeImportWorkbook(buffer) {
         if (raw.dateOfBirth && !normalized.dateOfBirth) errors.push(buildError(rowNumber, "dateOfBirth", "errors.employee.import.dateInvalid", { value: normalizeText(raw.dateOfBirth), expected: "DD/MM/YYYY or an Excel date" }))
         if (normalized.dateOfBirth && !isAtLeast18(normalized.dateOfBirth)) errors.push(buildError(rowNumber, "dateOfBirth", "errors.employee.import.minimumAge", { value: normalizeText(raw.dateOfBirth), expected: "Employee must be at least 18 years old" }))
         for (const field of [
+            "maternityLeaveStartDate",
             "resignDate",
             "idCardExpireDate",
             "passportExpireDate",
@@ -657,6 +670,17 @@ export async function parseEmployeeImportWorkbook(buffer) {
         if (normalized.maritalStatus !== "MARRIED") {
             normalized.spouseName = ""
             normalized.spouseContactNumber = ""
+        }
+        if (normalized.employmentStatus === "MATERNITY_LEAVE" && !normalized.maternityLeaveStartDate) {
+            errors.push(buildError(rowNumber, "maternityLeaveStartDate", "errors.validationFailed", { expected: "Maternity Leave Start Date is required for MATERNITY_LEAVE" }))
+        }
+        if (
+            normalized.employmentStatus === "MATERNITY_LEAVE" &&
+            normalized.maternityLeaveStartDate &&
+            normalized.joinDate &&
+            normalized.maternityLeaveStartDate < normalized.joinDate
+        ) {
+            errors.push(buildError(rowNumber, "maternityLeaveStartDate", "errors.validationFailed", { expected: "Maternity Leave Start Date must be on or after Join Date" }))
         }
         const isExitStatus = ["RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"].includes(normalized.employmentStatus)
         if (isExitStatus && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required for an exit employment status" }))
@@ -923,6 +947,11 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         }
 
         const existing = await Employee.findOne({ employeeCode: row.employeeCode }).lean()
+        Object.assign(payload, buildMaternityEmployeeFields({
+            employmentStatus: row.employmentStatus,
+            maternityLeaveStartDate: row.maternityLeaveStartDate,
+            existing: existing || {},
+        }))
         let employee = null
 
         try {
@@ -948,6 +977,13 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
             )
             continue
         }
+
+        await syncMaternityPeriodAfterEmployeeChange({
+            before: existing,
+            after: employee,
+            user,
+            source: "EMPLOYEE_PROFILE",
+        })
 
         savedEmployeeCodes.add(normalizeCode(employee.employeeCode))
 
@@ -1113,6 +1149,9 @@ export async function buildEmployeeExportWorkbook({ employees }) {
             shiftName: employee.shift?.name || "",
             joinDate: formatDate(employee.joinDate),
             employmentStatus: employee.employmentStatus,
+            maternityLeaveStartDate: formatDate(employee.maternityLeaveStartDate),
+            maternityLeaveEndDate: formatDate(employee.maternityLeaveEndDate),
+            maternityExpectedReturnDate: formatDate(employee.maternityExpectedReturnDate),
             resignDate: formatDate(employee.resignDate),
             resignReason: employee.resignReason,
             exitReasonCode: employee.exitReason?.code || "",

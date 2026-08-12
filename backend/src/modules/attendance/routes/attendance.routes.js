@@ -19,7 +19,6 @@ import {
     attendanceListQuerySchema,
     attendanceImportIssueListQuerySchema,
     attendanceUnmatchedSyncSchema,
-    attendanceEmployeeStatusSyncSchema,
     attendanceUpsertSchema,
 } from "../schemas/attendance.schema.js"
 import {
@@ -51,7 +50,6 @@ import {
     getAttendanceDailyEmailSchedule,
     saveAttendanceDailyEmailSchedule,
 } from "../services/attendanceDailyEmailSchedule.service.js"
-import { syncEmployeeStatusesFromPayroll } from "../services/attendanceEmployeeStatusSync.service.js"
 import { syncUnmatchedAttendance } from "../services/attendanceUnmatchedSync.service.js"
 import {
     attendancePayrollScheduleQuerySchema,
@@ -566,23 +564,30 @@ router.get(
     },
 )
 
+// Compatibility endpoint for older Payroll bot builds. Employee lifecycle
+// is now owned by HRMS, so Payroll status line codes are deliberately ignored.
+// Keeping this no-op during rollout prevents an older agent from failing after
+// its attendance import has already succeeded.
 router.post(
     "/employee-status-sync",
     requirePermission("ATTENDANCE.RECORD.IMPORT"),
     async (req, res, next) => {
         try {
-            const payload = parseRequest(
-                attendanceEmployeeStatusSyncSchema,
-                req.body,
-            )
-            const summary = await syncEmployeeStatusesFromPayroll({
-                payload,
-                user: req.auth.user,
-            })
-
+            const receivedCount = Array.isArray(req.body?.rows) ? req.body.rows.length : 0
             res.status(200).json({
-                success: summary.errorCount === 0,
-                data: { summary },
+                success: true,
+                data: {
+                    summary: {
+                        receivedCount,
+                        mappedCount: 0,
+                        updatedCount: 0,
+                        unchangedCount: receivedCount,
+                        unmatchedCount: 0,
+                        errorCount: 0,
+                        ignoredCount: receivedCount,
+                        lifecycleSource: "HRMS",
+                    },
+                },
             })
         } catch (error) {
             next(error)

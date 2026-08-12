@@ -2,13 +2,14 @@ import ExcelJS from "exceljs"
 import mongoose from "mongoose"
 
 import Employee from "../../employee/models/Employee.js"
+import { evaluateAbandonmentForWorkspace } from "../../employee/services/employeeLifecycle.service.js"
 import Shift from "../../shift/models/Shift.js"
 import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
 import AttendancePolicy from "../models/AttendancePolicy.js"
 import AttendanceRecord from "../models/AttendanceRecord.js"
 import { invalidateAttendanceCaches } from "./attendance.service.js"
 import { calculateAttendanceResult } from "./attendanceCalculation.service.js"
-import { startOfBusinessDay, toBusinessDateKey } from "../utils/attendanceDate.util.js"
+import { addBusinessDays, startOfBusinessDay, toBusinessDateKey } from "../utils/attendanceDate.util.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const HEADERS = ["Record Date", "Employee No", "Time1", "Time2", "Vacation"]
@@ -292,6 +293,56 @@ function countSummaryRecord(summary, current) {
     if (current.status === "MISSING_OUT") summary.missingOutCount += 1
 }
 
+async function runLifecycleAfterAttendanceImport({ rows, workspace, summary }) {
+    const importedKeys = rows
+        .map((row) => {
+            try {
+                return toBusinessDateKey(row?.payload?.attendanceDate)
+            } catch {
+                return ""
+            }
+        })
+        .filter(Boolean)
+        .sort()
+
+    const latestImportedKey = importedKeys.at(-1) || ""
+    if (!latestImportedKey) {
+        summary.lifecycle = { abandonmentChecked: false, reason: "NO_VALID_ATTENDANCE_DATE" }
+        return
+    }
+
+    // Never decide abandonment from today's unfinished attendance. A payroll
+    // file can be imported more than once during the current workday.
+    const todayKey = toBusinessDateKey(new Date())
+    const yesterdayKey = addBusinessDays(todayKey, -1)
+    const throughDate = latestImportedKey < todayKey ? latestImportedKey : yesterdayKey
+
+    if (!throughDate) {
+        summary.lifecycle = { abandonmentChecked: false, reason: "NO_COMPLETED_ATTENDANCE_DATE" }
+        return
+    }
+
+    const result = await evaluateAbandonmentForWorkspace({
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+        throughDate,
+    })
+
+    summary.lifecycle = {
+        abandonmentChecked: true,
+        throughDate: result.throughDate || throughDate,
+        employeesChecked: result.checked || 0,
+        abandoned: result.abandoned || 0,
+        updates: result.updates || [],
+    }
+
+    console.log(
+        `[attendance][lifecycle] ${workspace.companyId}/${workspace.branchId} `
+        + `through ${summary.lifecycle.throughDate}: checked=${summary.lifecycle.employeesChecked}, `
+        + `abandoned=${summary.lifecycle.abandoned}`,
+    )
+}
+
 /**
  * High-throughput attendance import.
  *
@@ -425,6 +476,13 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
     if (!mutations.length) {
         summary.successCount += validRows.length
         onProgress?.({
+            phase: "EVALUATING_LIFECYCLE",
+            percent: 98,
+            processedRows: rows.length,
+            totalRows: summary.totalRows,
+        })
+        await runLifecycleAfterAttendanceImport({ rows, workspace, summary })
+        onProgress?.({
             phase: "COMPLETED",
             percent: 100,
             processedRows: rows.length,
@@ -534,6 +592,13 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
     }
 
     invalidateAttendanceCaches()
+    onProgress?.({
+        phase: "EVALUATING_LIFECYCLE",
+        percent: 98,
+        processedRows: rows.length,
+        totalRows: summary.totalRows,
+    })
+    await runLifecycleAfterAttendanceImport({ rows, workspace, summary })
     onProgress?.({
         phase: "COMPLETED",
         percent: 100,

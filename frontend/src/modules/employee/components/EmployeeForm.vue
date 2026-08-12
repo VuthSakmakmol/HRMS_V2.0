@@ -46,7 +46,10 @@ const components = [
 const contentRef = ref(null)
 
 function issueCount(index) {
-    const liveFields = Object.keys(validateEmployeeSection(props.form, index, { editing: props.editing }))
+    const liveFields = Object.keys(validateEmployeeSection(props.form, index, {
+        editing: props.editing,
+        positionOptions: props.options?.positionId || [],
+    }))
     const serverFields = Object.keys(props.errors || {}).filter((field) => employeeFieldSectionIndex(field) === index)
     return new Set([...liveFields, ...serverFields]).size
 }

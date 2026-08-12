@@ -21,10 +21,31 @@ const props = defineProps({
 const emit = defineEmits(["clear-error"])
 
 const isExitStatus = (status) => EXIT_EMPLOYMENT_STATUSES.has(status)
+const isMaternityStatus = (status) => status === "MATERNITY_LEAVE"
 
 function fieldError(field) {
     const value = props.errors?.[field]
     return Array.isArray(value) ? value[0] : value || ""
+}
+
+function normalizeDateKey(value) {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/)
+    return match ? `${match[1]}-${match[2]}-${match[3]}` : ""
+}
+
+function addCalendarDays(value, amount) {
+    const key = normalizeDateKey(value)
+    if (!key) return ""
+    const [year, month, day] = key.split("-").map(Number)
+    const date = new Date(Date.UTC(year, month - 1, day + amount, 12, 0, 0, 0))
+    return date.toISOString().slice(0, 10)
+}
+
+function syncMaternityDates() {
+    if (!isMaternityStatus(props.form.employmentStatus)) return
+    const start = normalizeDateKey(props.form.maternityLeaveStartDate)
+    props.form.maternityLeaveEndDate = start ? addCalendarDays(start, 89) : ""
+    props.form.maternityExpectedReturnDate = start ? addCalendarDays(start, 90) : ""
 }
 
 watch(
@@ -38,6 +59,15 @@ watch(
             emit("clear-error", "resignDate")
             emit("clear-error", "exitReasonId")
         }
+        if (isMaternityStatus(status)) syncMaternityDates()
+    },
+)
+
+watch(
+    () => props.form.maternityLeaveStartDate,
+    () => {
+        emit("clear-error", "maternityLeaveStartDate")
+        syncMaternityDates()
     },
 )
 </script>
@@ -97,6 +127,45 @@ watch(
             />
         </label>
 
+        <template v-if="isMaternityStatus(form.employmentStatus)">
+            <label class="enterprise-form-field">
+                <span>Maternity Leave Start Date <strong class="employee-required-star">*</strong></span>
+                <EnterpriseCalendarDatePicker
+                    v-model="form.maternityLeaveStartDate"
+                    :company-id="form.companyId"
+                    :branch-id="form.branchId"
+                    :min-date="form.joinDate"
+                    :disabled="disabled"
+                    :show-status="false"
+                    :class="{ 'employee-calendar--invalid': Boolean(fieldError('maternityLeaveStartDate')) }"
+                    @update:model-value="emit('clear-error', 'maternityLeaveStartDate')"
+                />
+                <small v-if="fieldError('maternityLeaveStartDate')">{{ fieldError('maternityLeaveStartDate') }}</small>
+            </label>
+
+            <label class="enterprise-form-field">
+                <span>Maternity Leave End Date</span>
+                <EnterpriseCalendarDatePicker
+                    v-model="form.maternityLeaveEndDate"
+                    :company-id="form.companyId"
+                    :branch-id="form.branchId"
+                    disabled
+                    :show-status="false"
+                />
+            </label>
+
+            <label class="enterprise-form-field">
+                <span>Expected Return Date</span>
+                <EnterpriseCalendarDatePicker
+                    v-model="form.maternityExpectedReturnDate"
+                    :company-id="form.companyId"
+                    :branch-id="form.branchId"
+                    disabled
+                    :show-status="false"
+                />
+            </label>
+        </template>
+
         <template v-if="isExitStatus(form.employmentStatus)">
             <label class="enterprise-form-field">
                 <span>Exit Date <strong class="employee-required-star">*</strong></span>
@@ -153,4 +222,3 @@ watch(
         </label>
     </div>
 </template>
-

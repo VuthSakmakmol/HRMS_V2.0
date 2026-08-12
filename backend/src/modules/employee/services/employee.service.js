@@ -30,6 +30,10 @@ import {
 } from "../../employeeMovement/services/employeeMovement.service.js"
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
 import { syncUnmatchedAttendanceForEmployee } from "../../attendance/services/attendanceUnmatchedSync.service.js"
+import {
+    buildMaternityEmployeeFields,
+    syncMaternityPeriodAfterEmployeeChange,
+} from "./employeeLifecycle.service.js"
 
 function escapeRegExp(value) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -239,6 +243,12 @@ function buildReportingReadiness(raw = {}) {
     if (!raw.shiftId) missing.push("SHIFT")
     if (!raw.employeeTypeId || raw.employeeTypeReviewRequired) missing.push("EMPLOYEE_TYPE")
 
+    if (raw.employmentStatus === "MATERNITY_LEAVE") {
+        if (!raw.maternityLeaveStartDate) missing.push("MATERNITY_START_DATE")
+        if (!raw.maternityLeaveEndDate) missing.push("MATERNITY_END_DATE")
+        if (!raw.maternityExpectedReturnDate) missing.push("MATERNITY_RETURN_DATE")
+    }
+
     if (EXIT_EMPLOYMENT_STATUSES.has(raw.employmentStatus)) {
         if (!raw.resignDate) missing.push("EXIT_DATE")
         if (!raw.exitReasonId) missing.push("EXIT_REASON")
@@ -265,6 +275,18 @@ function buildReportReadinessQuery(mode) {
         { shiftId: { $ne: null } },
         { employeeTypeId: { $ne: null } },
         { employeeTypeReviewRequired: { $ne: true } },
+        {
+            $or: [
+                { employmentStatus: { $ne: "MATERNITY_LEAVE" } },
+                {
+                    $and: [
+                        { maternityLeaveStartDate: { $ne: null } },
+                        { maternityLeaveEndDate: { $ne: null } },
+                        { maternityExpectedReturnDate: { $ne: null } },
+                    ],
+                },
+            ],
+        },
         {
             $or: [
                 { employmentStatus: { $nin: [...EXIT_EMPLOYMENT_STATUSES] } },
@@ -326,6 +348,28 @@ function ensureReportingData(payload) {
             messageKey: "errors.employee.profile.exitDateBeforeJoinDate",
             fields: { resignDate: ["errors.employee.profile.exitDateBeforeJoinDate"] },
         })
+    }
+
+    if (payload.employmentStatus === "MATERNITY_LEAVE") {
+        if (!payload.maternityLeaveStartDate) {
+            throw new AppError({
+                statusCode: 422,
+                code: "EMPLOYEE_MATERNITY_START_DATE_REQUIRED",
+                messageKey: "errors.validationFailed",
+                fields: { maternityLeaveStartDate: ["Maternity Leave Start Date is required."] },
+            })
+        }
+        if (
+            payload.joinDate &&
+            new Date(payload.maternityLeaveStartDate) < new Date(payload.joinDate)
+        ) {
+            throw new AppError({
+                statusCode: 422,
+                code: "EMPLOYEE_MATERNITY_START_BEFORE_JOIN_DATE",
+                messageKey: "errors.validationFailed",
+                fields: { maternityLeaveStartDate: ["Maternity Leave Start Date cannot be earlier than Join Date."] },
+            })
+        }
     }
 
     if (EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus)) {
@@ -562,6 +606,9 @@ export function serializeEmployee(employee) {
         employmentStatus: raw.employmentStatus,
         resignDate: raw.resignDate,
         resignReason: raw.resignReason || "",
+        maternityLeaveStartDate: raw.maternityLeaveStartDate || null,
+        maternityLeaveEndDate: raw.maternityLeaveEndDate || null,
+        maternityExpectedReturnDate: raw.maternityExpectedReturnDate || null,
         remark: raw.remark || "",
         documents: raw.documents || {},
         sourceOfHiring: raw.sourceOfHiring || "",
@@ -629,6 +676,9 @@ export function serializeEmployeeListItem(employee) {
         joinDate: raw.joinDate,
         employmentStatus: raw.employmentStatus,
         resignDate: raw.resignDate || null,
+        maternityLeaveStartDate: raw.maternityLeaveStartDate || null,
+        maternityLeaveEndDate: raw.maternityLeaveEndDate || null,
+        maternityExpectedReturnDate: raw.maternityExpectedReturnDate || null,
         recruitmentChannelId: toId(raw.recruitmentChannelId),
         exitReasonId: toId(raw.exitReasonId),
         employeeTypeReviewRequired: Boolean(raw.employeeTypeReviewRequired),
@@ -655,7 +705,7 @@ export function serializeEmployeeListItem(employee) {
 
 function employeeListPopulate(query) {
     return query
-        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender dateOfBirth phoneNumber email nationality birthAddress.detail permanentAddress.detail companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName employeeTypeReviewRequired joinDate employmentStatus resignDate recruitmentChannelId exitReasonId recordStatus documents machineSkills note updatedAt")
+        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender dateOfBirth phoneNumber email nationality birthAddress.detail permanentAddress.detail companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName employeeTypeReviewRequired joinDate employmentStatus resignDate maternityLeaveStartDate maternityLeaveEndDate maternityExpectedReturnDate recruitmentChannelId exitReasonId recordStatus documents machineSkills note updatedAt")
         .populate({ path: "companyId", select: "code displayName legalName status" })
         .populate({ path: "branchId", select: "code name shortName status" })
         .populate({ path: "departmentId", select: "code name shortName status" })
@@ -918,6 +968,10 @@ export async function createEmployee({ payload, user }) {
         branchId: payload.branchId,
     })
     const effectiveEmploymentStatus = payload.employmentStatus || "WORKING"
+    const maternityFields = buildMaternityEmployeeFields({
+        employmentStatus: effectiveEmploymentStatus,
+        maternityLeaveStartDate: payload.maternityLeaveStartDate,
+    })
     const exitReason = await ensureExitReason({
         exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(effectiveEmploymentStatus) ? payload.exitReasonId : null,
         companyId: payload.companyId,
@@ -929,6 +983,7 @@ export async function createEmployee({ payload, user }) {
         const employee = await Employee.create({
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
+            ...maternityFields,
             recruitmentChannelId: recruitmentChannel?._id || null,
             exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus || "WORKING") ? exitReason?._id || null : null,
             resignDate: EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus || "WORKING") ? payload.resignDate || null : null,
@@ -957,6 +1012,12 @@ export async function createEmployee({ payload, user }) {
         }
 
         await createAutomaticMovementForEmployeeCreate({ employee, user })
+        await syncMaternityPeriodAfterEmployeeChange({
+            before: null,
+            after: employee.toObject ? employee.toObject() : employee,
+            user,
+            source: "EMPLOYEE_PROFILE",
+        })
 
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")
@@ -985,6 +1046,11 @@ export async function updateEmployee({ employeeId, payload, user }) {
         branchId: merged.branchId,
     })
     const effectiveEmploymentStatus = merged.employmentStatus || "WORKING"
+    const maternityFields = buildMaternityEmployeeFields({
+        employmentStatus: effectiveEmploymentStatus,
+        maternityLeaveStartDate: merged.maternityLeaveStartDate,
+        existing,
+    })
     const exitReason = await ensureExitReason({
         exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(effectiveEmploymentStatus) ? merged.exitReasonId : null,
         companyId: merged.companyId,
@@ -996,6 +1062,7 @@ export async function updateEmployee({ employeeId, payload, user }) {
         const updatePayload = {
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
+            ...maternityFields,
             recruitmentChannelId: recruitmentChannel?._id || null,
             exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus) ? exitReason?._id || null : null,
             resignDate: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus) ? merged.resignDate || null : null,
@@ -1008,6 +1075,12 @@ export async function updateEmployee({ employeeId, payload, user }) {
         const updated = await Employee.findByIdAndUpdate(existing._id, { $set: updatePayload }, { new: true, runValidators: true, context: "query" }).lean()
 
         await createAutomaticMovementForEmployeeUpdate({ before: existing, after: updated, user })
+        await syncMaternityPeriodAfterEmployeeChange({
+            before: existing,
+            after: updated,
+            user,
+            source: "EMPLOYEE_PROFILE",
+        })
 
         clearCacheByPrefix("employee:list:")
         clearCacheByPrefix("employeeMovement:list:")

@@ -227,6 +227,15 @@ function getStatusMovementType(status) {
 
 function detectMovementType(before = {}, after = {}) {
     if (before.employmentStatus !== after.employmentStatus) {
+        // Returning from a temporary lifecycle state is a status change, not
+        // a rehire. REJOIN is reserved for a former exit-status employee who
+        // is deliberately brought back to WORKING.
+        if (
+            after.employmentStatus === "WORKING" &&
+            before.employmentStatus === "MATERNITY_LEAVE"
+        ) {
+            return "STATUS_CHANGE"
+        }
         return getStatusMovementType(after.employmentStatus)
     }
 

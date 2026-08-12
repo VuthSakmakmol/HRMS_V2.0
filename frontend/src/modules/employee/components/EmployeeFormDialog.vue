@@ -39,11 +39,17 @@ const editing = computed(() => props.mode === "edit")
 const isLastSection = computed(() => props.activeSection === EMPLOYEE_FORM_SECTIONS.length - 1)
 
 const liveSectionErrors = computed(() =>
-    validateEmployeeSection(props.form, props.activeSection, { editing: editing.value }),
+    validateEmployeeSection(props.form, props.activeSection, {
+        editing: editing.value,
+        positionOptions: props.options?.positionId || [],
+    }),
 )
 
 const liveFormErrors = computed(() =>
-    validateEmployeeForm(props.form, { editing: editing.value }),
+    validateEmployeeForm(props.form, {
+        editing: editing.value,
+        positionOptions: props.options?.positionId || [],
+    }),
 )
 
 const effectiveErrors = computed(() => ({

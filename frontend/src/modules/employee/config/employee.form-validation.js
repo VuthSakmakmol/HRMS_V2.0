@@ -66,7 +66,7 @@ function validateContact(form) {
     return errors
 }
 
-function validateAssignment(form) {
+function validateAssignment(form, { positionOptions = [] } = {}) {
     const errors = {}
     const required = [
         ["companyId", "Company"],
@@ -79,6 +79,22 @@ function validateAssignment(form) {
 
     for (const [field, label] of required) {
         if (blank(form[field])) errors[field] = [`${label} is required.`]
+    }
+
+    if (!blank(form.positionId) && Array.isArray(positionOptions) && positionOptions.length > 0) {
+        const selectedPosition = positionOptions.find(
+            (option) => String(option?.value || "") === String(form.positionId || ""),
+        )
+
+        if (selectedPosition?.configurationState === "UNCONFIGURED") {
+            errors.positionId = [
+                "This position is not assigned to an Employee Type. Configure it in Employee Type first, or choose another position.",
+            ]
+        } else if (selectedPosition?.configurationState === "AMBIGUOUS") {
+            errors.positionId = [
+                "This position has conflicting Employee Type assignments. Fix the Employee Type setup before assigning it to an employee.",
+            ]
+        }
     }
 
     return errors
@@ -115,7 +131,7 @@ export function validateEmployeeSection(form, sectionIndex, options = {}) {
         case "contact":
             return validateContact(form)
         case "assignment":
-            return validateAssignment(form)
+            return validateAssignment(form, options)
         case "employment":
             return validateEmployment(form)
         default:

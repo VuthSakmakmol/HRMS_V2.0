@@ -84,14 +84,3 @@ export const attendanceUnmatchedSyncSchema = z.object({
     branchId: objectIdSchema,
 })
 
-export const attendanceEmployeeStatusSyncSchema = z.object({
-    companyId: objectIdSchema,
-    branchId: objectIdSchema,
-    reportDate: dateSchema,
-    rows: z.array(
-        z.object({
-            employeeCode: z.string().trim().min(1).max(40),
-            lineNo: z.string().trim().min(1).max(160),
-        }),
-    ).max(20_000),
-})

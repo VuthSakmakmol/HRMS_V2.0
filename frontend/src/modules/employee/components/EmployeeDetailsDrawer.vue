@@ -186,6 +186,18 @@ const employmentSeverity = (status) =>
             <dt>Recruitment Channel</dt>
             <dd>{{ org(employee.recruitmentChannel) }}</dd>
           </div>
+          <div v-if="employee.maternityLeaveStartDate">
+            <dt>Maternity Leave Start</dt>
+            <dd>{{ value(employee.maternityLeaveStartDate) }}</dd>
+          </div>
+          <div v-if="employee.maternityLeaveEndDate">
+            <dt>Maternity Leave End</dt>
+            <dd>{{ value(employee.maternityLeaveEndDate) }}</dd>
+          </div>
+          <div v-if="employee.maternityExpectedReturnDate">
+            <dt>Expected Return</dt>
+            <dd>{{ value(employee.maternityExpectedReturnDate) }}</dd>
+          </div>
           <div>
             <dt>Record Status</dt>
             <dd>{{ value(employee.recordStatus) }}</dd>

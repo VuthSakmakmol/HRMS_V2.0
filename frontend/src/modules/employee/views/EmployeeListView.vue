@@ -6,6 +6,7 @@ import Select from "primevue/select";
 import Tag from "primevue/tag";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useToast } from "primevue/usetoast";
+import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/app/stores/auth.store.js";
 import { useWorkspaceStore } from "@/app/stores/workspace.store.js";
 import EnterpriseActionMenu from "@/shared/components/enterprise/EnterpriseActionMenu.vue";
@@ -51,6 +52,7 @@ import {
 import { EMPLOYEE_PERMISSIONS } from "../config/employee.permissions.js";
 
 const toast = useToast(),
+  { t, te } = useI18n(),
   auth = useAuthStore(),
   workspace = useWorkspaceStore(),
   list = useEmployeeList(),
@@ -150,32 +152,39 @@ const formPositionOptions = computed(() =>
     if (!assignment) {
       return {
         ...item,
-        label: `${baseLabel} — Employee Type not configured`,
+        label: baseLabel,
         value: item.id || item._id,
         disabled: true,
+        configurationState: "UNCONFIGURED",
+        configurationNote: "Not assigned to Employee Type",
+        employeeTypeCodeLabel: "",
       };
     }
 
     if (assignment.ambiguous) {
       return {
         ...item,
-        label: `${baseLabel} — Employee Type mapping conflict`,
+        label: baseLabel,
         value: item.id || item._id,
         disabled: true,
+        configurationState: "AMBIGUOUS",
+        configurationNote: "Employee Type mapping conflict",
+        employeeTypeCodeLabel: "",
       };
     }
 
-    const typeName =
-      assignment.employeeType?.name ||
-      assignment.employeeType?.code ||
-      "Employee Type";
-    const childName = assignment.child?.name || assignment.child?.code || "";
+    const employeeTypeCode = String(assignment.employeeType?.code || "").trim();
+    const childCode = String(assignment.child?.code || "").trim();
+    const mappingCode = [employeeTypeCode, childCode].filter(Boolean).join(" + ");
 
     return {
       ...item,
-      label: `${baseLabel} — ${typeName}${childName ? ` / ${childName}` : ""}`,
+      label: baseLabel,
       value: item.id || item._id,
       disabled: false,
+      configurationState: "CONFIGURED",
+      configurationNote: "",
+      employeeTypeCodeLabel: mappingCode,
     };
   }),
 );
@@ -468,6 +477,23 @@ async function onFilterBranchChange() {
     branchId: list.filters.branchId,
   });
 }
+function employeeErrorDetail(error) {
+  const messageKey =
+    error?.messageKey || error?.response?.data?.error?.messageKey || "";
+
+  if (messageKey && te(messageKey)) return t(messageKey);
+
+  if (error?.code === "EMPLOYEE_POSITION_EMPLOYEE_TYPE_NOT_CONFIGURED") {
+    return "This position is not assigned to an Employee Type. Configure it in Employee Type first, or choose another position.";
+  }
+
+  if (error?.code === "EMPLOYEE_POSITION_EMPLOYEE_TYPE_AMBIGUOUS") {
+    return "This position has conflicting Employee Type assignments. Fix the Employee Type setup before assigning it to an employee.";
+  }
+
+  return error?.message || "Unable to save employee.";
+}
+
 async function save() {
   try {
     await formState.save();
@@ -477,7 +503,7 @@ async function save() {
     toast.add({
       severity: "error",
       summary: "Unable to save employee",
-      detail: e?.response?.data?.error?.messageKey || e.message,
+      detail: employeeErrorDetail(e),
       life: 5000,
     });
   }

@@ -4,6 +4,7 @@ import app from "./app.js"
 import { connectDatabase, disconnectDatabase } from "./config/database.js"
 import { env } from "./config/env.js"
 import { startAttendanceDailyEmailScheduler } from "./modules/attendance/services/attendanceDailyEmailSchedule.service.js"
+import { startEmployeeLifecycleScheduler } from "./modules/employee/services/employeeLifecycleScheduler.service.js"
 
 const server = http.createServer(app)
 
@@ -18,6 +19,7 @@ async function startServer() {
     try {
         await connectDatabase()
         startAttendanceDailyEmailScheduler()
+        startEmployeeLifecycleScheduler()
 
         server.listen(env.PORT, () => {
             console.log(`[api] running at http://localhost:${env.PORT}`)

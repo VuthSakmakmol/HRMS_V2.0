@@ -108,6 +108,15 @@ export async function fetchAttendanceImportIssues(params = {}) {
     return response.data.data
 }
 
+export async function syncAttendanceImportIssues(payload = {}) {
+    const response = await apiClient.post(
+        `${ATTENDANCE_ENDPOINT}/import-issues/sync`,
+        payload,
+    )
+
+    return response.data.data.summary
+}
+
 export async function exportAttendanceImportIssues(params = {}) {
     const response = await apiClient.get(
         `${ATTENDANCE_ENDPOINT}/import-issues/export`,
