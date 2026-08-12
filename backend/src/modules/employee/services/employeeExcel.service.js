@@ -13,6 +13,8 @@ import Province from "../../location/models/Province.js"
 import District from "../../location/models/District.js"
 import Commune from "../../location/models/Commune.js"
 import Village from "../../location/models/Village.js"
+import RecruitmentChannel from "../../recruitmentChannel/models/recruitmentChannel.js"
+import ExitReason from "../../exitReason/models/ExitReason.js"
 import { getEmployeeTypeAssignmentMap } from "../../employeeType/services/employeeTypeAssignment.service.js"
 import Account from "../../access/models/Account.js"
 
@@ -57,8 +59,10 @@ const TEMPLATE_HEADERS = [
     "lineCode",
     "shiftCode",
     "joinDate",
+    "recruitmentChannelCode",
     "employmentStatus",
     "resignDate",
+    "exitReasonCode",
     "resignReason",
     "remark",
     "idCardNo",
@@ -181,6 +185,8 @@ const EXPORT_HEADERS = [
     "approvalPolicyCode",
     "approvalPolicyName",
     "recordStatus",
+    "reportReadiness",
+    "missingReportFields",
     "createdAt",
     "updatedAt",
 ]
@@ -215,6 +221,10 @@ const HEADER_ALIASES = new Map([
     ["line", "lineCode"],
     ["shift", "shiftCode"],
     ["join date", "joinDate"],
+    ["recruitment channel", "recruitmentChannelCode"],
+    ["recruitment channel code", "recruitmentChannelCode"],
+    ["exit reason", "exitReasonCode"],
+    ["exit reason code", "exitReasonCode"],
     ["status", "employmentStatus"],
     ["resign date", "resignDate"],
     ["resign reason", "resignReason"],
@@ -331,6 +341,16 @@ function normalizeEmploymentStatus(value) {
     return map[code] || "WORKING"
 }
 
+function isRecognizedEmploymentStatus(value) {
+    const code = normalizeCode(value)
+    return new Set([
+        "WORKING", "ACTIVE", "MATERNITY_LEAVE", "MATERNITY",
+        "RESIGN", "RESIGNED", "TERMINATE", "TERMINATED",
+        "ABANDON", "ABANDONED", "PASS_AWAY", "PASSED_AWAY",
+        "RETIREMENT", "RETIRED",
+    ]).has(code)
+}
+
 function normalizeNumber(value) {
     const raw = excelValueToString(value).trim()
     if (!raw) return 0
@@ -395,11 +415,17 @@ function buildError(rowNumber, field, messageKey, { value = "", expected = "" } 
 
 const REQUIRED_IMPORT_HEADERS = [
     "employeeCode",
+    "dateOfBirth",
+    "phoneNumber",
     "departmentCode",
     "positionCode",
     "lineCode",
     "shiftCode",
     "joinDate",
+    "recruitmentChannelCode",
+    "employmentStatus",
+    "resignDate",
+    "exitReasonCode",
 ]
 
 function isValidEmail(value) {
@@ -477,7 +503,10 @@ export async function buildEmployeeImportTemplateWorkbook() {
         lineCode: "LINE_A",
         shiftCode: "DAY",
         joinDate: "15/08/2024",
+        recruitmentChannelCode: "TELEGRAM",
         employmentStatus: "WORKING",
+        resignDate: "",
+        exitReasonCode: "",
         singleNeedle: 1,
         overlock: 0,
         coverstitch: 0,
@@ -490,9 +519,10 @@ export async function buildEmployeeImportTemplateWorkbook() {
     ]
     instructions.addRows([
         { rule: "Date format", description: "Enter every date as DD/MM/YYYY, for example 20/07/2026. Native Excel date cells are also accepted." },
-        { rule: "Required codes", description: "Use companyCode, branchCode, departmentCode, positionCode, lineCode, and shiftCode for reliable import." },
+        { rule: "Required codes", description: "Use departmentCode, positionCode, lineCode, shiftCode, recruitmentChannelCode and employmentStatus. Company/Branch come from the active workspace." },
         { rule: "Address columns", description: "Only Birth Address and Permanent Address are supported. Living, emergency contact, and family address columns are no longer imported." },
         { rule: "Age", description: "Do not import age. Backend calculates age from dateOfBirth." },
+        { rule: "Required employee data", description: "phoneNumber, dateOfBirth, recruitmentChannelCode, employmentStatus and joinDate are required for every employee. Exit statuses also require resignDate and exitReasonCode." },
         { rule: "Team/Section", description: "Team and Section are ignored because the project structure is Department => Position => Line." },
         { rule: "Status", description: "Use WORKING, MATERNITY_LEAVE, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED. Old values Working, Maternity, Resign, Terminate, Abandon, Pass Away, and Retirement are accepted." },
         { rule: "Login account", description: "Set createAccount to YES to create login. Login ID = employeeCode. Initial password = employeeCode + phoneNumber. If the column is missing, YES is used." },
@@ -570,8 +600,10 @@ export async function parseEmployeeImportWorkbook(buffer) {
             lineCode: normalizeText(raw.lineCode),
             shiftCode: normalizeText(raw.shiftCode),
             joinDate: normalizeDate(raw.joinDate),
+            recruitmentChannelCode: normalizeCode(raw.recruitmentChannelCode),
             employmentStatus: normalizeEmploymentStatus(raw.employmentStatus),
             resignDate: normalizeDate(raw.resignDate),
+            exitReasonCode: normalizeCode(raw.exitReasonCode),
             resignReason: normalizeText(raw.resignReason),
             remark: normalizeText(raw.remark),
             idCardNo: normalizeText(raw.idCardNo),
@@ -592,6 +624,11 @@ export async function parseEmployeeImportWorkbook(buffer) {
         }
 
         if (!normalized.employeeCode) errors.push(buildError(rowNumber, "employeeCode", "errors.employee.import.employeeCodeRequired"))
+        if (!normalized.dateOfBirth) errors.push(buildError(rowNumber, "dateOfBirth", "errors.employee.import.dateOfBirthRequired"))
+        if (!normalized.phoneNumber) errors.push(buildError(rowNumber, "phoneNumber", "errors.validationFailed", { expected: "Phone Number is required, digits only; for example 0979866163" }))
+        if (!normalized.recruitmentChannelCode) errors.push(buildError(rowNumber, "recruitmentChannelCode", "errors.employee.import.recruitmentChannelRequired"))
+        if (!normalizeText(raw.employmentStatus)) errors.push(buildError(rowNumber, "employmentStatus", "errors.employee.import.employmentStatusRequired"))
+        else if (!isRecognizedEmploymentStatus(raw.employmentStatus)) errors.push(buildError(rowNumber, "employmentStatus", "errors.employee.import.employmentStatusInvalid", { value: normalizeText(raw.employmentStatus), expected: "WORKING, MATERNITY_LEAVE, RESIGNED, TERMINATED, ABANDONED, PASSED_AWAY, or RETIRED" }))
         if (raw.joinDate && !normalized.joinDate) errors.push(buildError(rowNumber, "joinDate", "errors.employee.import.dateInvalid", { value: normalizeText(raw.joinDate), expected: "DD/MM/YYYY or an Excel date" }))
         else if (!normalized.joinDate) errors.push(buildError(rowNumber, "joinDate", "errors.employee.import.joinDateRequired"))
         if (!normalized.departmentCode) errors.push(buildError(rowNumber, "departmentCode", "errors.employee.import.departmentRequired"))
@@ -621,7 +658,15 @@ export async function parseEmployeeImportWorkbook(buffer) {
             normalized.spouseName = ""
             normalized.spouseContactNumber = ""
         }
-        if (["RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"].includes(normalized.employmentStatus) && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required for an exit employment status" }))
+        const isExitStatus = ["RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"].includes(normalized.employmentStatus)
+        if (isExitStatus && !normalized.resignDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.resignDateRequired", { expected: "Required for an exit employment status" }))
+        if (isExitStatus && !normalized.exitReasonCode) errors.push(buildError(rowNumber, "exitReasonCode", "errors.employee.import.exitReasonRequired", { expected: "Required for an exit employment status" }))
+        if (normalized.joinDate && normalized.resignDate && normalized.resignDate < normalized.joinDate) errors.push(buildError(rowNumber, "resignDate", "errors.employee.import.exitDateBeforeJoinDate", { expected: "Exit Date must be on or after Join Date" }))
+        if (!isExitStatus) {
+            normalized.resignDate = null
+            normalized.exitReasonCode = ""
+            normalized.resignReason = ""
+        }
 
         rows.push(normalized)
     })
@@ -723,12 +768,24 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         return summary
     }
 
-    const [departments, positions, lines, shifts, introducers, employeeTypeAssignments] = await Promise.all([
+    const [departments, positions, lines, shifts, introducers, recruitmentChannels, exitReasons, employeeTypeAssignments] = await Promise.all([
         Department.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Position.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Line.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Shift.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, status: { $ne: "ARCHIVED" } }).lean(),
         Employee.find({ companyId: fallbackCompany._id, branchId: fallbackBranch._id, recordStatus: { $ne: "ARCHIVED" } }).select("_id employeeCode").lean(),
+        RecruitmentChannel.find({
+            $and: [
+                { $or: [{ companyId: fallbackCompany._id }, { companyId: null }] },
+                { $or: [{ branchId: fallbackBranch._id }, { branchId: null }] },
+            ],
+            status: "ACTIVE",
+        }).lean(),
+        ExitReason.find({
+            companyId: fallbackCompany._id,
+            $or: [{ branchId: fallbackBranch._id }, { branchId: null }],
+            status: "ACTIVE",
+        }).lean(),
         getEmployeeTypeAssignmentMap({
             companyId: fallbackCompany._id,
             branchId: fallbackBranch._id,
@@ -740,12 +797,16 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     const lineMap = new Map()
     const shiftMap = new Map()
     const introducerMap = new Map()
+    const recruitmentChannelMap = new Map()
+    const exitReasonMap = new Map()
 
     for (const department of departments) addDocumentAliases(departmentMap, department)
     for (const position of positions) addDocumentAliases(positionMap, position, `${position.departmentId?.toString()}::`)
     for (const line of lines) addDocumentAliases(lineMap, line)
     for (const shift of shifts) addDocumentAliases(shiftMap, shift)
     for (const introducer of introducers) introducerMap.set(normalizeCode(introducer.employeeCode), introducer)
+    for (const channel of recruitmentChannels) addDocumentAliases(recruitmentChannelMap, channel)
+    for (const reason of exitReasons) addDocumentAliases(exitReasonMap, reason)
 
     for (const [index, row] of rows.entries()) {
         const company = fallbackCompany
@@ -756,6 +817,8 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         const line = lineMap.get(normalizeCode(row.lineCode)) || null
         const shift = shiftMap.get(normalizeCode(row.shiftCode)) || null
         const introducer = row.introducerEmployeeCode ? introducerMap.get(normalizeCode(row.introducerEmployeeCode)) || null : null
+        const recruitmentChannel = recruitmentChannelMap.get(normalizeCode(row.recruitmentChannelCode)) || null
+        const exitReason = row.exitReasonCode ? exitReasonMap.get(normalizeCode(row.exitReasonCode)) || null : null
         const employeeTypeAssignment = position
             ? employeeTypeAssignments.get(position._id.toString()) || null
             : null
@@ -768,12 +831,14 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         }))
         if (!shift) summary.errors.push(buildError(row.rowNumber, "shiftCode", "errors.employee.import.shiftNotFound"))
         if (row.introducerEmployeeCode && !introducer) summary.errors.push(buildError(row.rowNumber, "introducerEmployeeCode", "errors.employee.import.introducerNotFound"))
+        if (!recruitmentChannel) summary.errors.push(buildError(row.rowNumber, "recruitmentChannelCode", "errors.employee.import.recruitmentChannelNotFound", { value: row.recruitmentChannelCode }))
+        if (["RESIGNED", "TERMINATED", "ABANDONED", "PASSED_AWAY", "RETIRED"].includes(row.employmentStatus) && !exitReason) summary.errors.push(buildError(row.rowNumber, "exitReasonCode", "errors.employee.import.exitReasonNotFound", { value: row.exitReasonCode }))
         if (position && !employeeTypeAssignment) summary.errors.push(buildError(row.rowNumber, "positionCode", "errors.employee.import.positionEmployeeTypeNotConfigured", {
             value: row.positionCode,
             expected: "Assign this position to an active Employee Type before importing employees",
         }))
 
-        row._resolved = { company, branch, department, position, line, shift, introducer, employeeTypeAssignment }
+        row._resolved = { company, branch, department, position, line, shift, introducer, recruitmentChannel, exitReason, employeeTypeAssignment }
         onProgress?.({
             phase: "RESOLVING_REFERENCES",
             percent: 20 + Math.round(((index + 1) / Math.max(rows.length, 1)) * 35),
@@ -792,7 +857,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     for (const [index, row] of rows.entries()) {
         const birthAddress = await resolveLocation({ provinceName: row.birthProvince, districtName: row.birthDistrict, communeName: row.birthCommune, villageName: row.birthVillage })
         const permanentAddress = await resolveLocation({ provinceName: row.permanentProvince, districtName: row.permanentDistrict, communeName: row.permanentCommune, villageName: row.permanentVillage })
-        const { company, branch, department, position, line, shift, introducer, employeeTypeAssignment } = row._resolved
+        const { company, branch, department, position, line, shift, introducer, recruitmentChannel, exitReason, employeeTypeAssignment } = row._resolved
         const payload = {
             employeeCode: row.employeeCode,
             profileImageUrl: row.profileImageUrl,
@@ -823,9 +888,11 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
             lineId: line._id,
             shiftId: shift._id,
             joinDate: row.joinDate,
+            recruitmentChannelId: recruitmentChannel._id,
             employmentStatus: row.employmentStatus,
             resignDate: row.resignDate,
-            resignReason: row.resignReason,
+            exitReasonId: exitReason?._id || null,
+            resignReason: row.resignReason || "",
             remark: row.remark,
             documents: {
                 idCardNo: row.idCardNo,
@@ -852,7 +919,6 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
                 coverstitch: row.coverstitch,
                 totalMachines: row.totalMachines,
             },
-            recordStatus: "ACTIVE",
             updatedByAccountId: user.accountId,
         }
 
@@ -868,7 +934,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
                 ).lean()
                 summary.updated += 1
             } else {
-                employee = await Employee.create({ ...payload, createdByAccountId: user.accountId })
+                employee = await Employee.create({ ...payload, recordStatus: "ACTIVE", createdByAccountId: user.accountId })
                 summary.created += 1
             }
         } catch (error) {
@@ -1080,6 +1146,8 @@ export async function buildEmployeeExportWorkbook({ employees }) {
             approvalPolicyCode: employee.approvalPolicy?.code || "",
             approvalPolicyName: employee.approvalPolicy?.name || "",
             recordStatus: employee.recordStatus,
+            reportReadiness: employee.reportReadiness || "",
+            missingReportFields: (employee.missingReportFields || []).join(", "),
             createdAt: formatDateTime(employee.createdAt),
             updatedAt: formatDateTime(employee.updatedAt),
         })

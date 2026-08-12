@@ -110,7 +110,7 @@ function expiryClass(value) {
 <style scoped>
 .employee-documents {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.7rem;
 }
 
@@ -141,13 +141,19 @@ function expiryClass(value) {
     color: var(--hrms-success) !important;
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1180px) {
+    .employee-documents {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 920px) {
     .employee-documents {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 620px) {
     .employee-documents {
         grid-template-columns: minmax(0, 1fr);
     }

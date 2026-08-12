@@ -22,10 +22,14 @@ const optionalDateSchema = z.preprocess(
 
 const requiredDateSchema = z.coerce.date()
 
-const adultDateSchema = optionalDateSchema.refine(
+const adultDateSchema = z.preprocess(
     (value) => {
-        if (!value) return true
-
+        if (value === "" || value === undefined || value === null) return undefined
+        return value
+    },
+    z.coerce.date(),
+).refine(
+    (value) => {
         const maximumBirthDate = new Date()
         maximumBirthDate.setHours(0, 0, 0, 0)
         maximumBirthDate.setFullYear(maximumBirthDate.getFullYear() - 18)
@@ -67,6 +71,13 @@ const phoneSchema = z
     .max(40)
     .regex(/^\d*$/, { message: "Phone number must contain digits only." })
     .optional()
+
+const requiredPhoneSchema = z
+    .string()
+    .trim()
+    .min(1, { message: "Phone Number is required." })
+    .max(40)
+    .regex(/^\d+$/, { message: "Phone Number must contain digits only." })
 
 const nationalitySchema = z
     .string()
@@ -146,6 +157,7 @@ export const employeeListQuerySchema = z.object({
     shiftId: objectIdSchema.optional(),
     employeeTypeId: objectIdSchema.optional(),
     employeeTypeChildId: objectIdSchema.optional(),
+    reportReadiness: z.enum(["ALL", "READY", "MISSING"]).default("ALL"),
     exitReasonId: objectIdSchema.optional(),
     recruitmentChannelId: objectIdSchema.optional(),
     employmentStatus: z.enum(["ALL", ...employmentStatuses]).default("ALL"),
@@ -168,10 +180,10 @@ export const employeeCreateSchema = z.object({
     englishLastName: optionalTextSchema(120),
     displayName: optionalTextSchema(240),
     gender: z.enum(["MALE", "FEMALE", "OTHER", "UNKNOWN"]).optional(),
-    dateOfBirth: adultDateSchema.optional(),
+    dateOfBirth: adultDateSchema,
 
     email: emailSchema.optional(),
-    phoneNumber: phoneSchema,
+    phoneNumber: requiredPhoneSchema,
     agentPhoneNumber: phoneSchema,
     agentPerson: optionalTextSchema(160),
     note: optionalTextSchema(1000),
@@ -203,7 +215,7 @@ export const employeeCreateSchema = z.object({
 
     documents: documentsSchema,
     sourceOfHiring: optionalTextSchema(160),
-    recruitmentChannelId: nullableObjectIdSchema.optional(),
+    recruitmentChannelId: objectIdSchema,
     introducerEmployeeId: nullableObjectIdSchema.optional(),
     machineSkills: machineSkillsSchema,
     approvalPolicyId: nullableObjectIdSchema.optional(),
@@ -215,7 +227,7 @@ export const employeeCreateSchema = z.object({
 })
 
 export const employeeUpdateSchema = employeeCreateSchema
-    .omit({ companyId: true, branchId: true })
+    .omit({ companyId: true, branchId: true, employeeCode: true })
     .partial()
     .refine((value) => Object.keys(value).length > 0, {
         message: "At least one field is required.",

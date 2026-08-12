@@ -216,6 +216,139 @@ async function ensureRecruitmentChannel({ recruitmentChannelId, companyId, branc
     return recruitmentChannel
 }
 
+
+const EXIT_EMPLOYMENT_STATUSES = new Set([
+    "RESIGNED",
+    "TERMINATED",
+    "ABANDONED",
+    "PASSED_AWAY",
+    "RETIRED",
+])
+
+function buildReportingReadiness(raw = {}) {
+    const missing = []
+
+    if (!raw.dateOfBirth) missing.push("DATE_OF_BIRTH")
+    if (!raw.recruitmentChannelId) missing.push("RECRUITMENT_CHANNEL")
+    if (!raw.joinDate) missing.push("JOIN_DATE")
+    if (!raw.companyId) missing.push("COMPANY")
+    if (!raw.branchId) missing.push("BRANCH")
+    if (!raw.departmentId) missing.push("DEPARTMENT")
+    if (!raw.positionId) missing.push("POSITION")
+    if (!raw.lineId) missing.push("LINE")
+    if (!raw.shiftId) missing.push("SHIFT")
+    if (!raw.employeeTypeId || raw.employeeTypeReviewRequired) missing.push("EMPLOYEE_TYPE")
+
+    if (EXIT_EMPLOYMENT_STATUSES.has(raw.employmentStatus)) {
+        if (!raw.resignDate) missing.push("EXIT_DATE")
+        if (!raw.exitReasonId) missing.push("EXIT_REASON")
+    }
+
+    return {
+        ready: missing.length === 0,
+        missing,
+    }
+}
+
+function buildReportReadinessQuery(mode) {
+    if (!mode || mode === "ALL") return null
+
+    const readyConditions = [
+        { dateOfBirth: { $ne: null } },
+        { recruitmentChannelId: { $ne: null } },
+        { joinDate: { $ne: null } },
+        { companyId: { $ne: null } },
+        { branchId: { $ne: null } },
+        { departmentId: { $ne: null } },
+        { positionId: { $ne: null } },
+        { lineId: { $ne: null } },
+        { shiftId: { $ne: null } },
+        { employeeTypeId: { $ne: null } },
+        { employeeTypeReviewRequired: { $ne: true } },
+        {
+            $or: [
+                { employmentStatus: { $nin: [...EXIT_EMPLOYMENT_STATUSES] } },
+                {
+                    $and: [
+                        { resignDate: { $ne: null } },
+                        { exitReasonId: { $ne: null } },
+                    ],
+                },
+            ],
+        },
+    ]
+
+    if (mode === "READY") return { $and: readyConditions }
+    return { $nor: [{ $and: readyConditions }] }
+}
+
+function ensureReportingData(payload) {
+    if (!String(payload.phoneNumber || "").trim()) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_PHONE_NUMBER_REQUIRED",
+            messageKey: "errors.validationFailed",
+            fields: { phoneNumber: ["Phone Number is required."] },
+        })
+    }
+
+    if (!/^\d+$/.test(String(payload.phoneNumber || "").trim())) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_PHONE_NUMBER_INVALID",
+            messageKey: "errors.validationFailed",
+            fields: { phoneNumber: ["Phone Number must contain digits only."] },
+        })
+    }
+
+    if (!payload.dateOfBirth) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_DATE_OF_BIRTH_REQUIRED",
+            messageKey: "errors.employee.profile.dateOfBirthRequired",
+            fields: { dateOfBirth: ["errors.employee.profile.dateOfBirthRequired"] },
+        })
+    }
+
+    if (!payload.recruitmentChannelId) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_RECRUITMENT_CHANNEL_REQUIRED",
+            messageKey: "errors.employee.profile.recruitmentChannelRequired",
+            fields: { recruitmentChannelId: ["errors.employee.profile.recruitmentChannelRequired"] },
+        })
+    }
+
+    if (payload.joinDate && payload.resignDate && new Date(payload.resignDate) < new Date(payload.joinDate)) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_EXIT_DATE_BEFORE_JOIN_DATE",
+            messageKey: "errors.employee.profile.exitDateBeforeJoinDate",
+            fields: { resignDate: ["errors.employee.profile.exitDateBeforeJoinDate"] },
+        })
+    }
+
+    if (EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus)) {
+        if (!payload.resignDate) {
+            throw new AppError({
+                statusCode: 422,
+                code: "EMPLOYEE_RESIGN_DATE_REQUIRED",
+                messageKey: "errors.employee.profile.resignDateRequired",
+                fields: { resignDate: ["errors.employee.profile.resignDateRequired"] },
+            })
+        }
+
+        if (!payload.exitReasonId) {
+            throw new AppError({
+                statusCode: 422,
+                code: "EMPLOYEE_EXIT_REASON_REQUIRED",
+                messageKey: "errors.employee.profile.exitReasonRequired",
+                fields: { exitReasonId: ["errors.employee.profile.exitReasonRequired"] },
+            })
+        }
+    }
+}
+
 function getUserCompanyIds(user) {
     return [...new Set((user?.roleAssignments || []).map((item) => item.companyId).filter(Boolean))]
 }
@@ -285,10 +418,17 @@ function buildSearchFilter(search) {
 }
 
 function buildEmployeeFilter(query, user) {
-    const filter = {
-        ...getEmployeeScopeFilter(user),
-        ...buildSearchFilter(query.search),
-    }
+    const filter = {}
+    const requiredConditions = []
+    const scopeFilter = getEmployeeScopeFilter(user)
+    const searchFilter = buildSearchFilter(query.search)
+
+    if (Object.keys(scopeFilter).length) requiredConditions.push(scopeFilter)
+    if (Object.keys(searchFilter).length) requiredConditions.push(searchFilter)
+
+    const readinessFilter = buildReportReadinessQuery(query.reportReadiness)
+    if (readinessFilter) requiredConditions.push(readinessFilter)
+    if (requiredConditions.length) filter.$and = requiredConditions
 
     for (const key of [
         "companyId",
@@ -450,6 +590,8 @@ export function serializeEmployee(employee) {
         approvalPolicyId: raw.approvalPolicyId?._id?.toString?.() || raw.approvalPolicyId?.id || raw.approvalPolicyId?.toString?.() || null,
         approvalPolicy: simpleOrg(raw.approvalPolicyId),
         recordStatus: raw.recordStatus,
+        reportReadiness: buildReportingReadiness(raw).ready ? "READY" : "MISSING",
+        missingReportFields: buildReportingReadiness(raw).missing,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
     }
@@ -469,6 +611,8 @@ export function serializeEmployeeListItem(employee) {
         englishFirstName: raw.englishFirstName || "",
         englishLastName: raw.englishLastName || "",
         gender: raw.gender || "UNKNOWN",
+        dateOfBirth: raw.dateOfBirth || null,
+        age: ageFromDate(raw.dateOfBirth),
         phoneNumber: raw.phoneNumber || "",
         email: raw.email || "",
         nationality: raw.nationality || "",
@@ -480,8 +624,16 @@ export function serializeEmployeeListItem(employee) {
         shift: simpleOrg(raw.shiftId),
         employeeType: serializeEmployeeType(raw.employeeTypeId),
         employeeTypeChildName: raw.employeeTypeChildName || "",
+        recruitmentChannel: serializeRecruitmentChannel(raw.recruitmentChannelId),
+        exitReason: serializeExitReason(raw.exitReasonId),
         joinDate: raw.joinDate,
         employmentStatus: raw.employmentStatus,
+        resignDate: raw.resignDate || null,
+        recruitmentChannelId: toId(raw.recruitmentChannelId),
+        exitReasonId: toId(raw.exitReasonId),
+        employeeTypeReviewRequired: Boolean(raw.employeeTypeReviewRequired),
+        reportReadiness: buildReportingReadiness(raw).ready ? "READY" : "MISSING",
+        missingReportFields: buildReportingReadiness(raw).missing,
         recordStatus: raw.recordStatus,
         idCardNo: raw.documents?.idCardNo || "",
         idCardExpireDate: raw.documents?.idCardExpireDate || null,
@@ -503,7 +655,7 @@ export function serializeEmployeeListItem(employee) {
 
 function employeeListPopulate(query) {
     return query
-        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender dateOfBirth phoneNumber email nationality birthAddress.detail permanentAddress.detail companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName joinDate employmentStatus recordStatus documents machineSkills note updatedAt")
+        .select("employeeCode profileImageUrl khmerFirstName khmerLastName englishFirstName englishLastName displayName gender dateOfBirth phoneNumber email nationality birthAddress.detail permanentAddress.detail companyId branchId departmentId positionId lineId shiftId employeeTypeId employeeTypeChildName employeeTypeReviewRequired joinDate employmentStatus resignDate recruitmentChannelId exitReasonId recordStatus documents machineSkills note updatedAt")
         .populate({ path: "companyId", select: "code displayName legalName status" })
         .populate({ path: "branchId", select: "code name shortName status" })
         .populate({ path: "departmentId", select: "code name shortName status" })
@@ -511,6 +663,8 @@ function employeeListPopulate(query) {
         .populate({ path: "lineId", select: "code name shortName status" })
         .populate({ path: "shiftId", select: "code name shortName status" })
         .populate({ path: "employeeTypeId", select: "code name title displayName status recordStatus" })
+        .populate({ path: "recruitmentChannelId", select: "companyId branchId code name status" })
+        .populate({ path: "exitReasonId", select: "companyId branchId code name status" })
 }
 
 function employeePopulate(query) {
@@ -679,7 +833,12 @@ function buildEmployeePayload(payload, accountId) {
         base.spouseContactNumber = ""
     }
 
-    if (Object.hasOwn(payload, "resignDate") && !payload.resignDate) {
+    const effectiveStatus = payload.employmentStatus
+    if (effectiveStatus && !EXIT_EMPLOYMENT_STATUSES.has(effectiveStatus)) {
+        base.resignDate = null
+        base.exitReasonId = null
+        base.resignReason = ""
+    } else if (Object.hasOwn(payload, "resignDate") && !payload.resignDate) {
         base.exitReasonId = null
         base.resignReason = ""
     }
@@ -758,20 +917,24 @@ export async function createEmployee({ payload, user }) {
         companyId: payload.companyId,
         branchId: payload.branchId,
     })
+    const effectiveEmploymentStatus = payload.employmentStatus || "WORKING"
     const exitReason = await ensureExitReason({
-        exitReasonId: payload.exitReasonId,
+        exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(effectiveEmploymentStatus) ? payload.exitReasonId : null,
         companyId: payload.companyId,
         branchId: payload.branchId,
     })
-    ensureResignStatus({ ...payload, employmentStatus: payload.employmentStatus || "WORKING" })
+    ensureReportingData({ ...payload, employmentStatus: effectiveEmploymentStatus })
 
     try {
         const employee = await Employee.create({
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
             recruitmentChannelId: recruitmentChannel?._id || null,
-            exitReasonId: exitReason?._id || null,
-            resignReason: exitReason ? exitReason.name : payload.resignReason || "",
+            exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus || "WORKING") ? exitReason?._id || null : null,
+            resignDate: EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus || "WORKING") ? payload.resignDate || null : null,
+            resignReason: EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus || "WORKING")
+                ? payload.resignReason || ""
+                : "",
             displayName: buildDisplayName(payload),
             employmentStatus: payload.employmentStatus || "WORKING",
             gender: payload.gender || "UNKNOWN",
@@ -821,21 +984,26 @@ export async function updateEmployee({ employeeId, payload, user }) {
         companyId: merged.companyId,
         branchId: merged.branchId,
     })
+    const effectiveEmploymentStatus = merged.employmentStatus || "WORKING"
     const exitReason = await ensureExitReason({
-        exitReasonId: merged.exitReasonId,
+        exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(effectiveEmploymentStatus) ? merged.exitReasonId : null,
         companyId: merged.companyId,
         branchId: merged.branchId,
     })
-    ensureResignStatus({ ...merged, employmentStatus: merged.employmentStatus || "WORKING" })
+    ensureReportingData({ ...merged, employmentStatus: effectiveEmploymentStatus })
 
     try {
         const updatePayload = {
             ...buildEmployeePayload(payload, user.accountId),
             ...employeeTypeReporting,
             recruitmentChannelId: recruitmentChannel?._id || null,
-            exitReasonId: exitReason?._id || null,
-            resignReason: exitReason ? exitReason.name : payload.resignReason || "",
+            exitReasonId: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus) ? exitReason?._id || null : null,
+            resignDate: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus) ? merged.resignDate || null : null,
+            resignReason: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus)
+                ? (payload.resignReason ?? existing.resignReason ?? "")
+                : "",
         }
+        delete updatePayload.employeeCode
 
         const updated = await Employee.findByIdAndUpdate(existing._id, { $set: updatePayload }, { new: true, runValidators: true, context: "query" }).lean()
 

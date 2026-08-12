@@ -171,11 +171,15 @@ const employmentSeverity = (status) =>
             <dd>{{ value(employee.joinDate) }}</dd>
           </div>
           <div>
-            <dt>Resign Date</dt>
+            <dt>Exit Date</dt>
             <dd>{{ value(employee.resignDate) }}</dd>
           </div>
           <div>
-            <dt>Resign Reason</dt>
+            <dt>Exit Reason</dt>
+            <dd>{{ org(employee.exitReason) }}</dd>
+          </div>
+          <div>
+            <dt>Exit Note</dt>
             <dd>{{ value(employee.resignReason) }}</dd>
           </div>
           <div>
@@ -185,6 +189,15 @@ const employmentSeverity = (status) =>
           <div>
             <dt>Record Status</dt>
             <dd>{{ value(employee.recordStatus) }}</dd>
+          </div>
+          <div>
+            <dt>Excome Readiness</dt>
+            <dd>
+              <Tag
+                :value="employee.reportReadiness === 'READY' ? 'READY' : 'MISSING DATA'"
+                :severity="employee.reportReadiness === 'READY' ? 'success' : 'warn'"
+              />
+            </dd>
           </div>
         </dl>
       </section>

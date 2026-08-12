@@ -44,6 +44,7 @@ import {
 import {
   EMPLOYMENT_STATUS_OPTIONS,
   RECORD_STATUS_OPTIONS,
+  REPORT_READINESS_OPTIONS,
   GENDER_OPTIONS,
   MARITAL_STATUS_OPTIONS,
 } from "../config/employee.filters.js";
@@ -164,7 +165,10 @@ const formPositionOptions = computed(() =>
       };
     }
 
-    const typeName = assignment.employeeType?.name || assignment.employeeType?.code || "Employee Type";
+    const typeName =
+      assignment.employeeType?.name ||
+      assignment.employeeType?.code ||
+      "Employee Type";
     const childName = assignment.child?.name || assignment.child?.code || "";
 
     return {
@@ -216,32 +220,52 @@ const filterEmployeeTypes = computed(() => [
   ...map(lookups.employeeTypes),
 ]);
 const filterEmployeeTypeChildren = computed(() => {
-  const selected = rows(lookups.employeeTypes).find((item) => item.id === list.filters.employeeTypeId || item._id === list.filters.employeeTypeId);
+  const selected = rows(lookups.employeeTypes).find(
+    (item) =>
+      item.id === list.filters.employeeTypeId ||
+      item._id === list.filters.employeeTypeId,
+  );
   return [
     { label: "All child groups", value: "" },
-    ...rows(selected?.children).map((item) => ({ label: label(item), value: item.id || item._id })),
+    ...rows(selected?.children).map((item) => ({
+      label: label(item),
+      value: item.id || item._id,
+    })),
   ];
 });
-const filterPositions = computed(() => [{ label: "All positions", value: "" }, ...map(lookups.positions)]);
-const filterLines = computed(() => [{ label: "All lines", value: "" }, ...map(lookups.lines)]);
-const filterShifts = computed(() => [{ label: "All shifts", value: "" }, ...map(lookups.shifts)]);
-const activeFilterCount = computed(() => [
-  list.filters.search,
-  list.filters.employeeTypeId,
-  list.filters.employeeTypeChildId,
-  list.filters.departmentId,
-  list.filters.positionId,
-  list.filters.lineId,
-  list.filters.shiftId,
-  list.filters.gender !== "ALL",
-  list.filters.maritalStatus !== "ALL",
-  list.filters.employmentStatus !== "ALL",
-  list.filters.recordStatus !== "ACTIVE",
-  list.filters.joinDateFrom,
-  list.filters.joinDateTo,
-  list.filters.resignDateFrom,
-  list.filters.resignDateTo,
-].filter(Boolean).length);
+const filterPositions = computed(() => [
+  { label: "All positions", value: "" },
+  ...map(lookups.positions),
+]);
+const filterLines = computed(() => [
+  { label: "All lines", value: "" },
+  ...map(lookups.lines),
+]);
+const filterShifts = computed(() => [
+  { label: "All shifts", value: "" },
+  ...map(lookups.shifts),
+]);
+const activeFilterCount = computed(
+  () =>
+    [
+      list.filters.search,
+      list.filters.employeeTypeId,
+      list.filters.employeeTypeChildId,
+      list.filters.departmentId,
+      list.filters.positionId,
+      list.filters.lineId,
+      list.filters.shiftId,
+      list.filters.gender !== "ALL",
+      list.filters.maritalStatus !== "ALL",
+      list.filters.employmentStatus !== "ALL",
+      list.filters.recordStatus !== "ACTIVE",
+      list.filters.reportReadiness !== "ALL",
+      list.filters.joinDateFrom,
+      list.filters.joinDateTo,
+      list.filters.resignDateFrom,
+      list.filters.resignDateTo,
+    ].filter(Boolean).length,
+);
 
 const org = (v) => v?.displayName || v?.title || v?.name || v?.code || "—";
 const date = (v) =>
@@ -258,6 +282,32 @@ const severity = (v) =>
       : ["ARCHIVED", "TERMINATED", "ABANDONED", "PASSED_AWAY"].includes(v)
         ? "danger"
         : "warn";
+const REPORT_FIELD_LABELS = Object.freeze({
+  DATE_OF_BIRTH: "Date of Birth",
+  RECRUITMENT_CHANNEL: "Recruitment Channel",
+  JOIN_DATE: "Join Date",
+  COMPANY: "Company",
+  BRANCH: "Branch",
+  DEPARTMENT: "Department",
+  POSITION: "Position",
+  LINE: "Line",
+  SHIFT: "Shift",
+  EMPLOYEE_TYPE: "Employee Type",
+  EXIT_DATE: "Exit Date",
+  EXIT_REASON: "Exit Reason",
+});
+
+function reportReadinessTitle(row) {
+  if (row.reportReadiness === "READY")
+    return "All required Excome employee data is complete.";
+  const missing = (row.missingReportFields || []).map(
+    (key) => REPORT_FIELD_LABELS[key] || key,
+  );
+  return missing.length
+    ? `Missing: ${missing.join(", ")}`
+    : "Required Excome data is incomplete.";
+}
+
 function rowActions(row) {
   return [
     {
@@ -316,15 +366,21 @@ async function loadBranchChildren() {
     "exitReasons",
   );
   if (!companyId || !branchId) return;
-  const [departments, lines, shifts, recruitmentChannels, exitReasons, employeeTypes] =
-    await Promise.all([
-      fetchEmployeeDepartments({ companyId, branchId }),
-      fetchEmployeeLines({ companyId, branchId }),
-      fetchEmployeeShifts({ companyId, branchId }),
-      fetchEmployeeRecruitmentChannels({ companyId, branchId }),
-      fetchEmployeeExitReasons({ companyId, branchId }),
-      fetchEmployeeTypes(companyId),
-    ]);
+  const [
+    departments,
+    lines,
+    shifts,
+    recruitmentChannels,
+    exitReasons,
+    employeeTypes,
+  ] = await Promise.all([
+    fetchEmployeeDepartments({ companyId, branchId }),
+    fetchEmployeeLines({ companyId, branchId }),
+    fetchEmployeeShifts({ companyId, branchId }),
+    fetchEmployeeRecruitmentChannels({ companyId, branchId }),
+    fetchEmployeeExitReasons({ companyId, branchId }),
+    fetchEmployeeTypes(companyId),
+  ]);
   lookups.departments = departments;
   lookups.lines = lines;
   lookups.shifts = shifts;
@@ -395,7 +451,11 @@ async function onFilterCompanyChange() {
 async function onFilterDepartmentChange() {
   list.filters.positionId = "";
   lookups.positions = list.filters.departmentId
-    ? await fetchEmployeePositions({ companyId: workspace.companyId, branchId: workspace.branchId, departmentId: list.filters.departmentId })
+    ? await fetchEmployeePositions({
+        companyId: workspace.companyId,
+        branchId: workspace.branchId,
+        departmentId: list.filters.departmentId,
+      })
     : [];
 }
 function onFilterEmployeeTypeChange() {
@@ -492,15 +552,26 @@ async function initialize() {
       list.filters.companyId = workspace.companyId;
       list.filters.branchId = workspace.branchId;
       const [departments, lines, shifts, employeeTypes] = await Promise.all([
-        fetchEmployeeDepartments({ companyId: workspace.companyId, branchId: workspace.branchId }),
-        fetchEmployeeLines({ companyId: workspace.companyId, branchId: workspace.branchId }),
-        fetchEmployeeShifts({ companyId: workspace.companyId, branchId: workspace.branchId }),
+        fetchEmployeeDepartments({
+          companyId: workspace.companyId,
+          branchId: workspace.branchId,
+        }),
+        fetchEmployeeLines({
+          companyId: workspace.companyId,
+          branchId: workspace.branchId,
+        }),
+        fetchEmployeeShifts({
+          companyId: workspace.companyId,
+          branchId: workspace.branchId,
+        }),
         fetchEmployeeTypes(workspace.companyId),
       ]);
       lookups.departments = departments;
       lookups.lines = lines;
       lookups.shifts = shifts;
-      lookups.employeeTypes = rows(employeeTypes).filter((item) => !item.branchId || item.branchId === workspace.branchId);
+      lookups.employeeTypes = rows(employeeTypes).filter(
+        (item) => !item.branchId || item.branchId === workspace.branchId,
+      );
     }
     await list.load();
   } catch (e) {
@@ -607,14 +678,71 @@ onMounted(initialize);
                   @keyup.enter="
                     list.applyFilters
                   " /></span></EnterpriseFilterField
-            ><EnterpriseFilterField label="Employee Type"><Select v-model="list.filters.employeeTypeId" :options="filterEmployeeTypes" option-label="label" option-value="value" filter @change="onFilterEmployeeTypeChange" /></EnterpriseFilterField
-            ><EnterpriseFilterField v-if="filterEmployeeTypeChildren.length > 1" label="Child Group"><Select v-model="list.filters.employeeTypeChildId" :options="filterEmployeeTypeChildren" option-label="label" option-value="value" filter /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Department"><Select v-model="list.filters.departmentId" :options="filterDepartments" option-label="label" option-value="value" filter @change="onFilterDepartmentChange" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Position"><Select v-model="list.filters.positionId" :options="filterPositions" option-label="label" option-value="value" filter :disabled="!list.filters.departmentId" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Line"><Select v-model="list.filters.lineId" :options="filterLines" option-label="label" option-value="value" filter /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Shift"><Select v-model="list.filters.shiftId" :options="filterShifts" option-label="label" option-value="value" filter /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Gender"><Select v-model="list.filters.gender" :options="GENDER_OPTIONS" option-label="label" option-value="value" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Marital Status"><Select v-model="list.filters.maritalStatus" :options="MARITAL_STATUS_OPTIONS" option-label="label" option-value="value" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Employee Type"
+              ><Select
+                v-model="list.filters.employeeTypeId"
+                :options="filterEmployeeTypes"
+                option-label="label"
+                option-value="value"
+                filter
+                @change="onFilterEmployeeTypeChange" /></EnterpriseFilterField
+            ><EnterpriseFilterField
+              v-if="filterEmployeeTypeChildren.length > 1"
+              label="Child Group"
+              ><Select
+                v-model="list.filters.employeeTypeChildId"
+                :options="filterEmployeeTypeChildren"
+                option-label="label"
+                option-value="value"
+                filter /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Department"
+              ><Select
+                v-model="list.filters.departmentId"
+                :options="filterDepartments"
+                option-label="label"
+                option-value="value"
+                filter
+                @change="onFilterDepartmentChange" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Position"
+              ><Select
+                v-model="list.filters.positionId"
+                :options="filterPositions"
+                option-label="label"
+                option-value="value"
+                filter
+                :disabled="!list.filters.departmentId" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Line"
+              ><Select
+                v-model="list.filters.lineId"
+                :options="filterLines"
+                option-label="label"
+                option-value="value"
+                filter /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Shift"
+              ><Select
+                v-model="list.filters.shiftId"
+                :options="filterShifts"
+                option-label="label"
+                option-value="value"
+                filter /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Gender"
+              ><Select
+                v-model="list.filters.gender"
+                :options="GENDER_OPTIONS"
+                option-label="label"
+                option-value="value" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Marital Status"
+              ><Select
+                v-model="list.filters.maritalStatus"
+                :options="MARITAL_STATUS_OPTIONS"
+                option-label="label"
+                option-value="value" /></EnterpriseFilterField
+            ><EnterpriseFilterField label="Excome Readiness"
+              ><Select
+                v-model="list.filters.reportReadiness"
+                :options="REPORT_READINESS_OPTIONS"
+                option-label="label"
+                option-value="value" /></EnterpriseFilterField
             ><EnterpriseFilterField label="Employment"
               ><Select
                 v-model="list.filters.employmentStatus"
@@ -627,10 +755,38 @@ onMounted(initialize);
                 :options="RECORD_STATUS_OPTIONS"
                 option-label="label"
                 option-value="value" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Join From"><EnterpriseCalendarDatePicker v-model="list.filters.joinDateFrom" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false" /></EnterpriseFilterField>
-            <EnterpriseFilterField label="Join To"><EnterpriseCalendarDatePicker v-model="list.filters.joinDateTo" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false" /></EnterpriseFilterField>
-            <EnterpriseFilterField label="Resign From"><EnterpriseCalendarDatePicker v-model="list.filters.resignDateFrom" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false" /></EnterpriseFilterField>
-            <EnterpriseFilterField label="Resign To"><EnterpriseCalendarDatePicker v-model="list.filters.resignDateTo" :company-id="workspace.companyId" :branch-id="workspace.branchId" compact :show-status="false" /></EnterpriseFilterField>
+            ><EnterpriseFilterField label="Join From"
+              ><EnterpriseCalendarDatePicker
+                v-model="list.filters.joinDateFrom"
+                :company-id="workspace.companyId"
+                :branch-id="workspace.branchId"
+                compact
+                :show-status="false"
+            /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Join To"
+              ><EnterpriseCalendarDatePicker
+                v-model="list.filters.joinDateTo"
+                :company-id="workspace.companyId"
+                :branch-id="workspace.branchId"
+                compact
+                :show-status="false"
+            /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Exit From"
+              ><EnterpriseCalendarDatePicker
+                v-model="list.filters.resignDateFrom"
+                :company-id="workspace.companyId"
+                :branch-id="workspace.branchId"
+                compact
+                :show-status="false"
+            /></EnterpriseFilterField>
+            <EnterpriseFilterField label="Exit To"
+              ><EnterpriseCalendarDatePicker
+                v-model="list.filters.resignDateTo"
+                :company-id="workspace.companyId"
+                :branch-id="workspace.branchId"
+                compact
+                :show-status="false"
+            /></EnterpriseFilterField>
             <template #actions
               ><Button
                 label="Clear"
@@ -689,6 +845,8 @@ onMounted(initialize);
         'line',
         'shift',
         'employeeType',
+        'recruitmentChannel',
+        'exitReason',
       ]"
       #[`cell-${field}`]="{ row }"
       :key="field"
@@ -699,6 +857,11 @@ onMounted(initialize);
       ><Tag
         :value="row.employmentStatus"
         :severity="severity(row.employmentStatus)" /></template
+    ><template #cell-reportReadiness="{ row }"
+      ><Tag
+        :value="row.reportReadiness === 'READY' ? 'READY' : 'MISSING DATA'"
+        :severity="row.reportReadiness === 'READY' ? 'success' : 'warn'"
+        :title="reportReadinessTitle(row)" /></template
     ><template #cell-recordStatus="{ row }"
       ><Tag
         :value="row.recordStatus"
@@ -707,6 +870,7 @@ onMounted(initialize);
       v-for="field in [
         'dateOfBirth',
         'joinDate',
+        'resignDate',
         'idCardExpireDate',
         'passportExpireDate',
         'visaExpireDate',

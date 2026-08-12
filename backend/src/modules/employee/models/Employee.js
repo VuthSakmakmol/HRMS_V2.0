@@ -81,10 +81,10 @@ const employeeSchema = new Schema(
             enum: ["MALE", "FEMALE", "OTHER", "UNKNOWN"],
             default: "UNKNOWN",
         },
-        dateOfBirth: { type: Date, default: null },
+        dateOfBirth: { type: Date, required: true },
 
         email: { type: String, trim: true, lowercase: true, maxlength: 180, default: "" },
-        phoneNumber: { type: String, trim: true, maxlength: 40, match: /^\d*$/, default: "" },
+        phoneNumber: { type: String, required: true, trim: true, maxlength: 40, match: /^\d+$/ },
         agentPhoneNumber: { type: String, trim: true, maxlength: 40, match: /^\d*$/, default: "" },
         agentPerson: { type: String, trim: true, maxlength: 160, set: normalizeText, default: "" },
         note: { type: String, trim: true, maxlength: 1000, set: normalizeText, default: "" },
@@ -133,7 +133,7 @@ const employeeSchema = new Schema(
         recruitmentChannelId: {
             type: Schema.Types.ObjectId,
             ref: "RecruitmentChannel",
-            default: null,
+            required: true,
         },
         introducerEmployeeId: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
         employeeTypeId: {

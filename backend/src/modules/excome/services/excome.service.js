@@ -412,7 +412,7 @@ async function loadEmployees(query) {
 
     const rows = await Employee.find({
         ...buildDimensionMatch(query),
-        recordStatus: { $ne: "ARCHIVED" },
+        recordStatus: "ACTIVE",
     })
         .select([
             "dateOfBirth",
@@ -2405,7 +2405,7 @@ function buildWorkforceRatioSummary({ employees = [], setups = [], selectedDate 
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ]
-    const currentPeriodLabel = `${monthNames[selectedMonth]} '${String(selectedYear).slice(-2)}`
+    const currentPeriodLabel = monthNames[selectedMonth]
 
     // Normally there is one setup because Workforce Ratio Setup is unique by
     // Company + Branch. If Excome is ever opened at a multi-branch scope, only

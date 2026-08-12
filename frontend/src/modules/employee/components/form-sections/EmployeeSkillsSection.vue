@@ -26,7 +26,6 @@ const skills = Object.freeze([
                 <i class="pi pi-cog" />
                 <div>
                     <h4>Machine Skills</h4>
-                    <p>Enter the employee’s machine skill counts.</p>
                 </div>
             </div>
 
@@ -53,7 +52,6 @@ const skills = Object.freeze([
                 <i class="pi pi-shield" />
                 <div>
                     <h4>Access & Approval</h4>
-                    <p>Configure approval routing and optional system access.</p>
                 </div>
             </div>
 
@@ -107,12 +105,10 @@ const skills = Object.freeze([
                 <i class="pi pi-file-edit" />
                 <div>
                     <h4>Additional Note</h4>
-                    <p>Keep optional information that does not belong to another section.</p>
                 </div>
             </div>
 
             <label class="enterprise-form-field">
-                <span>Note</span>
                 <Textarea
                     v-model="form.note"
                     rows="4"
@@ -180,7 +176,13 @@ const skills = Object.freeze([
 }
 
 .employee-additional__skill-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 1180px) {
+    .employee-additional__skill-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
 }
 
 @media (max-width: 760px) {

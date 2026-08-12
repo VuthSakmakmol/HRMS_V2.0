@@ -1,34 +1,40 @@
 export const EMPLOYMENT_STATUS_OPTIONS = Object.freeze([
-    { label: "All employment statuses", value: "ALL" },
-    { label: "Working", value: "WORKING" },
-    { label: "Maternity Leave", value: "MATERNITY_LEAVE" },
-    { label: "Resigned", value: "RESIGNED" },
-    { label: "Terminated", value: "TERMINATED" },
-    { label: "Abandoned", value: "ABANDONED" },
-    { label: "Passed Away", value: "PASSED_AWAY" },
-    { label: "Retired", value: "RETIRED" },
-])
+  { label: "All employment statuses", value: "ALL" },
+  { label: "Working", value: "WORKING" },
+  { label: "Maternity Leave", value: "MATERNITY_LEAVE" },
+  { label: "Resigned", value: "RESIGNED" },
+  { label: "Terminated", value: "TERMINATED" },
+  { label: "Abandoned", value: "ABANDONED" },
+  { label: "Passed Away", value: "PASSED_AWAY" },
+  { label: "Retired", value: "RETIRED" },
+]);
 
 export const RECORD_STATUS_OPTIONS = Object.freeze([
-    { label: "Active records", value: "ACTIVE" },
-    { label: "Inactive records", value: "INACTIVE" },
-    { label: "Archived records", value: "ARCHIVED" },
-    { label: "All records", value: "ALL" },
-])
+  { label: "Active records", value: "ACTIVE" },
+  { label: "Inactive records", value: "INACTIVE" },
+  { label: "Archived records", value: "ARCHIVED" },
+  { label: "All records", value: "ALL" },
+]);
+
+export const REPORT_READINESS_OPTIONS = Object.freeze([
+  { label: "All reporting readiness", value: "ALL" },
+  { label: "Excome Ready", value: "READY" },
+  { label: "Missing Excome Data", value: "MISSING" },
+]);
 
 export const GENDER_OPTIONS = Object.freeze([
-    { label: "All genders", value: "ALL" },
-    { label: "Male", value: "MALE" },
-    { label: "Female", value: "FEMALE" },
-    { label: "Other", value: "OTHER" },
-    { label: "Unknown", value: "UNKNOWN" },
-])
+  { label: "All genders", value: "ALL" },
+  { label: "Male", value: "MALE" },
+  { label: "Female", value: "FEMALE" },
+  { label: "Other", value: "OTHER" },
+  { label: "Unknown", value: "UNKNOWN" },
+]);
 
 export const MARITAL_STATUS_OPTIONS = Object.freeze([
-    { label: "All marital statuses", value: "ALL" },
-    { label: "Single", value: "SINGLE" },
-    { label: "Married", value: "MARRIED" },
-    { label: "Divorced", value: "DIVORCED" },
-    { label: "Widowed", value: "WIDOWED" },
-    { label: "Unknown", value: "UNKNOWN" },
-])
+  { label: "All marital statuses", value: "ALL" },
+  { label: "Single", value: "SINGLE" },
+  { label: "Married", value: "MARRIED" },
+  { label: "Divorced", value: "DIVORCED" },
+  { label: "Widowed", value: "WIDOWED" },
+  { label: "Unknown", value: "UNKNOWN" },
+]);

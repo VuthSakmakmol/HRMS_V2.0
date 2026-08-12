@@ -92,7 +92,6 @@ export default {
         excome: "Excome",
         recruitmentChannels: "Recruitment Channels",
         hrDashboardTargets: "Excome Targets",
-        workforceRatioSetup: "Workforce Ratio Setup",
         exitReasons: "Exit Reasons"
     },
     attendance: {
@@ -259,8 +258,7 @@ export default {
             allPositions: "All positions",
             allLines: "All lines",
             allShifts: "All shifts",
-            allEmployeeTypes: "All employee types",
-            allExitReasons: "All exit reasons"
+            allEmployeeTypes: "All employee types"
         },
         sections: {
             generalData: "General Data",
@@ -290,18 +288,7 @@ export default {
             total: "Total",
             selected: "Selected",
             actual: "Actual",
-            budget: "Budget",
-            headcount: "Headcount",
-            direct: "Direct",
-            indirect: "Indirect",
-            workforceRatioSetupRequired: "Setup required",
-            currentRatio: "Current",
-            budget: "Budget",
-            category: "Employee Type",
-            positions: "Positions",
-            selectedMonth: "Selected",
-            grandTotal: "Grand Total",
-            unassignedEmployeeTypeWarning: "Employees with no Employee Type are excluded from this category table; Excome never guesses from Position or Department."
+            budget: "Budget"
         },
         manpower: {
             item: "Item",
@@ -395,11 +382,6 @@ export default {
             day: "Day",
             selectedScope: "Selected",
             absentData: "Absent Data",
-            absentSeparateByType: "{employeeType} ABSENT – Separate by type",
-            absentSeparateByDepartment: "{employeeType} ABSENT – Separate by department",
-            highToLow: "High → Low",
-            lowToHigh: "Low → High",
-            ytd: "YTD",
             absentRate: "Absent rate (%)",
             absentRateWithoutAnnualMaternity: "Absent rate (%)-ANL&MA",
             topAbsentTitle: "Top absent by department - {label}",
@@ -1221,14 +1203,7 @@ export default {
             validationErrors: "Validation Errors",
             rowNumber: "Row",
             field: "Field",
-            issue: "Issue",
-            sourceOfTruthHelp: "Employee Type is the source of truth for Excome. Assign positions here; employees automatically inherit this Employee Type from their Position.",
-            nameExcomeHelp: "This Employee Type name is shown directly as the Excome category. No Direct/Indirect/RD&MKT classification is required.",
-            positionDisplayName: "Positions Display Name",
-            positionDisplayNamePlaceholder: "Example: Sewer + Sewer-Jumper",
-            positionDisplayNameHelp: "Type a short business-friendly label for Excome. This text is displayed instead of listing every mapped Position.",
-            positionsSourceHelp: "Any employee holding one of these positions is synchronized automatically into this Employee Type.",
-            childGroupsHelp: "Child groups are optional organization inside the Employee Type. Excome category always uses the parent Employee Type name."
+            issue: "Issue"
         },
         location: {
             eyebrow: "Organization Setup",
@@ -1307,7 +1282,11 @@ export default {
                 archived: "This employee is archived and cannot be updated.",
                 employeeCodeExists: "This employee ID already exists.",
                 positionNotAllowedInLine: "Selected position is not allowed in selected line.",
-                resignDateRequired: "Resign date is required for this employment status.",
+                resignDateRequired: "Exit date is required for this employment status.",
+                dateOfBirthRequired: "Date of Birth is required for Excome reporting.",
+                recruitmentChannelRequired: "Recruitment Channel is required for Excome reporting.",
+                exitReasonRequired: "Exit Reason is required for this employment status.",
+                exitDateBeforeJoinDate: "Exit Date cannot be earlier than Join Date.",
                 recruitmentChannelInvalidId: "Invalid recruitment channel ID.",
                 recruitmentChannelNotFound: "Recruitment channel was not found or is archived.",
                 recruitmentChannelCompanyMismatch: "Recruitment channel does not belong to the selected company.",
@@ -1330,6 +1309,15 @@ export default {
                 headerRequired: "This required column is missing from the header.",
                 dateInvalid: "Enter a valid Excel date or use DD/MM/YYYY.",
                 minimumAge: "The employee must be at least 18 years old.",
+                dateOfBirthRequired: "Date of Birth is required.",
+                recruitmentChannelRequired: "Recruitment Channel code is required.",
+                employmentStatusRequired: "Employment Status is required.",
+                employmentStatusInvalid: "Employment Status is invalid.",
+                exitReasonRequired: "Exit Reason code is required for an exit employment status.",
+                exitDateBeforeJoinDate: "Exit Date cannot be earlier than Join Date.",
+                recruitmentChannelNotFound: "Recruitment Channel code was not found in the selected company/branch.",
+                exitReasonNotFound: "Exit Reason code was not found in the selected company/branch.",
+                positionEmployeeTypeNotConfigured: "This position is not configured in Employee Type.",
                 emailInvalid: "Enter a valid email address.",
                 phoneInvalid: "Use numbers only; do not include spaces, +, or hyphens.",
                 resignDateRequired: "Resign date is required for an exit employment status.",
@@ -1585,41 +1573,6 @@ export default {
         updated: "Manpower plan updated",
         archivedMessage: "Manpower plan archived"
     },
-    workforceRatio: {
-        module: "Reports",
-        title: "Workforce Ratio Setup",
-        description: "Configure which Employee Types belong to Direct and Indirect for the independent Excome workforce ratio KPI.",
-        company: "Company",
-        branch: "Branch",
-        direct: "Direct",
-        indirect: "Indirect",
-        directEmployeeTypes: "Direct Employee Types",
-        indirectEmployeeTypes: "Indirect Employee Types",
-        selectDirect: "Select Direct Employee Types",
-        selectIndirect: "Select Indirect Employee Types",
-        directHint: "Employee Types counted on the Direct side of the ratio.",
-        indirectHint: "Employee Types counted on the Indirect side of the ratio.",
-        budgetTitle: "Ratio Budget Plan",
-        budgetHint: "Set the annual Indirect / Direct ratio budget shown in Excome beside the calculated result.",
-        budgetYear: "Budget Year",
-        budgetRatio: "Budget I/D Ratio",
-        sourceOfTruthNote: "This setup does not change Employee Type. It only tells Excome which existing Employee Types belong to the Direct and Indirect ratio groups.",
-        excomeBehavior: "Excome uses this setup independently from Employee Type, Child, Department, Position, Line and Shift filters. Company and Branch still apply.",
-        createTitle: "Create Workforce Ratio Setup",
-        editTitle: "Edit Workforce Ratio Setup",
-        archiveTitle: "Archive Workforce Ratio Setup",
-        archiveMessage: "Archive this ratio setup? Excome will show the ratio as not configured until a setup is created again.",
-        workspaceRequired: "Select a Company and Branch",
-        workspaceRequiredHint: "Choose the workspace scope in the top bar before configuring the workforce ratio.",
-        notConfigured: "Workforce Ratio is not configured",
-        notConfiguredHint: "Create one setup for this Company and Branch, then select the Employee Types that belong to Direct and Indirect.",
-        created: "Workforce ratio setup created successfully.",
-        updated: "Workforce ratio setup updated successfully.",
-        archived: "Workforce ratio setup archived successfully.",
-        loadFailed: "Unable to load Workforce Ratio Setup",
-        saveFailed: "Unable to save Workforce Ratio Setup",
-        archiveFailed: "Unable to archive Workforce Ratio Setup"
-    },
     errors: {
         internal: "An unexpected system error occurred.",
         routeNotFound: "The requested route was not found.",
@@ -1633,20 +1586,6 @@ export default {
         permissionDenied: "You do not have permission to perform this action.",
         forbidden: "You do not have access to the selected company or branch.",
         report: {
-            workforceRatio: {
-                invalidId: "Invalid workforce ratio setup ID.",
-                companyNotFound: "The selected company was not found or is archived.",
-                branchNotFound: "The selected branch was not found or is archived.",
-                employeeTypeRequired: "Select at least one Employee Type for both Direct and Indirect.",
-                employeeTypeOverlap: "The same Employee Type cannot be assigned to both Direct and Indirect.",
-                employeeTypeInvalidScope: "One or more selected Employee Types do not belong to the selected Company and Branch or are inactive.",
-                budgetYearInvalid: "Budget Year must be between 2000 and 2100.",
-                budgetRatioInvalid: "Budget I/D Ratio must be greater than 0 and no more than 100.",
-                alreadyExists: "A Workforce Ratio Setup already exists for this Company and Branch.",
-                notFound: "Workforce Ratio Setup was not found.",
-                archived: "Archived Workforce Ratio Setup cannot be updated.",
-                updateRequired: "Enter at least one value to update the Workforce Ratio Setup."
-            },
             hrDashboardTarget: {
                 invalidId: "Invalid dashboard target ID.",
                 notFound: "Dashboard target was not found.",
@@ -1902,7 +1841,6 @@ export default {
                 duplicate: "This employee type already exists.",
                 positionNotFound: "One or more selected positions were not found in the selected branch.",
                 positionAlreadyMapped: "One or more selected positions are already mapped to another employee type.",
-                positionInUseCannotUnmap: "This position still has employees assigned. Keep it mapped to an active Employee Type before removing or archiving this assignment.",
                 reconciliationConfirmationRequired: "Confirm the employee assignment changes before saving."
             },
             employeeTypeImport: {
@@ -1961,15 +1899,10 @@ export default {
         },
         employee: {
             profile: {
-                positionEmployeeTypeNotConfigured: "This position has not been assigned to an active Employee Type. Configure the position in Employee Type first.",
-                positionEmployeeTypeAmbiguous: "This position is assigned to more than one Employee Type. Fix the Employee Type mapping before assigning employees.",
                 recruitmentChannelInvalidId: "Invalid recruitment channel ID.",
                 recruitmentChannelNotFound: "Recruitment channel was not found or is archived.",
                 recruitmentChannelCompanyMismatch: "Recruitment channel does not belong to the selected company.",
                 recruitmentChannelBranchMismatch: "Recruitment channel does not belong to the selected branch."
-            },
-            import: {
-                positionEmployeeTypeNotConfigured: "The position is not assigned to an active Employee Type. Configure Employee Type first, then import again."
             }
         },
         attendance: {

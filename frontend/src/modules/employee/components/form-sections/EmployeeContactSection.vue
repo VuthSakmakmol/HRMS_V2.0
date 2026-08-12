@@ -1,5 +1,5 @@
 <script setup>
-import { computed, watch } from "vue"
+import { watch } from "vue"
 
 import InputText from "primevue/inputtext"
 import Select from "primevue/select"
@@ -8,16 +8,20 @@ import { MARITAL_STATUS_OPTIONS } from "../../config/employee.filters.js"
 
 const props = defineProps({
     form: { type: Object, required: true },
+    errors: { type: Object, default: () => ({}) },
     disabled: { type: Boolean, default: false },
 })
 
-const emailInvalid = computed(() => {
-    const value = String(props.form.email || "").trim()
-    return Boolean(value) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
-})
+const emit = defineEmits(["clear-error"])
+
+function fieldError(field) {
+    const value = props.errors?.[field]
+    return Array.isArray(value) ? value[0] : value || ""
+}
 
 function digitsOnly(field, value) {
     props.form[field] = String(value || "").replace(/\D/g, "")
+    emit("clear-error", field)
 }
 
 function textOnly(event) {
@@ -46,22 +50,25 @@ watch(
                 v-model.trim="form.email"
                 type="email"
                 autocomplete="email"
-                :invalid="emailInvalid"
+                :invalid="Boolean(fieldError('email'))"
                 :disabled="disabled"
+                @input="emit('clear-error', 'email')"
             />
-            <small v-if="emailInvalid">Enter a valid email address.</small>
+            <small v-if="fieldError('email')">{{ fieldError('email') }}</small>
         </label>
 
         <label class="enterprise-form-field">
-            <span>Phone Number</span>
+            <span>Phone Number <strong class="employee-required-star">*</strong></span>
             <InputText
                 :model-value="form.phoneNumber"
                 inputmode="numeric"
                 autocomplete="tel"
                 maxlength="40"
+                :invalid="Boolean(fieldError('phoneNumber'))"
                 :disabled="disabled"
                 @update:model-value="digitsOnly('phoneNumber', $event)"
             />
+            <small v-if="fieldError('phoneNumber')">{{ fieldError('phoneNumber') }}</small>
         </label>
 
         <label class="enterprise-form-field">

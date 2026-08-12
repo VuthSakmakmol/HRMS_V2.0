@@ -5,6 +5,12 @@ import {
   updateEmployee,
 } from "../api/employee.api.js";
 import { EMPLOYEE_FORM_SECTIONS } from "../config/employee.form-sections.js";
+import {
+  EXIT_EMPLOYMENT_STATUSES,
+  firstEmployeeErrorSection,
+  validateEmployeeForm,
+  validateEmployeeSection,
+} from "../config/employee.form-validation.js";
 
 const emptyAddress = () => ({
   countryId: "",
@@ -125,8 +131,16 @@ export function useEmployeeForm() {
     if (errors.value[field]) delete errors.value[field];
   }
   function next() {
+    const sectionErrors = validateEmployeeSection(form, activeSection.value, {
+      editing: editing.value,
+    });
+    if (Object.keys(sectionErrors).length) {
+      errors.value = { ...errors.value, ...sectionErrors };
+      return false;
+    }
     if (activeSection.value < EMPLOYEE_FORM_SECTIONS.length - 1)
       activeSection.value += 1;
+    return true;
   }
   function previous() {
     if (activeSection.value > 0) activeSection.value -= 1;
@@ -158,11 +172,36 @@ export function useEmployeeForm() {
         payload.spouseName = "";
         payload.spouseContactNumber = "";
       }
-      if (!payload.resignDate) {
+      if (!EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus)) {
+        payload.resignDate = null;
         payload.exitReasonId = null;
         payload.resignReason = "";
       }
+
+      const formErrors = validateEmployeeForm(payload, {
+        editing: editing.value,
+      });
+      if (Object.keys(formErrors).length) {
+        errors.value = formErrors;
+        const firstInvalidSection = EMPLOYEE_FORM_SECTIONS.findIndex(
+          (_section, index) =>
+            Object.keys(
+              validateEmployeeSection(payload, index, {
+                editing: editing.value,
+              }),
+            ).length > 0,
+        );
+        if (firstInvalidSection >= 0) activeSection.value = firstInvalidSection;
+
+        const error = new Error(
+          "Complete the required or invalid employee fields before saving.",
+        );
+        error.fields = formErrors;
+        throw error;
+      }
+
       if (editing.value) {
+        delete payload.employeeCode;
         delete payload.companyId;
         delete payload.branchId;
         delete payload.createAccount;
@@ -176,6 +215,8 @@ export function useEmployeeForm() {
     } catch (error) {
       errors.value =
         error?.fields ?? error?.response?.data?.error?.fields ?? {};
+      const firstInvalidSection = firstEmployeeErrorSection(errors.value);
+      if (firstInvalidSection >= 0) activeSection.value = firstInvalidSection;
       throw error;
     } finally {
       saving.value = false;
