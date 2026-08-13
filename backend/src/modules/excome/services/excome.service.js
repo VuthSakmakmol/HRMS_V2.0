@@ -202,6 +202,33 @@ function monthEnd(year, month) {
     return new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))
 }
 
+function shiftDateByYears(date, yearOffset) {
+    const source = new Date(date)
+
+    if (Number.isNaN(source.getTime())) return null
+
+    const targetYear = source.getUTCFullYear() + yearOffset
+    const targetMonth = source.getUTCMonth()
+    const targetDay = source.getUTCDate()
+    const lastDayOfTargetMonth = new Date(
+        Date.UTC(targetYear, targetMonth + 1, 0),
+    ).getUTCDate()
+
+    return new Date(Date.UTC(
+        targetYear,
+        targetMonth,
+        Math.min(targetDay, lastDayOfTargetMonth),
+        source.getUTCHours(),
+        source.getUTCMinutes(),
+        source.getUTCSeconds(),
+        source.getUTCMilliseconds(),
+    ))
+}
+
+function dateIsWithinRange(date, startDate, endDate) {
+    return date >= startDate && date <= endDate
+}
+
 function parseEmployeeTypeFilter(query = {}) {
     const result = {
         employeeTypeId: query.employeeTypeId || null,
@@ -613,6 +640,8 @@ function clonePeriods(periods) {
         year: period.year,
         month: period.month,
         label: period.label,
+        startDate: period.startDate ? new Date(period.startDate) : monthStart(period.year, period.month),
+        endDate: period.endDate ? new Date(period.endDate) : monthEnd(period.year, period.month),
         budget: 0,
         roadmap: 0,
         actual: 0,
@@ -659,7 +688,9 @@ function buildManpowerSeries({ employees, plans, periods }) {
     }
 
     for (const row of rows) {
-        const periodEnd = monthEnd(row.year, row.month)
+        // For a partial month (for example 01-Jan -> 15-Jan), Actual must
+        // be the headcount as of 15-Jan, not the last day of January.
+        const periodEnd = row.endDate || monthEnd(row.year, row.month)
 
         row.actual = employees.filter((employee) =>
             employeeWasActiveOn(employee, periodEnd),
@@ -719,6 +750,7 @@ function buildMovementSeries({ employees, periods }) {
         const row = rowByKey.get(key)
 
         if (!row) return
+        if (!dateIsWithinRange(date, row.startDate, row.endDate)) return
 
         row[field] += 1
     }
@@ -1200,7 +1232,9 @@ function buildRecruitmentTotalRow(rows = [], periods = []) {
         })
     }
 
-    totalRow.previousAveragePerMonth = round(totalRow.previousTotal / 12, 0)
+    totalRow.previousAveragePerMonth = periods.length
+        ? round(totalRow.previousTotal / periods.length, 0)
+        : 0
     totalRow.averagePerMonth = periods.length
         ? round(totalRow.currentTotal / periods.length, 0)
         : 0
@@ -1217,8 +1251,10 @@ function buildRecruitmentChannelDashboard({
     selectedLabel = "All Employee Types",
 }) {
     const firstPeriod = periods[0]
-    const currentYear = firstPeriod?.year || startDate.getUTCFullYear()
+    const currentYear = endDate.getUTCFullYear()
     const previousYear = currentYear - 1
+    const previousStartDate = shiftDateByYears(startDate, -1)
+    const previousEndDate = shiftDateByYears(endDate, -1)
     const rows = []
     const rowBySourceKey = new Map()
     const monthIndexByKey = new Map(periods.map((period, index) => [period.key, index]))
@@ -1236,14 +1272,20 @@ function buildRecruitmentChannelDashboard({
         if (!employee.joinDate) continue
 
         const joinDate = new Date(employee.joinDate)
+        if (Number.isNaN(joinDate.getTime())) continue
+
         const joinYear = joinDate.getUTCFullYear()
         const row = findRecruitmentRowForEmployee(employee, rowBySourceKey, rows, periods)
 
-        if (joinYear === previousYear) {
+        if (
+            previousStartDate &&
+            previousEndDate &&
+            dateIsWithinRange(joinDate, previousStartDate, previousEndDate)
+        ) {
             row.previousTotal += 1
         }
 
-        if (joinDate >= startDate && joinDate <= endDate) {
+        if (dateIsWithinRange(joinDate, startDate, endDate)) {
             const key = `${joinYear}-${String(joinDate.getUTCMonth() + 1).padStart(2, "0")}`
             const monthIndex = monthIndexByKey.get(key)
 
@@ -1255,7 +1297,9 @@ function buildRecruitmentChannelDashboard({
     }
 
     for (const row of rows) {
-        row.previousAveragePerMonth = round(row.previousTotal / 12, 0)
+        row.previousAveragePerMonth = periods.length
+            ? round(row.previousTotal / periods.length, 0)
+            : 0
         row.averagePerMonth = periods.length
             ? round(row.currentTotal / periods.length, 0)
             : 0
@@ -1920,75 +1964,97 @@ function summarizeTurnoverMonths(months = []) {
 
 function buildTurnoverComparison({
     employees,
+    periods,
     selectedYear,
     selectedLabel,
     targetRates,
 }) {
-    const previousYear = selectedYear - 1
-    const previousMonths = createTurnoverComparisonYear(previousYear)
-    const currentMonths = createTurnoverComparisonYear(selectedYear)
-    const monthsByYear = new Map([
-        [previousYear, previousMonths],
-        [selectedYear, currentMonths],
-    ])
+    const currentPeriods = (periods || []).map((period) => ({
+        ...createTurnoverComparisonMonth({
+            year: period.year,
+            month: period.month,
+        }),
+        key: period.key,
+        label: period.label,
+        startDate: new Date(period.startDate),
+        endDate: new Date(period.endDate),
+    }))
 
-    for (const month of [...previousMonths, ...currentMonths]) {
-        const start = monthStart(month.year, month.month)
-        const end = monthEnd(month.year, month.month)
+    const previousPeriods = currentPeriods.map((period) => {
+        const startDate = shiftDateByYears(period.startDate, -1)
+        const endDate = shiftDateByYears(period.endDate, -1)
+        const year = startDate?.getUTCFullYear() || period.year - 1
+        const month = startDate?.getUTCMonth() + 1 || period.month
 
-        month.headcountStart = employees.filter((employee) =>
-            employeeWasActiveOn(employee, start),
-        ).length
-        month.headcountEnd = employees.filter((employee) =>
-            employeeWasActiveOn(employee, end),
-        ).length
+        return {
+            ...createTurnoverComparisonMonth({ year, month }),
+            startDate,
+            endDate,
+        }
+    })
+
+    const countHeadcount = (date) =>
+        employees.filter((employee) => employeeWasActiveOn(employee, date)).length
+
+    for (const period of [...previousPeriods, ...currentPeriods]) {
+        if (!period.startDate || !period.endDate) continue
+
+        period.headcountStart = countHeadcount(period.startDate)
+        period.headcountEnd = countHeadcount(period.endDate)
     }
 
     // Turnover exits come directly from Employee Master resignDate.
-    // The employee list is already filtered by company, branch, employee type,
-    // child type, department, position, line and shift, so the turnover chart
-    // follows the exact same Excome scope without depending on EmployeeMovement
-    // history that may not exist for imported/legacy employees.
+    // Each partial month is constrained by its real selected start/end day.
     for (const employee of employees) {
         if (!employee.resignDate) continue
 
         const date = new Date(employee.resignDate)
         if (Number.isNaN(date.getTime())) continue
 
-        const year = date.getUTCFullYear()
-        const monthIndex = date.getUTCMonth()
-        const months = monthsByYear.get(year)
+        const currentPeriod = currentPeriods.find((period) =>
+            dateIsWithinRange(date, period.startDate, period.endDate),
+        )
 
-        if (!months) continue
+        if (currentPeriod) currentPeriod.exits += 1
 
-        const bucket = months[monthIndex]
-        if (!bucket) continue
+        const previousPeriod = previousPeriods.find((period) =>
+            dateIsWithinRange(date, period.startDate, period.endDate),
+        )
 
-        bucket.exits += 1
+        if (previousPeriod) previousPeriod.exits += 1
     }
 
-    calculateTurnoverMonthRates(previousMonths)
-    calculateTurnoverMonthRates(currentMonths)
+    calculateTurnoverMonthRates(previousPeriods)
+    calculateTurnoverMonthRates(currentPeriods)
 
-    const previousAverage = summarizeTurnoverMonths(previousMonths)
-    const currentAverage = summarizeTurnoverMonths(currentMonths)
+    const previousAverage = summarizeTurnoverMonths(previousPeriods)
+    const currentAverage = summarizeTurnoverMonths(currentPeriods)
+    const previousYear = selectedYear - 1
 
-    const rows = currentMonths.map((currentMonth, index) => {
-        const previousMonth = previousMonths[index]
+    const rows = currentPeriods.map((currentPeriod, index) => {
+        const previousPeriod = previousPeriods[index] ||
+            createTurnoverComparisonMonth({
+                year: currentPeriod.year - 1,
+                month: currentPeriod.month,
+            })
 
         return {
-            key: currentMonth.key,
-            month: currentMonth.month,
-            label: currentMonth.label,
-            previousYear,
-            currentYear: selectedYear,
-            previousCount: previousMonth.exits,
-            currentCount: currentMonth.exits,
-            previousAverageHeadcount: previousMonth.averageHeadcount,
-            currentAverageHeadcount: currentMonth.averageHeadcount,
-            previousRate: previousMonth.rate,
-            currentRate: currentMonth.rate,
-            targetRate: round(targetRates?.monthly?.[currentMonth.month] || DEFAULT_TURNOVER_TARGET_RATE, 2),
+            key: currentPeriod.key,
+            month: currentPeriod.month,
+            label: currentPeriod.label,
+            previousYear: previousPeriod.year,
+            currentYear: currentPeriod.year,
+            previousCount: previousPeriod.exits,
+            currentCount: currentPeriod.exits,
+            previousAverageHeadcount: previousPeriod.averageHeadcount,
+            currentAverageHeadcount: currentPeriod.averageHeadcount,
+            previousRate: previousPeriod.rate,
+            currentRate: currentPeriod.rate,
+            targetRate: round(
+                targetRates?.monthly?.[currentPeriod.month] ||
+                    DEFAULT_TURNOVER_TARGET_RATE,
+                2,
+            ),
         }
     })
 
@@ -2910,12 +2976,23 @@ export async function getExcome({ query }) {
 
     const selectedStartDate = parseStartDate(cleanQuery.startDate)
     const selectedEndDate = parseEndDate(cleanQuery.endDate)
+
+    if (
+        Number.isNaN(selectedStartDate.getTime()) ||
+        Number.isNaN(selectedEndDate.getTime()) ||
+        selectedStartDate > selectedEndDate
+    ) {
+        throw new Error("Invalid Excome date range")
+    }
+
     const selectedYear = selectedEndDate.getUTCFullYear()
 
-    // Excome always returns the complete January–December comparison year.
-    // The selected end month is used only for the red highlight and selected-period KPIs.
-    const startDate = monthStart(selectedYear, 1)
-    const endDate = monthEnd(selectedYear, 12)
+    // IMPORTANT: Excome uses the exact user-selected dates.
+    // Example: 01-Jan-2026 -> 15-Jan-2026 means only those 15 days.
+    // We still group the result by month for chart/table display, but the
+    // first and last period preserve the exact selected day boundaries.
+    const startDate = selectedStartDate
+    const endDate = selectedEndDate
     const periods = createPeriods(startDate, endDate)
     const selectedPeriodKey = `${selectedYear}-${String(selectedEndDate.getUTCMonth() + 1).padStart(2, "0")}`
 
@@ -2941,7 +3018,7 @@ export async function getExcome({ query }) {
         loadEmployees(totalGeneralQuery),
         loadPlans(totalGeneralQuery, periods),
         loadRecruitmentChannels(cleanQuery),
-        loadDashboardTargets(cleanQuery, startDate.getUTCFullYear()),
+        loadDashboardTargets(cleanQuery, selectedYear),
         loadExitReasons(cleanQuery),
         loadWorkforceRatioSetups({
             companyId: cleanQuery.companyId,
@@ -2990,6 +3067,9 @@ export async function getExcome({ query }) {
             query: cleanQuery,
             employees,
             selectedYear,
+            startDate,
+            endDate,
+            periods,
             selectedLabel: selectedEmployeeTypeLabel,
             targetRates: absenceTargetRates,
             departments: lookups.departments,
@@ -2998,6 +3078,7 @@ export async function getExcome({ query }) {
     ])
     const turnoverComparison = buildTurnoverComparison({
         employees,
+        periods,
         selectedYear,
         selectedLabel: selectedEmployeeTypeLabel,
         targetRates: turnoverTargetRates,
@@ -3033,7 +3114,7 @@ export async function getExcome({ query }) {
             totalEmployees: totalGeneralEmployees,
             selectedEmployees: employees,
             selectedPlans: plans,
-            selectedDate: endDate,
+            selectedDate: selectedEndDate,
             selectedLabel: selectedMetricLabel,
             selectedPeriod,
             lookups,
