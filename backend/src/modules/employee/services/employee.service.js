@@ -31,6 +31,11 @@ import {
 import { provisionEmployeeAccount } from "../../access/services/accountProvisioning.service.js"
 import { syncUnmatchedAttendanceForEmployee } from "../../attendance/services/attendanceUnmatchedSync.service.js"
 import {
+    endOfBusinessDay,
+    startOfBusinessDay,
+    toBusinessDateKey,
+} from "../../attendance/utils/attendanceDate.util.js"
+import {
     buildMaternityEmployeeFields,
     syncMaternityPeriodAfterEmployeeChange,
 } from "./employeeLifecycle.service.js"
@@ -873,12 +878,63 @@ function buildDisplayName(payload) {
     return [payload.englishFirstName, payload.englishLastName].filter(Boolean).join(" ") || [payload.khmerFirstName, payload.khmerLastName].filter(Boolean).join(" ") || payload.employeeCode
 }
 
+function validateAbandonedReinstatement({ existing, nextStatus, payload }) {
+    const isReinstatement = existing?.employmentStatus === "ABANDONED" && nextStatus === "WORKING"
+    if (!isReinstatement) return { isReinstatement: false, returnToWorkDate: null, returnToWorkNote: "" }
+
+    if (!payload.returnToWorkDate) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_RETURN_TO_WORK_DATE_REQUIRED",
+            messageKey: "errors.employee.profile.returnToWorkDateRequired",
+            fields: { returnToWorkDate: ["errors.employee.profile.returnToWorkDateRequired"] },
+        })
+    }
+
+    const returnKey = toBusinessDateKey(payload.returnToWorkDate)
+    const returnToWorkDate = startOfBusinessDay(returnKey)
+    const todayEnd = endOfBusinessDay(toBusinessDateKey(new Date()))
+
+    if (existing.resignDate && returnToWorkDate <= startOfBusinessDay(toBusinessDateKey(existing.resignDate))) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_RETURN_TO_WORK_DATE_INVALID",
+            messageKey: "errors.employee.profile.returnToWorkDateAfterAbandonment",
+            fields: { returnToWorkDate: ["errors.employee.profile.returnToWorkDateAfterAbandonment"] },
+        })
+    }
+
+    if (returnToWorkDate > todayEnd) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_RETURN_TO_WORK_DATE_FUTURE",
+            messageKey: "errors.employee.profile.returnToWorkDateFuture",
+            fields: { returnToWorkDate: ["errors.employee.profile.returnToWorkDateFuture"] },
+        })
+    }
+
+    const returnToWorkNote = String(payload.returnToWorkNote || "").trim()
+    if (!returnToWorkNote) {
+        throw new AppError({
+            statusCode: 422,
+            code: "EMPLOYEE_RETURN_TO_WORK_NOTE_REQUIRED",
+            messageKey: "errors.employee.profile.returnToWorkNoteRequired",
+            fields: { returnToWorkNote: ["errors.employee.profile.returnToWorkNoteRequired"] },
+        })
+    }
+
+    return { isReinstatement: true, returnToWorkDate, returnToWorkNote }
+}
+
 function buildEmployeePayload(payload, accountId) {
     const { createAccount, defaultRoleId, ...employeePayload } = payload
     const base = { ...employeePayload, updatedByAccountId: accountId }
 
     delete base.sourceOfHiring
     delete base.remark
+    // Request-only fields for ABANDONED -> WORKING reinstatement.
+    delete base.returnToWorkDate
+    delete base.returnToWorkNote
 
     // Employee Type is system-managed from Position. Never accept a manual
     // Employee Type / Child override from Employee create or update payloads.
@@ -1057,6 +1113,11 @@ export async function updateEmployee({ employeeId, payload, user }) {
         branchId: merged.branchId,
     })
     const effectiveEmploymentStatus = merged.employmentStatus || "WORKING"
+    const reinstatement = validateAbandonedReinstatement({
+        existing,
+        nextStatus: effectiveEmploymentStatus,
+        payload,
+    })
     const maternityFields = buildMaternityEmployeeFields({
         employmentStatus: effectiveEmploymentStatus,
         maternityLeaveStartDate: merged.maternityLeaveStartDate,
@@ -1080,12 +1141,26 @@ export async function updateEmployee({ employeeId, payload, user }) {
             resignReason: EXIT_EMPLOYMENT_STATUSES.has(merged.employmentStatus)
                 ? (payload.resignReason ?? existing.resignReason ?? "")
                 : "",
+            ...(reinstatement.isReinstatement
+                ? { abandonmentStreakResetDate: reinstatement.returnToWorkDate }
+                : {}),
         }
         delete updatePayload.employeeCode
 
         const updated = await Employee.findByIdAndUpdate(existing._id, { $set: updatePayload }, { new: true, runValidators: true, context: "query" }).lean()
 
-        await createAutomaticMovementForEmployeeUpdate({ before: existing, after: updated, user })
+        await createAutomaticMovementForEmployeeUpdate({
+            before: existing,
+            after: updated,
+            user,
+            ...(reinstatement.isReinstatement
+                ? {
+                    source: "EMPLOYEE_PROFILE",
+                    effectiveDate: reinstatement.returnToWorkDate,
+                    reason: `Reinstated to WORKING after abandonment. ${reinstatement.returnToWorkNote}`,
+                }
+                : {}),
+        })
         await syncMaternityPeriodAfterEmployeeChange({
             before: existing,
             after: updated,

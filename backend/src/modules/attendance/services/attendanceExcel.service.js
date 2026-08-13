@@ -9,7 +9,7 @@ import AttendancePolicy from "../models/AttendancePolicy.js"
 import AttendanceRecord from "../models/AttendanceRecord.js"
 import { invalidateAttendanceCaches } from "./attendance.service.js"
 import { calculateAttendanceResult } from "./attendanceCalculation.service.js"
-import { addBusinessDays, startOfBusinessDay, toBusinessDateKey } from "../utils/attendanceDate.util.js"
+import { startOfBusinessDay, toBusinessDateKey } from "../utils/attendanceDate.util.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const HEADERS = ["Record Date", "Employee No", "Time1", "Time2", "Vacation"]
@@ -311,16 +311,11 @@ async function runLifecycleAfterAttendanceImport({ rows, workspace, summary }) {
         return
     }
 
-    // Never decide abandonment from today's unfinished attendance. A payroll
-    // file can be imported more than once during the current workday.
-    const todayKey = toBusinessDateKey(new Date())
-    const yesterdayKey = addBusinessDays(todayKey, -1)
-    const throughDate = latestImportedKey < todayKey ? latestImportedKey : yesterdayKey
-
-    if (!throughDate) {
-        summary.lifecycle = { abandonmentChecked: false, reason: "NO_COMPLETED_ATTENDANCE_DATE" }
-        return
-    }
+    // Evaluate immediately through the newest imported attendance date.
+    // employeeLifecycle.service.js performs per-employee shift-completion
+    // protection, so a current-day morning import cannot count as a completed
+    // absence before that employee's shift has ended.
+    const throughDate = latestImportedKey
 
     const result = await evaluateAbandonmentForWorkspace({
         companyId: workspace.companyId,

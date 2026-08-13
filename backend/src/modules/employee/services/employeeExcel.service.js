@@ -942,6 +942,22 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
         }
 
         const existing = await Employee.findOne({ employeeCode: row.employeeCode }).lean()
+
+        // Reinstating an abandoned employee is a deliberate HR action because
+        // it resets the six-day abandonment streak. Do not let a bulk Excel
+        // update silently perform that lifecycle decision.
+        if (existing?.employmentStatus === "ABANDONED" && row.employmentStatus === "WORKING") {
+            summary.skipped += 1
+            summary.errors.push(
+                buildError(
+                    row.rowNumber,
+                    "employmentStatus",
+                    "An ABANDONED employee must be returned to WORKING from Employee Edit so HR can provide the Return to Work Date and reason.",
+                ),
+            )
+            continue
+        }
+
         Object.assign(payload, buildMaternityEmployeeFields({
             employmentStatus: row.employmentStatus,
             maternityLeaveStartDate: row.maternityLeaveStartDate,

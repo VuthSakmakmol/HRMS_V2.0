@@ -272,6 +272,9 @@ const employeeSchema = new Schema(
     maternityLeaveStartDate: { type: Date, default: null },
     maternityLeaveEndDate: { type: Date, default: null },
     maternityExpectedReturnDate: { type: Date, default: null },
+    // When HR reinstates an abandoned employee, absence streak counting
+    // starts again from this effective return-to-work date.
+    abandonmentStreakResetDate: { type: Date, default: null },
     exitReasonId: {
       type: Schema.Types.ObjectId,
       ref: "ExitReason",

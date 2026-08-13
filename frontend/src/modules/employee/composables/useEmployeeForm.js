@@ -66,6 +66,10 @@ export function createEmptyEmployeeForm() {
     shiftId: "",
     joinDate: "",
     employmentStatus: "WORKING",
+    _initialEmploymentStatus: "",
+    _initialExitDate: "",
+    returnToWorkDate: "",
+    returnToWorkNote: "",
     resignDate: "",
     resignReason: "",
     maternityLeaveStartDate: "",
@@ -100,6 +104,10 @@ export function useEmployeeForm() {
   function assign(source = {}) {
     const empty = createEmptyEmployeeForm();
     Object.assign(form, empty, source);
+    form._initialEmploymentStatus = source?.employmentStatus || "";
+    form._initialExitDate = source?.resignDate || "";
+    form.returnToWorkDate = "";
+    form.returnToWorkNote = "";
     for (const key of ["birthAddress", "permanentAddress"])
       form[key] = { ...empty[key], ...(source[key] || {}) };
     form.documents = { ...empty.documents, ...(source.documents || {}) };
@@ -158,6 +166,8 @@ export function useEmployeeForm() {
       // is sent. Convert the reactive form into the same plain JSON shape
       // that will be submitted to the backend.
       const payload = JSON.parse(JSON.stringify(form));
+      delete payload._initialEmploymentStatus;
+      delete payload._initialExitDate;
       delete payload.sourceOfHiring;
       delete payload.remark;
       // Employee Type / Child are derived by the backend from Position.
@@ -175,6 +185,14 @@ export function useEmployeeForm() {
         payload.spouseName = "";
         payload.spouseContactNumber = "";
       }
+      const isAbandonedReinstatement =
+        form._initialEmploymentStatus === "ABANDONED" &&
+        payload.employmentStatus === "WORKING";
+      if (!isAbandonedReinstatement) {
+        payload.returnToWorkDate = null;
+        payload.returnToWorkNote = "";
+      }
+
       if (!EXIT_EMPLOYMENT_STATUSES.has(payload.employmentStatus)) {
         payload.resignDate = null;
         payload.exitReasonId = null;

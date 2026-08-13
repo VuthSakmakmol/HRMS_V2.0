@@ -107,6 +107,41 @@ function validateEmployment(form) {
     if (blank(form.recruitmentChannelId)) errors.recruitmentChannelId = ["Recruitment Channel is required."]
     if (blank(form.employmentStatus)) errors.employmentStatus = ["Employment Status is required."]
 
+    if (form.employmentStatus === "MATERNITY_LEAVE") {
+        if (blank(form.maternityLeaveStartDate)) {
+            errors.maternityLeaveStartDate = ["Maternity Leave Start Date is required."]
+        } else {
+            const maternityStartDate = safeDate(form.maternityLeaveStartDate)
+            const joinDateForMaternity = safeDate(form.joinDate)
+            if (maternityStartDate && joinDateForMaternity && maternityStartDate < joinDateForMaternity) {
+                errors.maternityLeaveStartDate = ["Maternity Leave Start Date cannot be earlier than Join Date."]
+            }
+        }
+    }
+
+    const isAbandonedReinstatement =
+        form._initialEmploymentStatus === "ABANDONED" &&
+        form.employmentStatus === "WORKING"
+
+    if (isAbandonedReinstatement) {
+        if (blank(form.returnToWorkDate)) {
+            errors.returnToWorkDate = ["Return to Work Date is required when reinstating an abandoned employee."]
+        } else {
+            const returnDate = safeDate(form.returnToWorkDate)
+            const abandonedDate = safeDate(form._initialExitDate || form.resignDate)
+            const today = new Date()
+            today.setHours(23, 59, 59, 999)
+            if (returnDate && abandonedDate && returnDate <= abandonedDate) {
+                errors.returnToWorkDate = ["Return to Work Date must be after the abandonment Exit Date."]
+            } else if (returnDate && returnDate > today) {
+                errors.returnToWorkDate = ["Return to Work Date cannot be in the future."]
+            }
+        }
+        if (blank(form.returnToWorkNote)) {
+            errors.returnToWorkNote = ["Return reason / note is required."]
+        }
+    }
+
     if (EXIT_EMPLOYMENT_STATUSES.has(form.employmentStatus)) {
         if (blank(form.resignDate)) errors.resignDate = ["Exit Date is required for this employment status."]
         if (blank(form.exitReasonId)) errors.exitReasonId = ["Exit Reason is required for this employment status."]
@@ -171,6 +206,11 @@ const EMPLOYEE_FIELD_SECTION = Object.freeze({
     resignDate: "employment",
     exitReasonId: "employment",
     resignReason: "employment",
+    maternityLeaveStartDate: "employment",
+    maternityLeaveEndDate: "employment",
+    maternityExpectedReturnDate: "employment",
+    returnToWorkDate: "employment",
+    returnToWorkNote: "employment",
 })
 
 export function employeeFieldSectionIndex(field) {

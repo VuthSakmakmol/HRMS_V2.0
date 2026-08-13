@@ -3,12 +3,14 @@ import { AppError } from "../../../shared/errors/AppError.js"
 import CalendarDay from "../../calendar/models/CalendarDay.js"
 import AttendanceRecord from "../../attendance/models/AttendanceRecord.js"
 import ExitReason from "../../exitReason/models/ExitReason.js"
+import Shift from "../../shift/models/Shift.js"
 import { createAutomaticMovementForEmployeeUpdate } from "../../employeeMovement/services/employeeMovement.service.js"
 import Employee from "../models/Employee.js"
 import EmployeeMaternityLeave from "../models/EmployeeMaternityLeave.js"
 import {
     addBusinessDays,
     businessWeekday,
+    combineBusinessDateAndTime,
     endOfBusinessDay,
     startOfBusinessDay,
     toBusinessDateKey,
@@ -273,6 +275,20 @@ function isApprovedAttendanceLeave(record) {
     return ["AL", "ML", "SL", "UL"].includes(String(record?.leaveCode || "").toUpperCase())
 }
 
+function employeeAttendanceDateIsComplete({ dateKey, shift, now = new Date() }) {
+    const todayKey = toDateKey(now)
+    if (dateKey < todayKey) return true
+    if (dateKey > todayKey) return false
+    if (!shift?.endTime) return false
+
+    const shiftEndAt = combineBusinessDateAndTime(
+        dateKey,
+        shift.endTime,
+        Boolean(shift.isOvernight),
+    )
+    return now.getTime() >= shiftEndAt.getTime()
+}
+
 export async function evaluateAbandonmentForWorkspace({ companyId, branchId, throughDate }) {
     if (!companyId || !branchId || !throughDate) {
         return { checked: 0, abandoned: 0, skipped: true }
@@ -288,13 +304,15 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
         joinDate: { $lte: endOfBusinessDay(throughKey) },
         $or: [{ resignDate: null }, { resignDate: { $gt: endOfBusinessDay(throughKey) } }],
     })
-        .select("_id employeeCode companyId branchId joinDate employmentStatus resignDate exitReasonId resignReason recordStatus departmentId positionId lineId shiftId employeeTypeId employeeTypeChildId employeeTypeChildCode employeeTypeChildName")
+        .select("_id employeeCode companyId branchId joinDate employmentStatus resignDate exitReasonId resignReason recordStatus departmentId positionId lineId shiftId employeeTypeId employeeTypeChildId employeeTypeChildCode employeeTypeChildName abandonmentStreakResetDate")
         .lean()
 
     if (!employees.length) return { checked: 0, abandoned: 0, throughDate: throughKey }
 
     const employeeIds = employees.map((employee) => employee._id)
-    const [attendanceRows, calendarRows, maternityPeriods] = await Promise.all([
+    const shiftIds = [...new Set(employees.map((employee) => String(employee.shiftId || "")).filter(Boolean))]
+
+    const [attendanceRows, calendarRows, maternityPeriods, shifts] = await Promise.all([
         AttendanceRecord.find({
             employeeId: { $in: employeeIds },
             attendanceDate: {
@@ -312,6 +330,11 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
             .select("dateKey dayType scopeLevel")
             .lean(),
         getMaternityPeriodsForEmployees({ employeeIds, dateFrom: fromKey, dateTo: throughKey }),
+        shiftIds.length
+            ? Shift.find({ _id: { $in: shiftIds }, status: { $ne: "ARCHIVED" } })
+                .select("_id endTime isOvernight")
+                .lean()
+            : [],
     ])
 
     const attendanceByEmployeeDate = new Map(
@@ -319,17 +342,33 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
     )
     const maternityMap = buildMaternityPeriodMap(maternityPeriods)
     const calendarByDate = buildCalendarByDate(calendarRows)
+    const shiftById = new Map(shifts.map((shift) => [String(shift._id), shift]))
     const exitReason = await ensureAbandonedExitReason({ companyId, branchId })
+    const now = new Date()
 
     let abandoned = 0
     const updates = []
 
     for (const employee of employees) {
         const joinKey = toDateKey(employee.joinDate)
+        const resetKey = employee.abandonmentStreakResetDate
+            ? toDateKey(employee.abandonmentStreakResetDate)
+            : ""
+        const lowerBoundKey = [fromKey, joinKey, resetKey].filter(Boolean).sort().at(-1)
+        const shift = shiftById.get(String(employee.shiftId || "")) || null
+
+        // Immediate import-triggered evaluation may include today, but today is
+        // eligible only after this employee's shift has actually finished.
+        // This keeps evening/final payroll imports immediate without allowing
+        // a morning import to abandon employees before their workday ends.
         let cursor = throughKey
+        if (!employeeAttendanceDateIsComplete({ dateKey: cursor, shift, now })) {
+            cursor = addBusinessDays(cursor, -1)
+        }
+
         const consecutiveAbsentWorkingDates = []
 
-        while (cursor >= fromKey && cursor >= joinKey) {
+        while (cursor >= lowerBoundKey) {
             if (!calendarIsWorking(cursor, calendarByDate)) {
                 cursor = addBusinessDays(cursor, -1)
                 continue
@@ -338,6 +377,10 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
             if (employeeIsOnMaternityDate(employee._id, cursor, maternityMap)) break
 
             const record = attendanceByEmployeeDate.get(`${String(employee._id)}|${cursor}`)
+
+            // Missing attendance data is UNKNOWN, not ABSENT. Only Payroll/HRMS
+            // attendance evidence can build an abandonment streak.
+            if (!record) break
             if (isPresent(record) || isApprovedAttendanceLeave(record)) break
 
             consecutiveAbsentWorkingDates.push(cursor)

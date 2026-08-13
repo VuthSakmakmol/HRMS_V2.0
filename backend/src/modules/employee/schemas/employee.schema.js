@@ -213,6 +213,11 @@ export const employeeCreateSchema = z.object({
     maternityLeaveStartDate: optionalDateSchema.optional(),
     maternityLeaveEndDate: optionalDateSchema.optional(),
     maternityExpectedReturnDate: optionalDateSchema.optional(),
+    // Request-only fields used when an existing ABANDONED employee is
+    // manually reinstated to WORKING. They are validated in employee.service
+    // and are not persisted as normal employee profile fields.
+    returnToWorkDate: optionalDateSchema.optional(),
+    returnToWorkNote: optionalTextSchema(500),
     exitReasonId: nullableObjectIdSchema.optional(),
     remark: optionalTextSchema(1000),
 

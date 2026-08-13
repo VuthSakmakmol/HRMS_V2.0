@@ -2017,6 +2017,10 @@ export default {
             "profile": {
                 "positionEmployeeTypeNotConfigured": "This position has not been assigned to an active Employee Type. Configure the position in Employee Type first.",
                 "positionEmployeeTypeAmbiguous": "This position is assigned to more than one Employee Type. Fix the Employee Type mapping before assigning employees.",
+                "returnToWorkDateRequired": "Return to Work Date is required when reinstating an abandoned employee.",
+                "returnToWorkDateAfterAbandonment": "Return to Work Date must be after the abandonment Exit Date.",
+                "returnToWorkDateFuture": "Return to Work Date cannot be in the future.",
+                "returnToWorkNoteRequired": "Return reason / note is required when reinstating an abandoned employee.",
                 "recruitmentChannelInvalidId": "Invalid recruitment channel ID.",
                 "recruitmentChannelNotFound": "Recruitment channel was not found or is archived.",
                 "recruitmentChannelCompanyMismatch": "Recruitment channel does not belong to the selected company.",

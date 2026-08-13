@@ -22,6 +22,9 @@ const emit = defineEmits(["clear-error"])
 
 const isExitStatus = (status) => EXIT_EMPLOYMENT_STATUSES.has(status)
 const isMaternityStatus = (status) => status === "MATERNITY_LEAVE"
+const isAbandonedReinstatement = () =>
+    props.form._initialEmploymentStatus === "ABANDONED" &&
+    props.form.employmentStatus === "WORKING"
 
 function fieldError(field) {
     const value = props.errors?.[field]
@@ -60,6 +63,12 @@ watch(
             emit("clear-error", "exitReasonId")
         }
         if (isMaternityStatus(status)) syncMaternityDates()
+        if (!isAbandonedReinstatement()) {
+            props.form.returnToWorkDate = ""
+            props.form.returnToWorkNote = ""
+            emit("clear-error", "returnToWorkDate")
+            emit("clear-error", "returnToWorkNote")
+        }
     },
 )
 
@@ -126,6 +135,36 @@ watch(
                 :disabled="disabled"
             />
         </label>
+
+        <template v-if="isAbandonedReinstatement()">
+            <label class="enterprise-form-field">
+                <span>Return to Work Date <strong class="employee-required-star">*</strong></span>
+                <EnterpriseCalendarDatePicker
+                    v-model="form.returnToWorkDate"
+                    :company-id="form.companyId"
+                    :branch-id="form.branchId"
+                    :min-date="form._initialExitDate || form.joinDate"
+                    :max-date="new Date()"
+                    :disabled="disabled"
+                    :show-status="false"
+                    :class="{ 'employee-calendar--invalid': Boolean(fieldError('returnToWorkDate')) }"
+                    @update:model-value="emit('clear-error', 'returnToWorkDate')"
+                />
+                <small v-if="fieldError('returnToWorkDate')">{{ fieldError('returnToWorkDate') }}</small>
+            </label>
+
+            <label class="enterprise-form-field enterprise-form-field--span-2">
+                <span>Return Reason / Note <strong class="employee-required-star">*</strong></span>
+                <Textarea
+                    v-model="form.returnToWorkNote"
+                    rows="2"
+                    :disabled="disabled"
+                    :invalid="Boolean(fieldError('returnToWorkNote'))"
+                    @input="emit('clear-error', 'returnToWorkNote')"
+                />
+                <small v-if="fieldError('returnToWorkNote')">{{ fieldError('returnToWorkNote') }}</small>
+            </label>
+        </template>
 
         <template v-if="isMaternityStatus(form.employmentStatus)">
             <label class="enterprise-form-field">
