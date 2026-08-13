@@ -8,20 +8,21 @@ import Company from "../../organization/models/Company.js"
 import Branch from "../../organization/models/Branch.js"
 import Department from "../../organization/models/Department.js"
 import Position from "../../organization/models/Position.js"
+import Employee from "../../employee/models/Employee.js"
 import Line from "../models/Line.js"
 import { listLines } from "./line.service.js"
 
 const TEMPLATE_HEADERS = [
     "companyCode",
     "branchCode",
-    "departmentCode",
-    "positionCode",
+    "positionCodes",
     "lineCode",
     "lineName",
     "status",
     "description",
 ]
 
+const LEGACY_POSITION_HEADER = "positionCode"
 const STATUS_VALUES = ["ACTIVE", "INACTIVE"]
 
 function normalizeCode(value) {
@@ -42,12 +43,57 @@ function normalizeStatus(value) {
     return STATUS_VALUES.includes(status) ? status : null
 }
 
+function normalizeId(value) {
+    return value?._id?.toString?.() || value?.id || value?.toString?.() || ""
+}
+
+function uniqueIds(values = []) {
+    return [...new Set((values || []).map(normalizeId).filter(Boolean))]
+}
+
+function effectivePositionIds(line) {
+    const current = Array.isArray(line?.positionIds)
+        ? uniqueIds(line.positionIds)
+        : []
+    if (current.length) return current
+    const legacy = normalizeId(line?.positionId)
+    return legacy ? [legacy] : []
+}
+
+function normalizePositionReference(value) {
+    const raw = String(value || "").trim()
+    if (!raw) return ""
+
+    const parts = raw.split(":")
+    if (parts.length === 1) return normalizeCode(parts[0])
+    if (parts.length === 2) {
+        const departmentCode = normalizeCode(parts[0])
+        const positionCode = normalizeCode(parts[1])
+        if (!departmentCode || !positionCode) return ""
+        return `${departmentCode}:${positionCode}`
+    }
+    return normalizeCode(raw)
+}
+
+function parsePositionCodes(value) {
+    return [
+        ...new Set(
+            String(value || "")
+                .split(/[\n,;|]+/)
+                .map(normalizePositionReference)
+                .filter(Boolean),
+        ),
+    ]
+}
+
+function isValidPositionReference(value) {
+    return /^[A-Z0-9_-]+(?::[A-Z0-9_-]+)?$/.test(String(value || ""))
+}
+
 function getCellValue(row, index) {
     const value = row.getCell(index).value
 
-    if (value === null || value === undefined) {
-        return ""
-    }
+    if (value === null || value === undefined) return ""
 
     if (typeof value === "object") {
         if (value.text) return String(value.text)
@@ -63,24 +109,22 @@ function getCellValue(row, index) {
 }
 
 function getRowObject(row) {
-    const result = {}
-
-    TEMPLATE_HEADERS.forEach((header, index) => {
-        result[header] = getCellValue(row, index + 1)
-    })
-
-    return result
+    return {
+        companyCode: getCellValue(row, 1),
+        branchCode: getCellValue(row, 2),
+        positionCodes: getCellValue(row, 3),
+        lineCode: getCellValue(row, 4),
+        lineName: getCellValue(row, 5),
+        status: getCellValue(row, 6),
+        description: getCellValue(row, 7),
+    }
 }
 
 function buildImportError(
     rowNumber,
     field,
     messageKey,
-    {
-        received = "",
-        expected = "",
-        reason = "",
-    } = {},
+    { received = "", expected = "", reason = "" } = {},
 ) {
     return {
         rowNumber,
@@ -98,9 +142,12 @@ function validateHeaderRow(worksheet) {
         normalizeText(getCellValue(headerRow, index + 1)),
     )
 
-    const valid = TEMPLATE_HEADERS.every(
-        (header, index) => actualHeaders[index] === header,
-    )
+    const valid = TEMPLATE_HEADERS.every((header, index) => {
+        if (index === 2) {
+            return ["positionCodes", LEGACY_POSITION_HEADER].includes(actualHeaders[index])
+        }
+        return actualHeaders[index] === header
+    })
 
     if (!valid) {
         throw new AppError({
@@ -128,8 +175,7 @@ function buildWorkbookBase(title) {
     worksheet.columns = [
         { header: "companyCode", key: "companyCode", width: 18 },
         { header: "branchCode", key: "branchCode", width: 18 },
-        { header: "departmentCode", key: "departmentCode", width: 22 },
-        { header: "positionCode", key: "positionCode", width: 22 },
+        { header: "positionCodes", key: "positionCodes", width: 44 },
         { header: "lineCode", key: "lineCode", width: 18 },
         { header: "lineName", key: "lineName", width: 30 },
         { header: "status", key: "status", width: 14 },
@@ -144,21 +190,7 @@ function buildWorkbookBase(title) {
         pattern: "solid",
         fgColor: { argb: "FF1D4ED8" },
     }
-    headerRow.alignment = {
-        vertical: "middle",
-        horizontal: "center",
-    }
-
-    worksheet.eachRow((row) => {
-        row.eachCell((cell) => {
-            cell.border = {
-                top: { style: "thin", color: { argb: "FFE5E7EB" } },
-                left: { style: "thin", color: { argb: "FFE5E7EB" } },
-                bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
-                right: { style: "thin", color: { argb: "FFE5E7EB" } },
-            }
-        })
-    })
+    headerRow.alignment = { vertical: "middle", horizontal: "center" }
 
     return { workbook, worksheet }
 }
@@ -169,19 +201,18 @@ export async function buildLineImportTemplateWorkbook() {
     worksheet.addRow({
         companyCode: "TRAX",
         branchCode: "PP-HQ",
-        departmentCode: "SEWING",
-        positionCode: "SEWER",
+        positionCodes: "SEWING:SEWER,PACKING:HELPER",
         lineCode: "LINE_A",
-        lineName: "Sewing Line A",
+        lineName: "Line A",
         status: "ACTIVE",
-        description: "Line A for Sewer position",
+        description: "One Line can support Positions from multiple Departments",
     })
 
     const instructionSheet = workbook.addWorksheet("Instructions")
     instructionSheet.columns = [
         { header: "Field", key: "field", width: 28 },
         { header: "Required", key: "required", width: 14 },
-        { header: "Rule", key: "rule", width: 94 },
+        { header: "Rule", key: "rule", width: 100 },
     ]
 
     instructionSheet.addRows([
@@ -196,24 +227,19 @@ export async function buildLineImportTemplateWorkbook() {
             rule: "Must exactly match the ACTIVE branch selected in the HRMS top bar.",
         },
         {
-            field: "departmentCode",
+            field: "positionCodes",
             required: "Yes",
-            rule: "Must exactly match an ACTIVE Department Code inside the selected branch.",
-        },
-        {
-            field: "positionCode",
-            required: "Yes",
-            rule: "Must exactly match an ACTIVE Position Code inside the selected Department. Every Line belongs to one Position.",
+            rule: "Enter one or more ACTIVE Position Codes from any Department in the selected branch. Separate multiple values with commas. If the same Position Code exists in more than one Department, use DEPARTMENT_CODE:POSITION_CODE, for example SEWING:HELPER,PACKING:HELPER.",
         },
         {
             field: "lineCode",
             required: "Yes",
-            rule: "2-30 characters. Letters, numbers, dash, and underscore only. Unique under the selected Position. Existing matching rows are updated.",
+            rule: "2-30 characters. Letters, numbers, dash, and underscore only. Unique inside the selected Company + Branch. Existing matching rows are updated.",
         },
         {
             field: "lineName",
             required: "Yes",
-            rule: "2-160 characters. This is the display name shown in HRMS.",
+            rule: "2-160 characters. This is the Line display name shown in HRMS.",
         },
         {
             field: "status",
@@ -235,11 +261,24 @@ export async function buildLineExportWorkbook({ lines }) {
     const { workbook, worksheet } = buildWorkbookBase("Lines")
 
     for (const line of lines) {
+        const positionCodes = Array.isArray(line.positions)
+            ? line.positions
+                .map((position) => {
+                    const positionCode = position?.code || ""
+                    const departmentCode = position?.department?.code || ""
+                    return positionCode
+                        ? departmentCode
+                            ? `${departmentCode}:${positionCode}`
+                            : positionCode
+                        : ""
+                })
+                .filter(Boolean)
+            : []
+
         worksheet.addRow({
             companyCode: line.company?.code || "",
             branchCode: line.branch?.code || "",
-            departmentCode: line.department?.code || "",
-            positionCode: line.position?.code || "",
+            positionCodes: positionCodes.join(","),
             lineCode: line.code || "",
             lineName: line.name || "",
             status: line.status || "",
@@ -260,14 +299,11 @@ export async function parseLineImportWorkbook(buffer) {
             statusCode: 422,
             code: "ORGANIZATION_LINE_IMPORT_INVALID_FILE",
             messageKey: "errors.organization.lineImport.invalidFile",
-            details: {
-                reason: error?.message || "The workbook could not be read.",
-            },
+            details: { reason: error?.message || "The workbook could not be read." },
         })
     }
 
     const worksheet = workbook.worksheets[0]
-
     if (!worksheet) {
         throw new AppError({
             statusCode: 422,
@@ -285,18 +321,14 @@ export async function parseLineImportWorkbook(buffer) {
         if (rowNumber === 1) return
 
         const raw = getRowObject(row)
-        const isEmpty = Object.values(raw).every(
-            (value) => normalizeText(value) === "",
-        )
-
+        const isEmpty = Object.values(raw).every((value) => normalizeText(value) === "")
         if (isEmpty) return
 
         const normalized = {
             rowNumber,
             companyCode: normalizeCode(raw.companyCode),
             branchCode: normalizeCode(raw.branchCode),
-            departmentCode: normalizeCode(raw.departmentCode),
-            positionCode: normalizeCode(raw.positionCode),
+            positionCodes: parsePositionCodes(raw.positionCodes),
             lineCode: normalizeCode(raw.lineCode),
             lineName: normalizeText(raw.lineName),
             status: normalizeStatus(raw.status),
@@ -304,48 +336,32 @@ export async function parseLineImportWorkbook(buffer) {
         }
 
         if (!normalized.companyCode) {
-            errors.push(buildImportError(
-                rowNumber,
-                "companyCode",
-                "errors.organization.lineImport.companyCodeRequired",
-                { received: raw.companyCode },
-            ))
+            errors.push(buildImportError(rowNumber, "companyCode", "errors.organization.lineImport.companyCodeRequired", { received: raw.companyCode }))
         }
-
         if (!normalized.branchCode) {
-            errors.push(buildImportError(
-                rowNumber,
-                "branchCode",
-                "errors.organization.lineImport.branchCodeRequired",
-                { received: raw.branchCode },
-            ))
+            errors.push(buildImportError(rowNumber, "branchCode", "errors.organization.lineImport.branchCodeRequired", { received: raw.branchCode }))
         }
-
-        if (!normalized.departmentCode) {
-            errors.push(buildImportError(
-                rowNumber,
-                "departmentCode",
-                "errors.organization.lineImport.departmentCodeRequired",
-                { received: raw.departmentCode },
-            ))
-        }
-
-        if (!normalized.positionCode) {
-            errors.push(buildImportError(
-                rowNumber,
-                "positionCode",
-                "errors.organization.lineImport.positionCodeRequired",
-                { received: raw.positionCode },
-            ))
+        if (!normalized.positionCodes.length) {
+            errors.push(buildImportError(rowNumber, "positionCodes", "errors.organization.lineImport.positionCodesRequired", { received: raw.positionCodes }))
+        } else {
+            const invalidPositionCodes = normalized.positionCodes.filter(
+                (code) => code.length < 2 || code.length > 65 || !isValidPositionReference(code),
+            )
+            if (invalidPositionCodes.length) {
+                errors.push(buildImportError(
+                    rowNumber,
+                    "positionCodes",
+                    "errors.organization.lineImport.positionCodesInvalid",
+                    {
+                        received: raw.positionCodes,
+                        expected: "Position Codes like SEWER or qualified references like SEWING:HELPER, separated by commas",
+                    },
+                ))
+            }
         }
 
         if (!normalized.lineCode) {
-            errors.push(buildImportError(
-                rowNumber,
-                "lineCode",
-                "errors.organization.lineImport.lineCodeRequired",
-                { received: raw.lineCode },
-            ))
+            errors.push(buildImportError(rowNumber, "lineCode", "errors.organization.lineImport.lineCodeRequired", { received: raw.lineCode }))
         } else if (
             normalized.lineCode.length < 2 ||
             normalized.lineCode.length > 30 ||
@@ -355,32 +371,18 @@ export async function parseLineImportWorkbook(buffer) {
                 rowNumber,
                 "lineCode",
                 "errors.organization.lineImport.lineCodeInvalid",
-                {
-                    received: raw.lineCode,
-                    expected: "2-30 characters: A-Z, 0-9, - or _",
-                },
+                { received: raw.lineCode, expected: "2-30 characters: A-Z, 0-9, - or _" },
             ))
         }
 
         if (!normalized.lineName) {
-            errors.push(buildImportError(
-                rowNumber,
-                "lineName",
-                "errors.organization.lineImport.lineNameRequired",
-                { received: raw.lineName },
-            ))
-        } else if (
-            normalized.lineName.length < 2 ||
-            normalized.lineName.length > 160
-        ) {
+            errors.push(buildImportError(rowNumber, "lineName", "errors.organization.lineImport.lineNameRequired", { received: raw.lineName }))
+        } else if (normalized.lineName.length < 2 || normalized.lineName.length > 160) {
             errors.push(buildImportError(
                 rowNumber,
                 "lineName",
                 "errors.organization.lineImport.lineNameInvalid",
-                {
-                    received: raw.lineName,
-                    expected: "2-160 characters",
-                },
+                { received: raw.lineName, expected: "2-160 characters" },
             ))
         }
 
@@ -389,10 +391,7 @@ export async function parseLineImportWorkbook(buffer) {
                 rowNumber,
                 "status",
                 "errors.organization.lineImport.statusInvalid",
-                {
-                    received: raw.status,
-                    expected: "ACTIVE or INACTIVE",
-                },
+                { received: raw.status, expected: "ACTIVE or INACTIVE" },
             ))
         }
 
@@ -401,10 +400,7 @@ export async function parseLineImportWorkbook(buffer) {
                 rowNumber,
                 "description",
                 "errors.organization.lineImport.descriptionTooLong",
-                {
-                    received: raw.description,
-                    expected: "Maximum 500 characters",
-                },
+                { received: raw.description, expected: "Maximum 500 characters" },
             ))
         }
 
@@ -412,11 +408,7 @@ export async function parseLineImportWorkbook(buffer) {
     })
 
     if (!rows.length) {
-        errors.push(buildImportError(
-            1,
-            "file",
-            "errors.organization.lineImport.noDataRows",
-        ))
+        errors.push(buildImportError(1, "file", "errors.organization.lineImport.noDataRows"))
     }
 
     return { rows, errors }
@@ -440,10 +432,7 @@ function mongooseValidationErrors(error, row) {
             row.rowNumber,
             item.path || "row",
             "errors.organization.lineImport.fieldInvalid",
-            {
-                received: item.value ?? "",
-                reason: item.message || "",
-            },
+            { received: item.value ?? "", reason: item.message || "" },
         ),
     )
 }
@@ -455,8 +444,7 @@ async function validateResolvedRows({ rows, user }) {
         const candidate = new Line({
             companyId: row.company._id,
             branchId: row.branch._id,
-            departmentId: row.department._id,
-            positionId: row.position._id,
+            positionIds: row.positions.map((position) => position._id),
             code: row.lineCode,
             name: row.lineName,
             status: row.status,
@@ -479,18 +467,51 @@ async function validateResolvedRows({ rows, user }) {
     return errors
 }
 
-function mapByCode(documents) {
-    const map = new Map()
-
-    for (const document of documents) {
-        map.set(normalizeCode(document.code), document)
-    }
-
-    return map
+function makeLineKey(lineCode) {
+    return normalizeCode(lineCode)
 }
 
-function makePositionKey(departmentId, positionCode) {
-    return `${departmentId.toString()}::${normalizeCode(positionCode)}`
+function buildPositionReferenceMaps({ positions, departments }) {
+    const departmentsById = new Map(
+        departments.map((department) => [department._id.toString(), department]),
+    )
+    const byCode = new Map()
+    const byQualifiedCode = new Map()
+
+    for (const position of positions) {
+        const positionCode = normalizeCode(position.code)
+        const department = departmentsById.get(normalizeId(position.departmentId)) || null
+        const departmentCode = normalizeCode(department?.code)
+
+        const bucket = byCode.get(positionCode) || []
+        bucket.push({ position, department })
+        byCode.set(positionCode, bucket)
+
+        if (departmentCode) {
+            byQualifiedCode.set(`${departmentCode}:${positionCode}`, { position, department })
+        }
+    }
+
+    return { byCode, byQualifiedCode }
+}
+
+function resolvePositionReference(reference, maps) {
+    if (reference.includes(":")) {
+        const match = maps.byQualifiedCode.get(reference) || null
+        return match
+            ? { state: "FOUND", ...match }
+            : { state: "NOT_FOUND", reference }
+    }
+
+    const matches = maps.byCode.get(reference) || []
+    if (matches.length === 0) return { state: "NOT_FOUND", reference }
+    if (matches.length === 1) return { state: "FOUND", ...matches[0] }
+
+    return {
+        state: "AMBIGUOUS",
+        reference,
+        matches,
+    }
 }
 
 export async function importLinesFromRows({
@@ -508,7 +529,6 @@ export async function importLinesFromRows({
         errors: [...parseErrors],
     }
 
-    // Atomic import: validation errors prevent every row from being saved.
     if (summary.errors.length) {
         summary.skipped = rows.length
         onProgress?.({
@@ -530,10 +550,7 @@ export async function importLinesFromRows({
     })
 
     const [company, branch] = await Promise.all([
-        Company.findOne({
-            _id: workspace.companyId,
-            status: "ACTIVE",
-        }).lean(),
+        Company.findOne({ _id: workspace.companyId, status: "ACTIVE" }).lean(),
         Branch.findOne({
             _id: workspace.branchId,
             companyId: workspace.companyId,
@@ -542,11 +559,7 @@ export async function importLinesFromRows({
     ])
 
     if (!company || !branch) {
-        summary.errors.push(buildImportError(
-            1,
-            "workspace",
-            "errors.organization.line.workspaceRequired",
-        ))
+        summary.errors.push(buildImportError(1, "workspace", "errors.organization.line.workspaceRequired"))
         summary.skipped = rows.length
         return summary
     }
@@ -560,22 +573,15 @@ export async function importLinesFromRows({
                 row.rowNumber,
                 "companyCode",
                 "errors.organization.lineImport.companyWorkspaceMismatch",
-                {
-                    received: row.companyCode,
-                    expected: expectedCompanyCode,
-                },
+                { received: row.companyCode, expected: expectedCompanyCode },
             ))
         }
-
         if (row.branchCode !== expectedBranchCode) {
             summary.errors.push(buildImportError(
                 row.rowNumber,
                 "branchCode",
                 "errors.organization.lineImport.branchWorkspaceMismatch",
-                {
-                    received: row.branchCode,
-                    expected: expectedBranchCode,
-                },
+                { received: row.branchCode, expected: expectedBranchCode },
             ))
         }
     }
@@ -606,55 +612,62 @@ export async function importLinesFromRows({
         }).lean(),
     ])
 
-    const departmentMap = mapByCode(departments)
-    const positionMap = new Map()
-
-    for (const position of positions) {
-        positionMap.set(
-            makePositionKey(position.departmentId, position.code),
-            position,
-        )
-    }
+    const positionMaps = buildPositionReferenceMaps({ positions, departments })
 
     const resolvedRows = rows.map((row) => {
-        const department = departmentMap.get(row.departmentCode) || null
+        const rowPositions = []
+        const seenPositionIds = new Set()
 
-        if (!department) {
-            summary.errors.push(buildImportError(
-                row.rowNumber,
-                "departmentCode",
-                "errors.organization.lineImport.departmentNotFound",
-                {
-                    received: row.departmentCode,
-                    expected: "An ACTIVE Department Code in the selected branch",
-                },
-            ))
-        }
+        for (const reference of row.positionCodes) {
+            const resolved = resolvePositionReference(reference, positionMaps)
 
-        const position = department
-            ? positionMap.get(makePositionKey(department._id, row.positionCode)) || null
-            : null
+            if (resolved.state === "NOT_FOUND") {
+                summary.errors.push(buildImportError(
+                    row.rowNumber,
+                    "positionCodes",
+                    "errors.organization.lineImport.positionNotFound",
+                    {
+                        received: reference,
+                        expected: "An ACTIVE Position Code in the selected branch",
+                    },
+                ))
+                continue
+            }
 
-        if (!position) {
-            summary.errors.push(buildImportError(
-                row.rowNumber,
-                "positionCode",
-                "errors.organization.lineImport.positionNotFound",
-                {
-                    received: row.positionCode,
-                    expected: department
-                        ? `An ACTIVE Position Code inside ${department.code}`
-                        : "A Position inside a valid Department",
-                },
-            ))
+            if (resolved.state === "AMBIGUOUS") {
+                const matches = resolved.matches
+                    .map(({ position, department }) => {
+                        const departmentCode = normalizeCode(department?.code)
+                        const positionCode = normalizeCode(position?.code)
+                        return departmentCode && positionCode
+                            ? `${departmentCode}:${positionCode}`
+                            : positionCode
+                    })
+                    .filter(Boolean)
+
+                summary.errors.push(buildImportError(
+                    row.rowNumber,
+                    "positionCodes",
+                    "errors.organization.lineImport.positionAmbiguous",
+                    {
+                        received: reference,
+                        expected: `Use DEPARTMENT_CODE:POSITION_CODE. Matches: ${matches.join(", ")}`,
+                    },
+                ))
+                continue
+            }
+
+            const positionId = resolved.position._id.toString()
+            if (seenPositionIds.has(positionId)) continue
+            seenPositionIds.add(positionId)
+            rowPositions.push(resolved.position)
         }
 
         return {
             ...row,
             company,
             branch,
-            department,
-            position,
+            positions: rowPositions,
         }
     })
 
@@ -664,11 +677,9 @@ export async function importLinesFromRows({
     }
 
     const seenLineKeys = new Map()
-
     for (const row of resolvedRows) {
-        const lineKey = `${row.position._id.toString()}::${row.lineCode}`
+        const lineKey = makeLineKey(row.lineCode)
         const firstRowNumber = seenLineKeys.get(lineKey)
-
         if (firstRowNumber) {
             summary.errors.push(buildImportError(
                 row.rowNumber,
@@ -676,7 +687,7 @@ export async function importLinesFromRows({
                 "errors.organization.lineImport.duplicateInFile",
                 {
                     received: row.lineCode,
-                    expected: `Unique under Position ${row.position.code}; first used on row ${firstRowNumber}`,
+                    expected: `Unique inside the selected Company + Branch; first used on row ${firstRowNumber}`,
                 },
             ))
         } else {
@@ -697,11 +708,7 @@ export async function importLinesFromRows({
         messageKey: "organization.line.importPhaseValidatingRows",
     })
 
-    const modelErrors = await validateResolvedRows({
-        rows: resolvedRows,
-        user,
-    })
-
+    const modelErrors = await validateResolvedRows({ rows: resolvedRows, user })
     if (modelErrors.length) {
         summary.errors.push(...modelErrors)
         summary.skipped = rows.length
@@ -711,46 +718,125 @@ export async function importLinesFromRows({
     const existingLines = await Line.find({
         companyId: company._id,
         branchId: branch._id,
-        positionId: { $in: resolvedRows.map((row) => row.position._id) },
         status: { $ne: "ARCHIVED" },
     })
-        .select("_id positionId code")
+        .select("_id departmentId positionIds positionId code")
         .lean()
 
-    const existingKeys = new Set(
-        existingLines.map(
-            (line) => `${line.positionId.toString()}::${normalizeCode(line.code)}`,
-        ),
-    )
+    const existingByKey = new Map()
+    for (const line of existingLines) {
+        const key = makeLineKey(line.code)
+        const bucket = existingByKey.get(key) || []
+        bucket.push(line)
+        existingByKey.set(key, bucket)
+    }
 
-    const operations = resolvedRows.map((row) => ({
-        updateOne: {
-            filter: {
+    for (const row of resolvedRows) {
+        const key = makeLineKey(row.lineCode)
+        const matches = existingByKey.get(key) || []
+        if (matches.length > 1) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "lineCode",
+                "errors.organization.lineImport.existingDuplicateConflict",
+                {
+                    received: row.lineCode,
+                    expected: "Only one active Line record for this Company + Branch + Line Code",
+                    reason: "Legacy data contains duplicate Line records. Delete/recreate the duplicate development records first.",
+                },
+            ))
+        }
+    }
+
+    if (summary.errors.length) {
+        summary.skipped = rows.length
+        return summary
+    }
+
+    const existingMatched = resolvedRows
+        .map((row) => (existingByKey.get(makeLineKey(row.lineCode)) || [])[0])
+        .filter(Boolean)
+
+    const employeeRows = existingMatched.length
+        ? await Employee.find({
+            lineId: { $in: existingMatched.map((line) => line._id) },
+            recordStatus: "ACTIVE",
+        })
+            .select("lineId positionId")
+            .lean()
+        : []
+
+    const usedPositionsByLine = new Map()
+    for (const employee of employeeRows) {
+        const lineId = normalizeId(employee.lineId)
+        const positionId = normalizeId(employee.positionId)
+        if (!lineId || !positionId) continue
+        const set = usedPositionsByLine.get(lineId) || new Set()
+        set.add(positionId)
+        usedPositionsByLine.set(lineId, set)
+    }
+
+    for (const row of resolvedRows) {
+        const key = makeLineKey(row.lineCode)
+        const existing = (existingByKey.get(key) || [])[0] || null
+        if (!existing) continue
+
+        const newPositionIds = new Set(row.positions.map((position) => position._id.toString()))
+        const usedPositionIds = usedPositionsByLine.get(existing._id.toString()) || new Set()
+        const removingUsedPosition = [...usedPositionIds].some((positionId) => !newPositionIds.has(positionId))
+
+        if (removingUsedPosition) {
+            summary.errors.push(buildImportError(
+                row.rowNumber,
+                "positionCodes",
+                "errors.organization.line.inUseCannotRemovePosition",
+                {
+                    received: row.positionCodes.join(","),
+                    expected: "Keep every Position currently used by active employees on this Line",
+                },
+            ))
+        }
+    }
+
+    if (summary.errors.length) {
+        summary.skipped = rows.length
+        return summary
+    }
+
+    const operations = resolvedRows.map((row) => {
+        const key = makeLineKey(row.lineCode)
+        const existing = (existingByKey.get(key) || [])[0] || null
+        const filter = existing
+            ? { _id: existing._id }
+            : {
                 companyId: company._id,
                 branchId: branch._id,
-                departmentId: row.department._id,
-                positionId: row.position._id,
                 code: row.lineCode,
-            },
-            update: {
-                $set: {
-                    departmentId: row.department._id,
-                    positionId: row.position._id,
-                    name: row.lineName,
-                    status: row.status,
-                    description: row.description,
-                    updatedByAccountId: user.accountId,
+            }
+
+        return {
+            updateOne: {
+                filter,
+                update: {
+                    $set: {
+                        positionIds: row.positions.map((position) => position._id),
+                        name: row.lineName,
+                        status: row.status,
+                        description: row.description,
+                        updatedByAccountId: user.accountId,
+                    },
+                    $unset: { positionId: "", departmentId: "" },
+                    $setOnInsert: {
+                        companyId: company._id,
+                        branchId: branch._id,
+                        code: row.lineCode,
+                        createdByAccountId: user.accountId,
+                    },
                 },
-                $setOnInsert: {
-                    companyId: company._id,
-                    branchId: branch._id,
-                    code: row.lineCode,
-                    createdByAccountId: user.accountId,
-                },
+                upsert: true,
             },
-            upsert: true,
-        },
-    }))
+        }
+    })
 
     onProgress?.({
         phase: "SAVING_ROWS",
@@ -761,32 +847,23 @@ export async function importLinesFromRows({
     })
 
     const session = await mongoose.startSession()
-
     try {
         await session.withTransaction(async () => {
-            await Line.bulkWrite(operations, {
-                ordered: true,
-                session,
-            })
+            await Line.bulkWrite(operations, { ordered: true, session })
         })
     } catch (error) {
         throw new AppError({
             statusCode: 422,
             code: "ORGANIZATION_LINE_IMPORT_SAVE_FAILED",
             messageKey: "errors.organization.lineImport.saveFailed",
-            details: {
-                reason: error?.message || "The database rejected the Line import.",
-            },
+            details: { reason: error?.message || "The database rejected the Line import." },
         })
     } finally {
         await session.endSession()
     }
 
-    summary.created = resolvedRows.reduce((count, row) => {
-        const key = `${row.position._id.toString()}::${row.lineCode}`
-        return count + (existingKeys.has(key) ? 0 : 1)
-    }, 0)
-    summary.updated = resolvedRows.length - summary.created
+    summary.updated = existingMatched.length
+    summary.created = resolvedRows.length - summary.updated
 
     onProgress?.({
         phase: "SAVING_ROWS",

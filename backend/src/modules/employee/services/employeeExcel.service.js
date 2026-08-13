@@ -818,7 +818,18 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
 
     for (const department of departments) addDocumentAliases(departmentMap, department)
     for (const position of positions) addDocumentAliases(positionMap, position, `${position.departmentId?.toString()}::`)
-    for (const line of lines) addDocumentAliases(lineMap, line, `${line.positionId?.toString()}::`)
+    for (const line of lines) {
+        const allowedPositionIds = [
+            ...(Array.isArray(line.positionIds) ? line.positionIds : []),
+            line.positionId || null,
+        ]
+            .map((value) => value?.toString?.() || String(value || ""))
+            .filter(Boolean)
+
+        for (const positionId of new Set(allowedPositionIds)) {
+            addDocumentAliases(lineMap, line, `${positionId}::`)
+        }
+    }
     for (const shift of shifts) addDocumentAliases(shiftMap, shift)
     for (const introducer of introducers) introducerMap.set(normalizeCode(introducer.employeeCode), introducer)
     for (const channel of recruitmentChannels) addDocumentAliases(recruitmentChannelMap, channel)

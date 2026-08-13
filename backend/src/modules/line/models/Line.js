@@ -24,15 +24,33 @@ const lineSchema = new Schema(
             ref: "Branch",
             required: true,
         },
+        // Legacy compatibility only. Line no longer has Department as a parent.
+        // New writes derive Departments from the selected Positions and unset this field.
         departmentId: {
             type: Schema.Types.ObjectId,
             ref: "Department",
-            required: true,
+            default: null,
         },
+
+        // A Line can support multiple Positions from any Department in the
+        // selected Company + Branch.
+        positionIds: {
+            type: [{ type: Schema.Types.ObjectId, ref: "Position" }],
+            default: [],
+            validate: {
+                validator(value) {
+                    return Array.isArray(value) && value.length >= 1
+                },
+                message: "At least one Position is required for a Line.",
+            },
+        },
+
+        // Backward compatibility for development data created while Line
+        // belonged to exactly one Position. New writes use positionIds only.
         positionId: {
             type: Schema.Types.ObjectId,
             ref: "Position",
-            required: true,
+            default: null,
         },
         code: {
             type: String,
@@ -82,19 +100,16 @@ const lineSchema = new Schema(
     },
 )
 
-// A line is owned by exactly one Position. The same line code may therefore
-// be reused under another position without creating an ambiguous employee
-// assignment.
+// Line Code is a Branch-level identity. One Line record can support Positions
+// from multiple Departments without duplicating the Line.
 lineSchema.index(
     {
         companyId: 1,
         branchId: 1,
-        departmentId: 1,
-        positionId: 1,
         code: 1,
     },
     {
-        name: "idx_line_position_code",
+        name: "idx_line_branch_code",
     },
 )
 
@@ -102,13 +117,12 @@ lineSchema.index(
     {
         companyId: 1,
         branchId: 1,
-        departmentId: 1,
-        positionId: 1,
+        positionIds: 1,
         status: 1,
         name: 1,
     },
     {
-        name: "idx_line_position_status_name",
+        name: "idx_line_positions_status_name",
     },
 )
 

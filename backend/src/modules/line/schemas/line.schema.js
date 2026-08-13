@@ -19,6 +19,12 @@ const optionalObjectIdSchema = z.preprocess(
     objectIdSchema.optional(),
 )
 
+const positionIdsSchema = z
+    .array(objectIdSchema)
+    .min(1, "At least one Position is required.")
+    .max(100)
+    .transform((values) => [...new Set(values)])
+
 const codeSchema = z
     .string()
     .trim()
@@ -46,6 +52,21 @@ const optionalTextSchema = (max) =>
         .pipe(z.string().max(max))
         .optional()
 
+function normalizeLegacyPositionPayload(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value
+    if (
+        (!Array.isArray(value.positionIds) || value.positionIds.length === 0) &&
+        typeof value.positionId === "string" &&
+        value.positionId.trim()
+    ) {
+        return {
+            ...value,
+            positionIds: [value.positionId],
+        }
+    }
+    return value
+}
+
 export const lineIdParamSchema = z.object({
     lineId: objectIdSchema,
 })
@@ -56,6 +77,8 @@ export const lineListQuerySchema = z.object({
     companyId: optionalObjectIdSchema,
     branchId: optionalObjectIdSchema,
     departmentId: optionalObjectIdSchema,
+    // The list filter is intentionally singular: select one Position and show
+    // every Line that supports that Position.
     positionId: optionalObjectIdSchema,
     status: z.enum(["ALL", ...LINE_STATUSES]).default("ALL"),
     search: z.string().trim().max(120).optional().default(""),
@@ -63,26 +86,30 @@ export const lineListQuerySchema = z.object({
     sortOrder: z.enum(["asc", "desc"]).default("asc"),
 })
 
-export const lineCreateSchema = z.object({
-    companyId: objectIdSchema,
-    branchId: objectIdSchema,
-    departmentId: objectIdSchema,
-    positionId: objectIdSchema,
-    code: codeSchema,
-    name: textSchema(2, 160),
-    description: optionalTextSchema(500),
-    status: z.enum(LINE_MUTATION_STATUSES).default("ACTIVE"),
-})
-
-export const lineUpdateSchema = z
-    .object({
-        departmentId: objectIdSchema.optional(),
-        positionId: objectIdSchema.optional(),
-        code: codeSchema.optional(),
-        name: textSchema(2, 160).optional(),
+export const lineCreateSchema = z.preprocess(
+    normalizeLegacyPositionPayload,
+    z.object({
+        companyId: objectIdSchema,
+        branchId: objectIdSchema,
+        positionIds: positionIdsSchema,
+        code: codeSchema,
+        name: textSchema(2, 160),
         description: optionalTextSchema(500),
-        status: z.enum(LINE_MUTATION_STATUSES).optional(),
-    })
-    .refine((value) => Object.keys(value).length > 0, {
-        message: "At least one field is required.",
-    })
+        status: z.enum(LINE_MUTATION_STATUSES).default("ACTIVE"),
+    }),
+)
+
+export const lineUpdateSchema = z.preprocess(
+    normalizeLegacyPositionPayload,
+    z
+        .object({
+            positionIds: positionIdsSchema.optional(),
+            code: codeSchema.optional(),
+            name: textSchema(2, 160).optional(),
+            description: optionalTextSchema(500),
+            status: z.enum(LINE_MUTATION_STATUSES).optional(),
+        })
+        .refine((value) => Object.keys(value).length > 0, {
+            message: "At least one field is required.",
+        }),
+)

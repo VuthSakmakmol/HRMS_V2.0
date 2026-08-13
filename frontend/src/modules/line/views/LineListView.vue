@@ -25,7 +25,6 @@ import PermissionButton from "@/shared/components/enterprise/PermissionButton.vu
 import {
     downloadLineTemplate,
     exportLines,
-    lookupDepartments,
     lookupPositions,
 } from "../api/line.api.js"
 import LineArchiveDialog from "../components/LineArchiveDialog.vue"
@@ -54,34 +53,32 @@ const importVisible = ref(false)
 const archiveCandidate = ref(null)
 const exporting = ref(false)
 const downloadingTemplate = ref(false)
-const departments = ref([])
-const filterPositions = ref([])
-const formPositions = ref([])
+const positions = ref([])
 
 const columns = computed(() => createLineColumns(t))
 const statusOptions = computed(() => createLineStatusOptions(t))
 
-function label(item) {
+function positionLabel(item) {
     const code = item?.code || ""
     const name = item?.title || item?.name || item?.displayName || code
-    return code && name && name !== code ? `${code} - ${name}` : name || code || "—"
+    const department = item?.department?.code || item?.department?.name || ""
+    const base = code && name && name !== code ? `${code} - ${name}` : name || code || "—"
+    return department ? `${base} · ${department}` : base
 }
 
-function mapOptions(items) {
+function mapPositionOptions(items) {
     return (Array.isArray(items) ? items : []).map((item) => ({
         ...item,
-        label: label(item),
+        label: positionLabel(item),
         value: item.id || item._id,
     }))
 }
 
-const departmentOptions = computed(() => mapOptions(departments.value))
-const filterPositionOptions = computed(() => mapOptions(filterPositions.value))
-const formPositionOptions = computed(() => mapOptions(formPositions.value))
+const positionOptions = computed(() => mapPositionOptions(positions.value))
 
 const activeFilterCount = computed(() => {
     let count = 0
-    for (const field of ["search", "departmentId", "positionId"]) {
+    for (const field of ["search", "positionId"]) {
         if (list.query[field]) count += 1
     }
     if (list.query.status !== "ALL") count += 1
@@ -130,53 +127,16 @@ function translatedError(error) {
     return baseMessage
 }
 
-async function loadDepartmentOptions() {
+async function loadPositionOptions() {
     if (!workspaceStore.ready) {
-        departments.value = []
-        return
-    }
-    departments.value = await lookupDepartments({
-        companyId: workspaceStore.companyId,
-        branchId: workspaceStore.branchId,
-    })
-}
-
-async function loadFilterPositions() {
-    list.query.positionId = ""
-    filterPositions.value = []
-    if (!list.query.departmentId || !workspaceStore.ready) return
-
-    filterPositions.value = await lookupPositions({
-        companyId: workspaceStore.companyId,
-        branchId: workspaceStore.branchId,
-        departmentId: list.query.departmentId,
-    })
-}
-
-async function loadFormPositions({ preservePosition = false } = {}) {
-    const selectedPositionId = formState.form.positionId
-    formPositions.value = []
-
-    if (!formState.form.departmentId || !workspaceStore.ready) {
-        if (!preservePosition) formState.form.positionId = ""
+        positions.value = []
         return
     }
 
-    formPositions.value = await lookupPositions({
+    positions.value = await lookupPositions({
         companyId: workspaceStore.companyId,
         branchId: workspaceStore.branchId,
-        departmentId: formState.form.departmentId,
     })
-
-    if (preservePosition) {
-        formState.form.positionId = selectedPositionId
-    }
-}
-
-async function onFormDepartmentChange() {
-    formState.form.positionId = ""
-    formState.clearError("positionId")
-    await loadFormPositions()
 }
 
 async function load() {
@@ -190,7 +150,7 @@ async function load() {
                 companyId: workspaceStore.companyId,
                 branchId: workspaceStore.branchId,
             }),
-            loadDepartmentOptions(),
+            loadPositionOptions(),
         ])
     } catch (error) {
         toast.add({
@@ -207,15 +167,13 @@ async function openCreate() {
         companyId: workspaceStore.companyId,
         branchId: workspaceStore.branchId,
     })
-    formPositions.value = []
-    if (!departments.value.length) await loadDepartmentOptions()
+    if (!positions.value.length) await loadPositionOptions()
     formVisible.value = true
 }
 
 async function openEdit(row) {
     formState.openEdit(row)
-    if (!departments.value.length) await loadDepartmentOptions()
-    await loadFormPositions({ preservePosition: true })
+    if (!positions.value.length) await loadPositionOptions()
     formVisible.value = true
 }
 
@@ -420,7 +378,6 @@ async function exportData() {
         await exportLines({
             companyId: workspaceStore.companyId,
             branchId: workspaceStore.branchId,
-            departmentId: list.query.departmentId || undefined,
             positionId: list.query.positionId || undefined,
             search: list.query.search || undefined,
             status: list.query.status,
@@ -449,7 +406,6 @@ async function exportData() {
 }
 
 async function clearFilters() {
-    filterPositions.value = []
     await list.clearFilters()
 }
 
@@ -460,9 +416,8 @@ watch(
     async ([companyId, branchId], [oldCompanyId, oldBranchId]) => {
         if (!companyId || !branchId) return
         if (companyId === oldCompanyId && branchId === oldBranchId) return
-        list.query.departmentId = ""
         list.query.positionId = ""
-        filterPositions.value = []
+        positions.value = []
         await load()
     },
 )
@@ -551,28 +506,14 @@ watch(
                             </span>
                         </EnterpriseFilterField>
 
-                        <EnterpriseFilterField :label="t('organization.line.department')">
-                            <Select
-                                v-model="list.query.departmentId"
-                                :options="departmentOptions"
-                                option-label="label"
-                                option-value="value"
-                                filter
-                                show-clear
-                                :placeholder="t('organization.line.allDepartments')"
-                                @change="loadFilterPositions"
-                            />
-                        </EnterpriseFilterField>
-
                         <EnterpriseFilterField :label="t('organization.line.position')">
                             <Select
                                 v-model="list.query.positionId"
-                                :options="filterPositionOptions"
+                                :options="positionOptions"
                                 option-label="label"
                                 option-value="value"
                                 filter
                                 show-clear
-                                :disabled="!list.query.departmentId"
                                 :placeholder="t('organization.line.allPositions')"
                             />
                         </EnterpriseFilterField>
@@ -624,10 +565,28 @@ watch(
             <span class="enterprise-table__text">{{ row.name || "—" }}</span>
         </template>
         <template #cell-department="{ row }">
-            <span class="enterprise-table__text">{{ row.department?.name || row.department?.code || "Unassigned" }}</span>
+            <span class="enterprise-table__text">
+                {{
+                    Array.isArray(row.departments) && row.departments.length
+                        ? row.departments
+                            .map((department) => department?.name || department?.code)
+                            .filter(Boolean)
+                            .join(", ")
+                        : "Derived from Positions"
+                }}
+            </span>
         </template>
         <template #cell-position="{ row }">
-            <span class="enterprise-table__text">{{ row.position?.title || row.position?.name || row.position?.code || "Unassigned" }}</span>
+            <span class="enterprise-table__text">
+                {{
+                    Array.isArray(row.positions) && row.positions.length
+                        ? row.positions
+                            .map((position) => position?.title || position?.name || position?.code)
+                            .filter(Boolean)
+                            .join(", ")
+                        : row.position?.title || row.position?.name || row.position?.code || "Unassigned"
+                }}
+            </span>
         </template>
         <template #cell-company="{ row }">
             <span class="enterprise-table__text">{{ row.company?.displayName || "—" }}</span>
@@ -653,13 +612,11 @@ watch(
         :errors="formState.errors.value"
         :company-name="workspaceCompanyName"
         :branch-name="workspaceBranchName"
-        :department-options="departmentOptions"
-        :position-options="formPositionOptions"
+        :position-options="positionOptions"
         :saving="formState.saving.value"
         @save="saveLine"
         @clear-error="formState.clearError"
         @normalize-code="formState.normalizeCode"
-        @department-change="onFormDepartmentChange"
     />
 
     <LineImportDialog

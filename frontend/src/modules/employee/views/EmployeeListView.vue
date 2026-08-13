@@ -192,12 +192,23 @@ const formPositionOptions = computed(() =>
 const formLineOptions = computed(() =>
   map(
     rows(lookups.lines).filter((item) => {
+      const selectedPositionId = String(formState.form.positionId || "");
       const lineDepartmentId = String(item.departmentId || item.department?.id || "");
-      const linePositionId = String(item.positionId || item.position?.id || "");
+
+      const linePositionIds = [
+        ...(Array.isArray(item.positionIds) ? item.positionIds : []),
+        ...(Array.isArray(item.positions)
+          ? item.positions.map((position) => position?.id || position?._id)
+          : []),
+        item.positionId || item.position?.id || item.position?._id || "",
+      ]
+        .map((value) => String(value || ""))
+        .filter(Boolean);
+
       return (
-        Boolean(formState.form.positionId) &&
+        Boolean(selectedPositionId) &&
         lineDepartmentId === String(formState.form.departmentId || "") &&
-        linePositionId === String(formState.form.positionId || "")
+        linePositionIds.includes(selectedPositionId)
       );
     }),
   ),

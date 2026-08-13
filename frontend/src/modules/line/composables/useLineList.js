@@ -22,7 +22,6 @@ export function useLineList() {
         limit: 10,
         companyId: "",
         branchId: "",
-        departmentId: "",
         positionId: "",
         search: "",
         status: "ALL",
@@ -40,10 +39,7 @@ export function useLineList() {
     })
 
     const hasActiveFilters = computed(
-        () =>
-            Boolean(
-                query.search || query.departmentId || query.positionId,
-            ) || query.status !== "ALL",
+        () => Boolean(query.search || query.positionId) || query.status !== "ALL",
     )
 
     async function load(overrides = {}) {
@@ -75,15 +71,12 @@ export function useLineList() {
     }
 
     function applyFilters() {
-        return load({
-            page: 1,
-        })
+        return load({ page: 1 })
     }
 
     function clearFilters() {
         Object.assign(query, {
             page: 1,
-            departmentId: "",
             positionId: "",
             search: "",
             status: "ALL",
@@ -93,10 +86,7 @@ export function useLineList() {
     }
 
     function changePage(event) {
-        return load({
-            page: event.page,
-            limit: event.limit,
-        })
+        return load({ page: event.page, limit: event.limit })
     }
 
     function changeSort(event) {

@@ -1,5 +1,6 @@
 <script setup>
 import InputText from "primevue/inputtext"
+import MultiSelect from "primevue/multiselect"
 import Select from "primevue/select"
 import Textarea from "primevue/textarea"
 import { computed } from "vue"
@@ -10,7 +11,6 @@ const props = defineProps({
     errors: { type: Object, default: () => ({}) },
     companyName: { type: String, default: "—" },
     branchName: { type: String, default: "—" },
-    departmentOptions: { type: Array, default: () => [] },
     positionOptions: { type: Array, default: () => [] },
     disabled: { type: Boolean, default: false },
 })
@@ -18,7 +18,6 @@ const props = defineProps({
 const emit = defineEmits([
     "clear-error",
     "normalize-code",
-    "department-change",
 ])
 
 const { t, te } = useI18n()
@@ -35,9 +34,9 @@ function message(field) {
     return te(value) ? t(value) : value
 }
 
-function onDepartmentChange() {
-    emit("clear-error", "departmentId")
-    emit("department-change")
+function onPositionsChange() {
+    emit("clear-error", "positionIds")
+    emit("clear-error", "positionId")
 }
 </script>
 
@@ -59,36 +58,27 @@ function onDepartmentChange() {
                     <small v-if="message('branchId')">{{ message("branchId") }}</small>
                 </label>
 
-                <label class="enterprise-form-field">
-                    <span>{{ t("organization.line.department") }} <strong class="required-star">*</strong></span>
-                    <Select
-                        v-model="form.departmentId"
-                        :options="departmentOptions"
-                        option-label="label"
-                        option-value="value"
-                        filter
-                        :invalid="Boolean(message('departmentId'))"
-                        :disabled="disabled"
-                        :placeholder="t('organization.line.selectDepartment')"
-                        @change="onDepartmentChange"
-                    />
-                    <small v-if="message('departmentId')">{{ message("departmentId") }}</small>
-                </label>
-
-                <label class="enterprise-form-field">
-                    <span>{{ t("organization.line.position") }} <strong class="required-star">*</strong></span>
-                    <Select
-                        v-model="form.positionId"
+                <label class="enterprise-form-field enterprise-form-field--full">
+                    <span>{{ t("organization.line.allowedPositions") }} <strong class="required-star">*</strong></span>
+                    <MultiSelect
+                        v-model="form.positionIds"
                         :options="positionOptions"
                         option-label="label"
                         option-value="value"
+                        display="chip"
                         filter
-                        :invalid="Boolean(message('positionId'))"
-                        :disabled="disabled || !form.departmentId"
-                        :placeholder="t('organization.line.selectPosition')"
-                        @change="emit('clear-error', 'positionId')"
+                        :max-selected-labels="6"
+                        :invalid="Boolean(message('positionIds') || message('positionId'))"
+                        :disabled="disabled"
+                        :placeholder="t('organization.line.selectAllowedPositions')"
+                        @change="onPositionsChange"
                     />
-                    <small v-if="message('positionId')">{{ message("positionId") }}</small>
+                    <small v-if="message('positionIds') || message('positionId')">
+                        {{ message("positionIds") || message("positionId") }}
+                    </small>
+                    <small v-else class="enterprise-form-field__hint">
+                        {{ t("organization.line.allowedPositionsHelp") }}
+                    </small>
                 </label>
             </div>
         </section>
@@ -196,6 +186,10 @@ function onDepartmentChange() {
 .enterprise-form-field small {
     color: var(--p-red-500, #ef4444);
     font-size: 0.7rem;
+}
+
+.enterprise-form-field small.enterprise-form-field__hint {
+    color: var(--p-text-muted-color, #64748b);
 }
 
 .enterprise-form-field--full {

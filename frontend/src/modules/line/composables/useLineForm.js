@@ -6,8 +6,7 @@ export function createEmptyLineForm() {
     return {
         companyId: "",
         branchId: "",
-        departmentId: "",
-        positionId: "",
+        positionIds: [],
         code: "",
         name: "",
         description: "",
@@ -17,6 +16,30 @@ export function createEmptyLineForm() {
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value))
+}
+
+function normalizeIds(values = []) {
+    return [
+        ...new Set(
+            (Array.isArray(values) ? values : [])
+                .map((value) => String(value || ""))
+                .filter(Boolean),
+        ),
+    ]
+}
+
+function linePositionIds(line = {}) {
+    const direct = normalizeIds(line.positionIds)
+    if (direct.length) return direct
+
+    const fromPositions = normalizeIds(
+        (Array.isArray(line.positions) ? line.positions : [])
+            .map((position) => position?.id || position?._id),
+    )
+    if (fromPositions.length) return fromPositions
+
+    const legacy = line.positionId ?? line.position?.id ?? line.position?._id ?? ""
+    return legacy ? [String(legacy)] : []
 }
 
 function mapFieldErrors(error) {
@@ -43,10 +66,18 @@ export function useLineForm() {
             ...clone(line),
             companyId: line.companyId ?? line.company?.id ?? "",
             branchId: line.branchId ?? line.branch?.id ?? "",
-            departmentId: line.departmentId ?? line.department?.id ?? "",
-            positionId: line.positionId ?? line.position?.id ?? "",
+            positionIds: linePositionIds(line),
             status: line.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
         })
+
+        // Never send compatibility/derived fields back to the API.
+        delete form.departmentId
+        delete form.department
+        delete form.departmentIds
+        delete form.departments
+        delete form.positionId
+        delete form.position
+        delete form.positions
     }
 
     function openCreate(workspace = {}) {
@@ -83,10 +114,15 @@ export function useLineForm() {
 
     function validateRequired() {
         const next = {}
-        if (!form.departmentId) next.departmentId = "errors.organization.line.departmentRequired"
-        if (!form.positionId) next.positionId = "errors.organization.line.positionRequired"
-        if (!String(form.code || "").trim()) next.code = "errors.organization.line.codeRequired"
-        if (!String(form.name || "").trim()) next.name = "errors.organization.line.nameRequired"
+        if (!Array.isArray(form.positionIds) || form.positionIds.length === 0) {
+            next.positionIds = "errors.organization.line.positionRequired"
+        }
+        if (!String(form.code || "").trim()) {
+            next.code = "errors.organization.line.codeRequired"
+        }
+        if (!String(form.name || "").trim()) {
+            next.name = "errors.organization.line.nameRequired"
+        }
         errors.value = { ...errors.value, ...next }
         return Object.keys(next).length === 0
     }
@@ -103,6 +139,8 @@ export function useLineForm() {
 
         try {
             const payload = clone(form)
+            payload.positionIds = normalizeIds(payload.positionIds)
+
             if (isEdit.value) {
                 delete payload.companyId
                 delete payload.branchId

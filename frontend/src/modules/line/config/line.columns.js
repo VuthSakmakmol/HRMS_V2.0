@@ -22,8 +22,8 @@ export function createLineColumns(t) {
         },
         {
             field: "position",
-            header: t("organization.line.position"),
-            minWidth: "14rem",
+            header: t("organization.line.allowedPositions"),
+            minWidth: "18rem",
         },
         {
             field: "company",

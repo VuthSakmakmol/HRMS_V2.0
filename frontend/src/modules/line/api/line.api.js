@@ -1,7 +1,6 @@
 import { apiClient } from "@/shared/services/apiClient.js"
 
 const ENDPOINT = "/organization/lines"
-const DEPARTMENT_ENDPOINT = "/organization/departments"
 const POSITION_ENDPOINT = "/organization/positions"
 
 function unwrapData(response) {
@@ -100,9 +99,6 @@ async function lookup(endpoint, params = {}, signal) {
 
     return items
 }
-
-export const lookupDepartments = (params, signal) =>
-    lookup(DEPARTMENT_ENDPOINT, params, signal)
 
 export const lookupPositions = (params, signal) =>
     lookup(POSITION_ENDPOINT, params, signal)
