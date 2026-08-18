@@ -90,7 +90,7 @@ function downloadErrors() {
             >
 
             <small class="monthly-note">
-                Excome monthly format: Record Date, Employee No, Working Hours. Working Hours = 0 is Absent; any value above 0 is Present. Extra payroll columns are ignored because HRMS uses Employee Master.
+                Excome monthly format: Record Date, Employee No, Working Hours, Vacation. Working Hours = 0 with blank/Absent Vacation is uninformed Absent. Vacation descriptions are stored; informed leave and forget scan finger do not build the 6-day abandonment streak. Extra payroll columns are ignored because HRMS uses Employee Master.
             </small>
 
             <div
@@ -124,10 +124,7 @@ function downloadErrors() {
                             · {{ result.uniqueEmployeeCount }} employees
                         </template>
                     </span>
-                    <span v-if="result.importMode === 'MONTHLY_SUMMARY'">
-                        Absent {{ Number(result.absentCount || 0).toFixed(2) }}
-                    </span>
-                    <span v-else>
+                    <span>
                         AB {{ Number(result.absentCount || 0).toFixed(2) }} ·
                         AL {{ Number(result.annualLeaveCount || 0).toFixed(2) }} ·
                         SP {{ Number(result.specialPermissionCount || 0).toFixed(2) }} ·

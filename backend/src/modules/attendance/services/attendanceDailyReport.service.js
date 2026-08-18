@@ -116,6 +116,14 @@ function hasAnyFaceScan(record) {
   return Boolean(record.firstInAt || record.lastOutAt);
 }
 
+function hasInformedVacationDescription(record) {
+  const value = String(record?.vacationDescription || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  return Boolean(value) && !["(blanks)", "blanks", "absent", "absence"].includes(value);
+}
+
 function normalizedPositionTitle(value) {
   return String(value || "")
     .trim()
@@ -328,7 +336,7 @@ export async function buildAttendanceDailyReport({
         attendanceDate: { $gte: start, $lte: end },
         employeeId: { $in: allEmployeeIds },
       })
-        .select("employeeId attendanceDate departmentId positionId shiftId firstInAt lastOutAt leaveCode")
+        .select("employeeId attendanceDate departmentId positionId shiftId firstInAt lastOutAt leaveCode vacationDescription")
         .lean()
     : [];
 
@@ -373,7 +381,7 @@ export async function buildAttendanceDailyReport({
     // extend a maternity lifecycle period.
     if (!onMaternity && hasScan) fields.faceScans = 1;
     if (!onMaternity && ["AL", "SP", "UL", "SL"].includes(leaveCode)) fields[leaveCode] = 1;
-    if (!onMaternity && !hasScan && LEAVE_CODES.includes(leaveCode)) {
+    if (!onMaternity && !hasScan && (LEAVE_CODES.includes(leaveCode) || hasInformedVacationDescription(row))) {
       fields.informedMissing = 1;
     }
 

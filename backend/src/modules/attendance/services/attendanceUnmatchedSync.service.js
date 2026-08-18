@@ -13,6 +13,19 @@ function uniqueCodes(values = []) {
     return [...new Set(values.map(normalizeEmployeeCode).filter(Boolean))]
 }
 
+function normalizedVacationDescription(value) {
+    return String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function isForgotScanVacation(value) {
+    return [
+        "forget scan finger",
+        "forgot scan finger",
+        "forget finger scan",
+        "forgot finger scan",
+    ].includes(normalizedVacationDescription(value))
+}
+
 function buildIssueFilter({ companyId, branchId, employeeCodes }) {
     const filter = {
         companyId,
@@ -59,9 +72,12 @@ async function upsertMonthlyIssue({ issue, employee, user }) {
     const expectedDayValue = Number.isFinite(Number(issue.expectedDayValue))
         ? Math.max(0, Math.min(1, Number(issue.expectedDayValue)))
         : 1
-    const absenceDayValue = Number.isFinite(Number(issue.absenceDayValue))
-        ? Math.max(0, Math.min(1, Number(issue.absenceDayValue)))
-        : (workingHours <= 0 ? 1 : 0)
+    const forgotScan = isForgotScanVacation(issue.vacationDescription)
+    const absenceDayValue = forgotScan
+        ? 0
+        : Number.isFinite(Number(issue.absenceDayValue))
+            ? Math.max(0, Math.min(1, Number(issue.absenceDayValue)))
+            : (workingHours <= 0 ? 1 : 0)
 
     return AttendanceRecord.findOneAndUpdate(
         { employeeId: employee._id, attendanceDate: issue.attendanceDate },
@@ -82,9 +98,10 @@ async function upsertMonthlyIssue({ issue, employee, user }) {
                 absenceDayValue,
                 lateMinutes: 0,
                 earlyLeaveMinutes: 0,
-                leaveCode: null,
+                leaveCode: issue.leaveCode || null,
+                vacationDescription: issue.vacationDescription || "",
                 dayType: existing?.dayType || "WORKING_DAY",
-                status: workingHours > 0 ? "PRESENT" : "ABSENT",
+                status: (workingHours > 0 || forgotScan) ? "PRESENT" : "ABSENT",
                 verificationStatus: "VERIFIED",
                 issueCodes: [],
                 rawScanIds: [],

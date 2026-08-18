@@ -75,9 +75,9 @@ function applyLeaveCodeFilter(filter, leaveCode) {
         filter.$and = [
             ...(filter.$and || []),
             {
-                $or: [
-                    { leaveCode: null },
-                    { leaveCode: "" },
+                $and: [
+                    { $or: [{ leaveCode: null }, { leaveCode: "" }, { leaveCode: { $exists: false } }] },
+                    { $or: [{ vacationDescription: "" }, { vacationDescription: null }, { vacationDescription: { $exists: false } }] },
                 ],
             },
         ]

@@ -277,8 +277,19 @@ function isPresent(record) {
     )
 }
 
+function normalizedVacationDescription(value) {
+    return String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function hasInformedVacationDescription(record) {
+    const value = normalizedVacationDescription(record?.vacationDescription)
+    return Boolean(value)
+        && !["(blanks)", "blanks", "absent", "absence"].includes(value)
+}
+
 function isApprovedAttendanceLeave(record) {
     return ["AL", "SP", "ML", "SL", "UL"].includes(String(record?.leaveCode || "").toUpperCase())
+        || hasInformedVacationDescription(record)
 }
 
 function employeeAttendanceDateIsComplete({ dateKey, shift, now = new Date() }) {
@@ -326,7 +337,7 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
                 $lte: endOfBusinessDay(throughKey),
             },
         })
-            .select("employeeId attendanceDate firstInAt lastOutAt workedMinutes status leaveCode")
+            .select("employeeId attendanceDate firstInAt lastOutAt workedMinutes status leaveCode vacationDescription")
             .lean(),
         CalendarDay.find({
             status: "ACTIVE",

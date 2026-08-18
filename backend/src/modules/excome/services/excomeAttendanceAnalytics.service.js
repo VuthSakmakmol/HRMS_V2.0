@@ -154,7 +154,12 @@ function rawDetailCodeExpression() {
                             {
                                 $ifNull: [
                                     "$attendanceCode",
-                                    { $ifNull: ["$correctionCode", ""] },
+                                    {
+                                        $ifNull: [
+                                            "$correctionCode",
+                                            { $ifNull: ["$vacationDescription", ""] },
+                                        ],
+                                    },
                                 ],
                             },
                         ],
@@ -187,12 +192,12 @@ function normalizedDetailCodeExpression() {
     return {
         $switch: {
             branches: [
-                { case: { $in: [normalized, ["ANNUAL_LEAVE", "ANNUAL", "AL"]] }, then: "AL" },
+                { case: { $in: [normalized, ["ANNUAL_LEAVE", "ANNUAL_LEAVE_(HOURS)", "ANNUAL", "AL"]] }, then: "AL" },
                 { case: { $in: [normalized, ["SPECIAL_PERMISSION", "SPECIAL_LEAVE", "SPECIAL", "SP"]] }, then: "SP" },
                 { case: { $in: [normalized, ["UNPAID_LEAVE", "UNPAID", "UL"]] }, then: "UL" },
                 { case: { $in: [normalized, ["ABSENT", "ABSENCE", "AB"]] }, then: "AB" },
-                { case: { $in: [normalized, ["SICK_LEAVE", "SICK", "SL"]] }, then: "SL" },
-                { case: { $in: [normalized, ["MATERNITY_LEAVE", "MATERNITY", "ML"]] }, then: "ML" },
+                { case: { $in: [normalized, ["SICK_LEAVE", "SICK_LEAVE_(60%)", "SICK_LEAVE_(HOURS)", "SICK", "SL"]] }, then: "SL" },
+                { case: { $in: [normalized, ["HER_MATERNITY_LEAVE", "HER_MATERNITY_LEAVE(0%)", "HER_MATERNITY_LEAVE_(0%)", "MATERNITY_LEAVE", "MATERNITY", "ML"]] }, then: "ML" },
             ],
             default: normalized,
         },
@@ -208,7 +213,7 @@ function monthlyGroupStage() {
         _id: { year: "$year", month: "$month" },
         processed: { $sum: 1 },
         present: conditionalSum({ $in: ["$status", PRESENT_STATUSES] }),
-        absent: conditionalSum({ $eq: ["$status", "ABSENT"] }),
+        absent: conditionalSum({ $eq: ["$comparisonDetailCode", "AB"] }),
         late: conditionalSum({
             $or: [
                 { $in: ["$status", LATE_STATUSES] },
@@ -270,7 +275,7 @@ function lineGroupStage() {
             _id: "$lineId",
             processed: { $sum: 1 },
             present: conditionalSum({ $in: ["$status", PRESENT_STATUSES] }),
-            absent: conditionalSum({ $eq: ["$status", "ABSENT"] }),
+            absent: conditionalSum({ $eq: ["$comparisonDetailCode", "AB"] }),
             late: conditionalSum({
                 $or: [
                     { $in: ["$status", LATE_STATUSES] },
@@ -298,6 +303,7 @@ async function aggregateAttendance(query, selectedYear, employees) {
                 departmentId: 1,
                 lineId: 1,
                 status: { $ifNull: ["$status", ""] },
+                vacationDescription: { $ifNull: ["$vacationDescription", ""] },
                 verificationStatus: { $ifNull: ["$verificationStatus", ""] },
                 lateMinutes: numericField("lateMinutes"),
                 earlyLeaveMinutes: numericField("earlyLeaveMinutes"),
@@ -311,34 +317,47 @@ async function aggregateAttendance(query, selectedYear, employees) {
                 year: { $year: "$attendanceDate" },
                 month: { $month: "$attendanceDate" },
                 expected: { $not: [{ $in: ["$status", ["REST_DAY", "HOLIDAY"]] }] },
+                normalizedVacation: {
+                    $toLower: { $trim: { input: "$vacationDescription" } },
+                },
+            },
+        },
+        {
+            $set: {
+                informedVacation: {
+                    $and: [
+                        { $ne: ["$normalizedVacation", ""] },
+                        { $not: [{ $in: ["$normalizedVacation", ["(blanks)", "blanks", "absent", "absence"]] }] },
+                    ],
+                },
             },
         },
         {
             $set: {
                 comparisonDetailCode: {
                     $cond: [
-                        { $ne: ["$detailCode", ""] },
+                        { $in: ["$detailCode", DETAIL_CODES] },
                         "$detailCode",
-                        { $cond: [{ $eq: ["$status", "ABSENT"] }, "AB", ""] },
+                        {
+                            $cond: [
+                                {
+                                    $and: [
+                                        { $eq: ["$status", "ABSENT"] },
+                                        { $eq: ["$informedVacation", false] },
+                                    ],
+                                },
+                                "AB",
+                                "",
+                            ],
+                        },
                     ],
                 },
             },
         },
         {
             $set: {
-                isAbsence: {
-                    $or: [
-                        { $in: ["$comparisonDetailCode", DETAIL_CODES] },
-                        { $eq: ["$status", "ABSENT"] },
-                    ],
-                },
-                absenceBucketCode: {
-                    $cond: [
-                        { $in: ["$comparisonDetailCode", DETAIL_CODES] },
-                        "$comparisonDetailCode",
-                        { $cond: [{ $eq: ["$status", "ABSENT"] }, "AB", "$comparisonDetailCode"] },
-                    ],
-                },
+                isAbsence: { $in: ["$comparisonDetailCode", DETAIL_CODES] },
+                absenceBucketCode: "$comparisonDetailCode",
             },
         },
         {

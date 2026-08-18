@@ -25,6 +25,7 @@ const attendanceImportIssueSchema = new Schema(
             enum: ["AL", "SP", "ML", "SL", "UL", null],
             default: null,
         },
+        vacationDescription: { type: String, trim: true, maxlength: 200, default: "" },
         status: {
             type: String,
             enum: ["NO_EMPLOYEE_MATCH", "RESOLVED", "ARCHIVED"],

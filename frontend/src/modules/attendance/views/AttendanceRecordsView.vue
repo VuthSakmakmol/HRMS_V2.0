@@ -104,7 +104,7 @@ const rows = computed(() =>
     position: item.positionId?.title || item.positionId?.name || "—",
     line: item.lineId?.name || "—",
     shift: item.shiftId?.name || item.shiftId?.code || "—",
-    vacation: leaveLabels[item.leaveCode] || "—",
+    vacation: item.vacationDescription || leaveLabels[item.leaveCode] || "—",
   })),
 );
 

@@ -14,11 +14,16 @@ import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
 
 const LEGACY_HEADERS = ["Record Date", "Employee No", "Time1", "Time2", "Vacation"]
 const MONTHLY_HEADERS = ["Record Date", "Employee No", "Working Hours"]
+const MONTHLY_TEMPLATE_HEADERS = [...MONTHLY_HEADERS, "Vacation"]
 const VACATION_OPTIONS = [
+    "Absent",
     "Annual Leave",
+    "Annual Leave (Hours)",
     "Special Permission",
+    "forget scan finger",
     "Her Maternity Leave",
     "Her Maternity Leave(0%)",
+    "Paid Leave 50%",
     "Sick Leave",
     "Sick Leave (60%)",
     "Sick Leave (Hours)",
@@ -26,6 +31,7 @@ const VACATION_OPTIONS = [
 ]
 const VACATION_CODE_BY_VALUE = new Map([
     ["annual leave", "AL"],
+    ["annual leave (hours)", "AL"],
     ["special permission", "SP"],
     ["special leave", "SP"],
     ["special permission leave", "SP"],
@@ -39,17 +45,47 @@ const VACATION_CODE_BY_VALUE = new Map([
     ["unpaid leave", "UL"],
 ])
 
+function normalizedVacationText(value) {
+    return String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
+}
+
+function isBlankVacation(value) {
+    const normalized = normalizedVacationText(value)
+    return !normalized || normalized === "(blanks)" || normalized === "blanks"
+}
+
+function isExplicitAbsentVacation(value) {
+    const normalized = normalizedVacationText(value)
+    return normalized === "absent" || normalized === "absence"
+}
+
+function isForgotScanVacation(value) {
+    const normalized = normalizedVacationText(value)
+    return [
+        "forget scan finger",
+        "forgot scan finger",
+        "forget finger scan",
+        "forgot finger scan",
+    ].includes(normalized)
+}
+
+function isInformedVacation(value) {
+    return !isBlankVacation(value) && !isExplicitAbsentVacation(value)
+}
+
 function normalizeHeader(value) {
     return String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
 }
 
 function normalizeVacation(value) {
-    const normalized = String(value || "").trim().replace(/\s+/g, " ").toLowerCase()
-    if (!normalized || normalized === "(blanks)" || normalized === "blanks") {
+    if (isBlankVacation(value)) {
         return { leaveCode: null, vacation: "" }
     }
-    const leaveCode = VACATION_CODE_BY_VALUE.get(normalized)
-    return leaveCode ? { leaveCode, vacation: String(value).trim() } : null
+    const normalized = normalizedVacationText(value)
+    return {
+        leaveCode: VACATION_CODE_BY_VALUE.get(normalized) || null,
+        vacation: String(value).trim(),
+    }
 }
 
 function vacationLabel(code) {
@@ -146,7 +182,8 @@ function parseWorkingHours(value) {
     return numeric
 }
 
-function monthlyAbsenceDayValue(workingHours) {
+function monthlyAbsenceDayValue(workingHours, vacationDescription = "") {
+    if (isForgotScanVacation(vacationDescription)) return 0
     return Math.max(0, Number(workingHours) || 0) <= 0 ? 1 : 0
 }
 
@@ -169,16 +206,16 @@ function detectAttendanceSheet(workbook) {
 export async function buildAttendanceImportTemplate() {
     const workbook = new ExcelJS.Workbook()
     const sheet = workbook.addWorksheet("Monthly Attendance")
-    sheet.addRow(MONTHLY_HEADERS)
-    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP001", 8])
-    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP002", 0])
-    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP003", 4])
+    sheet.addRow(MONTHLY_TEMPLATE_HEADERS)
+    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP001", 8, ""])
+    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP002", 0, "Annual Leave"])
+    sheet.addRow([getPhnomPenhExcelDateSerial(), "EMP003", 0, "forget scan finger"])
 
     sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
     sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } }
     sheet.views = [{ state: "frozen", ySplit: 1 }]
-    sheet.autoFilter = { from: "A1", to: "C1" }
-    sheet.columns = [{ width: 18 }, { width: 20 }, { width: 18 }]
+    sheet.autoFilter = { from: "A1", to: "D1" }
+    sheet.columns = [{ width: 18 }, { width: 20 }, { width: 18 }, { width: 28 }]
     sheet.getColumn(1).numFmt = "dd/mm/yyyy"
     sheet.getColumn(3).numFmt = "0.00"
     sheet.dataValidations.add("C2:C150000", {
@@ -186,6 +223,11 @@ export async function buildAttendanceImportTemplate() {
         operator: "between",
         allowBlank: false,
         formulae: [0, 24],
+    })
+    sheet.dataValidations.add("D2:D150000", {
+        type: "list",
+        allowBlank: true,
+        formulae: [`"${VACATION_OPTIONS.join(",")}"`],
     })
     return workbook
 }
@@ -223,7 +265,7 @@ export async function buildAttendanceExportWorkbook(records = []) {
             shift: record.shiftId?.name || record.shiftId?.code || "",
             firstIn: record.firstInAt,
             lastOut: record.lastOutAt,
-            vacation: vacationLabel(record.leaveCode),
+            vacation: record.vacationDescription || vacationLabel(record.leaveCode),
             workedMinutes: record.workedMinutes,
             lateMinutes: record.lateMinutes,
             earlyLeaveMinutes: record.earlyLeaveMinutes,
@@ -253,7 +295,7 @@ export async function buildAttendanceImportIssueWorkbook(issues = []) {
         { header: "Status", key: "status", width: 22 },
     ]
     for (const issue of issues) {
-        sheet.addRow({ ...issue, vacation: vacationLabel(issue.leaveCode) })
+        sheet.addRow({ ...issue, vacation: issue.vacationDescription || vacationLabel(issue.leaveCode) })
     }
     sheet.getRow(1).font = { bold: true }
     return workbook
@@ -287,9 +329,12 @@ export async function parseAttendanceWorkbook(buffer) {
 
         if (mode === "MONTHLY_SUMMARY") {
             const rawWorkingHours = getCellByHeader(row, map, "Working Hours")
+            const rawVacation = getCellByHeader(row, map, "Vacation")
+            const vacation = normalizeVacation(rawVacation)
             const isBlankRow = !employeeCode
                 && !attendanceDate
                 && (rawWorkingHours === null || rawWorkingHours === undefined || rawWorkingHours === "")
+                && isBlankVacation(rawVacation)
 
             if (!isBlankRow) {
                 if (!employeeCode || !attendanceDate) {
@@ -313,9 +358,10 @@ export async function parseAttendanceWorkbook(buffer) {
                                     employeeCode,
                                     attendanceDate,
                                     workingHours,
-                                    leaveCode: null,
+                                    leaveCode: vacation.leaveCode,
+                                    vacationDescription: vacation.vacation,
                                     expectedDayValue: 1,
-                                    absenceDayValue: monthlyAbsenceDayValue(workingHours),
+                                    absenceDayValue: monthlyAbsenceDayValue(workingHours, vacation.vacation),
                                     note: "",
                                 },
                             })
@@ -339,22 +385,19 @@ export async function parseAttendanceWorkbook(buffer) {
                         errors.push({ row: rowNumber, message: "Time1 and Time2 must use valid HHmm values." })
                     } else {
                         const vacation = normalizeVacation(rawVacation)
-                        if (!vacation) {
-                            errors.push({ row: rowNumber, code: "INVALID_VACATION", message: `Vacation must be blank or one of: ${VACATION_OPTIONS.join(", ")}.` })
-                        } else {
-                            rows.push({
-                                rowNumber,
-                                payload: {
-                                    importMode: "LEGACY_SCAN",
-                                    employeeCode,
-                                    attendanceDate,
-                                    time1At: time1 ? combineDateAndTime(attendanceDate, rawTime1) : null,
-                                    time2At: time2 ? combineDateAndTime(attendanceDate, rawTime2) : null,
-                                    leaveCode: vacation.leaveCode,
-                                    note: "",
-                                },
-                            })
-                        }
+                        rows.push({
+                            rowNumber,
+                            payload: {
+                                importMode: "LEGACY_SCAN",
+                                employeeCode,
+                                attendanceDate,
+                                time1At: time1 ? combineDateAndTime(attendanceDate, rawTime1) : null,
+                                time2At: time2 ? combineDateAndTime(attendanceDate, rawTime2) : null,
+                                leaveCode: vacation.leaveCode,
+                                vacationDescription: vacation.vacation,
+                                note: "",
+                            },
+                        })
                     }
                 }
             }
@@ -413,6 +456,7 @@ function buildImportMutations(row, employee, shift = null) {
         shift,
         importMode: row.payload.importMode || "LEGACY_SCAN",
         leaveCode: row.payload.leaveCode || null,
+        vacationDescription: row.payload.vacationDescription || "",
         note: row.payload.note || "",
     }
 
@@ -483,7 +527,8 @@ function toBulkValues({ mutation, existing, user, policy }) {
     if (mutation.importMode === "MONTHLY_SUMMARY") {
         const workingHours = Math.max(0, Number(mutation.workingHours) || 0)
         const workedMinutes = Math.round(workingHours * 60)
-        const status = workingHours > 0 ? "PRESENT" : "ABSENT"
+        const forgotScan = isForgotScanVacation(mutation.vacationDescription)
+        const status = (workingHours > 0 || forgotScan) ? "PRESENT" : "ABSENT"
 
         return {
             employeeCode: employee.employeeCode,
@@ -499,14 +544,17 @@ function toBulkValues({ mutation, existing, user, policy }) {
             workedMinutes,
             lateMinutes: 0,
             earlyLeaveMinutes: 0,
-            leaveCode: null,
+            leaveCode: mutation.leaveCode || null,
+            vacationDescription: mutation.vacationDescription || "",
             dayType: existing?.dayType || "WORKING_DAY",
             status,
             verificationStatus: "VERIFIED",
             issueCodes: [],
             rawScanIds: [],
             expectedDayValue: Math.max(0, Math.min(1, Number(mutation.expectedDayValue ?? 1))),
-            absenceDayValue: Math.max(0, Math.min(1, Number(mutation.absenceDayValue ?? 0))),
+            absenceDayValue: forgotScan
+                ? 0
+                : Math.max(0, Math.min(1, Number(mutation.absenceDayValue ?? 0))),
             note: mutation.note || "Monthly payroll attendance import",
             policySnapshot: existing?.policySnapshot || {},
             calculationVersion: "MONTHLY_PAYROLL_V1",
@@ -546,6 +594,7 @@ function toBulkValues({ mutation, existing, user, policy }) {
         shiftId: employee.shiftId,
         source: "EXCEL_IMPORT",
         leaveCode: mutation.leaveCode || existing?.leaveCode || null,
+        vacationDescription: mutation.vacationDescription || existing?.vacationDescription || "",
         expectedDayValue: 1,
         absenceDayValue: (mutation.leaveCode || calculated.status === "ABSENT") ? 1 : 0,
         note: mutation.note || existing?.note || "",
@@ -574,6 +623,10 @@ async function bulkWriteInChunks(Model, operations, chunkSize = 2000, onChunk = 
     }
 }
 
+function recordHasInformedVacation(record) {
+    return isInformedVacation(record?.vacationDescription)
+}
+
 function countSummaryRecord(summary, current) {
     if (!current) return
     const absenceValue = Number.isFinite(Number(current.absenceDayValue))
@@ -581,7 +634,7 @@ function countSummaryRecord(summary, current) {
         : ((current.status === "ABSENT" || current.leaveCode) ? 1 : 0)
 
     if (current.status === "PRESENT") summary.presentCount += 1
-    if (current.status === "ABSENT" && !current.leaveCode) summary.absentCount += absenceValue
+    if (current.status === "ABSENT" && !current.leaveCode && !recordHasInformedVacation(current)) summary.absentCount += absenceValue
     if (current.leaveCode === "AL") summary.annualLeaveCount += absenceValue
     if (current.leaveCode === "SP") summary.specialPermissionCount += absenceValue
     if (current.leaveCode === "ML") summary.maternityLeaveCount += absenceValue
@@ -747,6 +800,7 @@ export async function importAttendanceRows({ rows, parseErrors, user, workspace,
                             expectedDayValue: row.payload.importMode === "MONTHLY_SUMMARY" ? Number(row.payload.expectedDayValue ?? 1) : null,
                             absenceDayValue: row.payload.importMode === "MONTHLY_SUMMARY" ? Number(row.payload.absenceDayValue ?? 0) : null,
                             leaveCode: row.payload.leaveCode || null,
+                            vacationDescription: row.payload.vacationDescription || "",
                             createdByAccountId: user.accountId,
                         },
                         $setOnInsert: {

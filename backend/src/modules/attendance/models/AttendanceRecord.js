@@ -57,6 +57,7 @@ const attendanceRecordSchema = new Schema(
             enum: ["AL", "SP", "ML", "SL", "UL", null],
             default: null,
         },
+        vacationDescription: { type: String, trim: true, maxlength: 200, default: "" },
         dayType: {
             type: String,
             enum: ["WORKING_DAY", "REST_DAY", "HOLIDAY", "CLOSED_DAY"],

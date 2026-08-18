@@ -155,7 +155,7 @@ export default {
         "template": "Sample Excel",
         "import": "Import Excel",
         "importTitle": "Import attendance",
-        "importDescription": "Monthly Excome import uses only Record Date, Employee No, and Working Hours. Working Hours = 0 is Absent; any value above 0 is Present. Extra payroll columns are ignored. The legacy Time1/Time2 format is still supported.",
+        "importDescription": "Monthly Excome import reads Record Date, Employee No, Working Hours, and Vacation. Working Hours = 0 with blank/Absent Vacation is uninformed Absent. Vacation descriptions are stored, and informed Vacation values do not build an abandonment streak. Extra payroll columns are ignored. The legacy Time1/Time2 format is still supported.",
         "vacation": "Vacation",
         "vacationFilter": {
             "all": "All vacations",

@@ -38,6 +38,8 @@ const pagination = reactive({ page: 1, limit: 10, total: 0, totalPages: 1 });
 const columns = [
   { field: "attendanceDate", header: "Record Date", width: "8rem" },
   { field: "employeeCode", header: "Employee No", width: "9rem" },
+  { field: "workingHours", header: "Working Hours", width: "8rem" },
+  { field: "vacationDescription", header: "Vacation", minWidth: "12rem" },
   { field: "firstInAt", header: "Time1", width: "7rem" },
   { field: "lastOutAt", header: "Time2", width: "7rem" },
   { field: "sourceRow", header: "Excel Row", width: "7rem" },
