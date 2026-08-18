@@ -117,6 +117,30 @@ function dayValueExpression() {
     }
 }
 
+function explicitDayValueExpression(field, fallback) {
+    const explicit = {
+        $convert: {
+            input: `$${field}`,
+            to: "double",
+            onError: null,
+            onNull: null,
+        },
+    }
+
+    return {
+        $let: {
+            vars: { explicit },
+            in: {
+                $cond: [
+                    { $ne: ["$$explicit", null] },
+                    { $max: [0, { $min: [1, "$$explicit"] }] },
+                    fallback,
+                ],
+            },
+        },
+    }
+}
+
 function rawDetailCodeExpression() {
     return {
         $ifNull: [
@@ -201,21 +225,21 @@ function monthlyGroupStage() {
         needsReview: conditionalSum({ $eq: ["$verificationStatus", "NEEDS_REVIEW"] }),
         holiday: conditionalSum({ $eq: ["$status", "HOLIDAY"] }),
         restDay: conditionalSum({ $eq: ["$status", "REST_DAY"] }),
-        expectedCount: conditionalSum("$expected"),
-        totalAbsenceCount: conditionalSum("$isAbsence"),
-        expectedDays: conditionalSum("$expected", "$dayValue"),
-        absenceDays: conditionalSum("$isAbsence", "$dayValue"),
+        expectedCount: conditionalSum("$expected", "$expectedDayValue"),
+        totalAbsenceCount: conditionalSum("$isAbsence", "$absenceDayValue"),
+        expectedDays: conditionalSum("$expected", "$expectedDayValue"),
+        absenceDays: conditionalSum("$isAbsence", "$absenceDayValue"),
         absenceDaysExcludingAnnualMaternity: conditionalSum(
             { $and: ["$isAbsence", { $in: ["$absenceBucketCode", RATE_EXCLUDING_ANNUAL_MATERNITY] }] },
-            "$dayValue",
+            "$absenceDayValue",
         ),
     }
 
     for (const code of DETAIL_CODES) {
-        group[`${code}Count`] = conditionalSum({ $and: ["$isAbsence", { $eq: ["$comparisonDetailCode", code] }] })
+        group[`${code}Count`] = conditionalSum({ $and: ["$isAbsence", { $eq: ["$comparisonDetailCode", code] }] }, "$absenceDayValue")
         group[`${code}Days`] = conditionalSum(
             { $and: ["$isAbsence", { $eq: ["$absenceBucketCode", code] }] },
-            "$dayValue",
+            "$absenceDayValue",
         )
     }
 
@@ -230,11 +254,11 @@ function departmentGroupStage() {
                 year: "$year",
                 month: "$month",
             },
-            expected: conditionalSum("$expected", "$dayValue"),
-            absenceDay: conditionalSum("$isAbsence", "$dayValue"),
+            expected: conditionalSum("$expected", "$expectedDayValue"),
+            absenceDay: conditionalSum("$isAbsence", "$absenceDayValue"),
             absenceDayExcludingAnnualMaternity: conditionalSum(
                 { $and: ["$isAbsence", { $in: ["$absenceBucketCode", RATE_EXCLUDING_ANNUAL_MATERNITY] }] },
-                "$dayValue",
+                "$absenceDayValue",
             ),
         },
     }
@@ -277,7 +301,8 @@ async function aggregateAttendance(query, selectedYear, employees) {
                 verificationStatus: { $ifNull: ["$verificationStatus", ""] },
                 lateMinutes: numericField("lateMinutes"),
                 earlyLeaveMinutes: numericField("earlyLeaveMinutes"),
-                dayValue: dayValueExpression(),
+                expectedDayValue: explicitDayValueExpression("expectedDayValue", dayValueExpression()),
+                absenceDayValue: explicitDayValueExpression("absenceDayValue", dayValueExpression()),
                 detailCode: normalizedDetailCodeExpression(),
             },
         },

@@ -10,11 +10,19 @@ const attendanceImportIssueSchema = new Schema(
         branchId: { type: Schema.Types.ObjectId, ref: "Branch", required: true },
         employeeCode: { type: String, required: true, trim: true, uppercase: true },
         attendanceDate: { type: Date, required: true },
+        inputMode: {
+            type: String,
+            enum: ["LEGACY_SCAN", "MONTHLY_SUMMARY"],
+            default: "LEGACY_SCAN",
+        },
         firstInAt: { type: Date, default: null },
         lastOutAt: { type: Date, default: null },
+        workingHours: { type: Number, min: 0, max: 24, default: null },
+        expectedDayValue: { type: Number, min: 0, max: 1, default: null },
+        absenceDayValue: { type: Number, min: 0, max: 1, default: null },
         leaveCode: {
             type: String,
-            enum: ["AL", "ML", "SL", "UL", null],
+            enum: ["AL", "SP", "ML", "SL", "UL", null],
             default: null,
         },
         status: {

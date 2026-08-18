@@ -26,7 +26,7 @@ import {
   toBusinessDateKey,
 } from "../utils/attendanceDate.util.js";
 
-const LEAVE_CODES = ["ML", "AL", "UL", "SL"];
+const LEAVE_CODES = ["ML", "AL", "SP", "UL", "SL"];
 const SEWER_POSITION_TITLES = new Set(["SEWER", "SEWER-JUMPER"]);
 const CODE_ALIASES = {
   MATERNITY: "ML",
@@ -35,6 +35,10 @@ const CODE_ALIASES = {
   ANNUAL: "AL",
   ANNUAL_LEAVE: "AL",
   AL: "AL",
+  SPECIAL_PERMISSION: "SP",
+  SPECIAL_LEAVE: "SP",
+  SPECIAL: "SP",
+  SP: "SP",
   UNPAID: "UL",
   UNPAID_LEAVE: "UL",
   UL: "UL",
@@ -153,6 +157,7 @@ function addStat(target, source) {
   target.faceScans += Number(source.faceScans || 0);
   target.ML += Number(source.ML || 0);
   target.AL += Number(source.AL || 0);
+  target.SP += Number(source.SP || 0);
   target.UL += Number(source.UL || 0);
   target.SL += Number(source.SL || 0);
   target.informedMissing += Number(source.informedMissing || 0);
@@ -165,6 +170,7 @@ function emptyStat() {
     faceScans: 0,
     ML: 0,
     AL: 0,
+    SP: 0,
     UL: 0,
     SL: 0,
     informedMissing: 0,
@@ -366,7 +372,7 @@ export async function buildAttendanceDailyReport({
     // remains stored on AttendanceRecord as evidence, but does not create or
     // extend a maternity lifecycle period.
     if (!onMaternity && hasScan) fields.faceScans = 1;
-    if (!onMaternity && ["AL", "UL", "SL"].includes(leaveCode)) fields[leaveCode] = 1;
+    if (!onMaternity && ["AL", "SP", "UL", "SL"].includes(leaveCode)) fields[leaveCode] = 1;
     if (!onMaternity && !hasScan && LEAVE_CODES.includes(leaveCode)) {
       fields.informedMissing = 1;
     }
@@ -535,6 +541,7 @@ export async function buildAttendanceDailyReport({
       leave: {
         ML: stat.ML,
         AL: stat.AL,
+        SP: stat.SP,
         UL: stat.UL,
         SL: stat.SL,
       },

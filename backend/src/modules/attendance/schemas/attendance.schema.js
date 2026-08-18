@@ -27,7 +27,7 @@ export const attendanceListQuerySchema = z.object({
             "HOLIDAY",
         ])
         .default("ALL"),
-    leaveCode: z.enum(["ALL", "BLANK", "AL", "ML", "SL", "UL"]).default("ALL"),
+    leaveCode: z.enum(["ALL", "BLANK", "AL", "SP", "ML", "SL", "UL"]).default("ALL"),
     companyId: optionalObjectIdSchema,
     branchId: optionalObjectIdSchema,
     departmentId: optionalObjectIdSchema,
@@ -53,7 +53,7 @@ export const attendanceUpsertSchema = z.object({
     attendanceDate: dateSchema,
     firstInAt: z.coerce.date().nullable().optional(),
     lastOutAt: z.coerce.date().nullable().optional(),
-    leaveCode: z.enum(["AL", "ML", "SL", "UL"]).nullable().optional(),
+    leaveCode: z.enum(["AL", "SP", "ML", "SL", "UL"]).nullable().optional(),
     note: z.string().trim().max(1000).default(""),
 })
 

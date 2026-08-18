@@ -303,8 +303,20 @@ function excelValueToPrimitive(value) {
 
 function excelValueToString(value) {
     const primitive = excelValueToPrimitive(value)
+
     if (primitive === null || primitive === undefined) return ""
-    if (primitive instanceof Date) return primitive
+
+    // This helper is used by normalizers that immediately call String methods
+    // such as .trim(). ExcelJS returns real Date objects for date cells, so
+    // returning the Date object here causes: `.trim is not a function`.
+    // Date parsing itself is handled separately by normalizeDate(), therefore
+    // this helper must always return a string.
+    if (primitive instanceof Date) {
+        return Number.isNaN(primitive.getTime())
+            ? ""
+            : primitive.toISOString()
+    }
+
     return String(primitive)
 }
 

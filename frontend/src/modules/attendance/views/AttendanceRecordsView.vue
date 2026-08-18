@@ -91,6 +91,7 @@ const form = reactive({
 let timer;
 const leaveLabels = {
   AL: "Annual Leave",
+  SP: "Special Permission",
   ML: "Maternity Leave",
   SL: "Sick Leave",
   UL: "Unpaid Leave",
@@ -167,6 +168,7 @@ const vacationOptions = computed(() => [
   { label: t("attendance.vacationFilter.all"), value: "ALL" },
   { label: t("attendance.vacationFilter.blank"), value: "BLANK" },
   { label: t("attendance.annualLeave"), value: "AL" },
+  { label: t("attendance.specialPermission"), value: "SP" },
   { label: t("attendance.maternityLeave"), value: "ML" },
   { label: t("attendance.sickLeave"), value: "SL" },
   { label: t("attendance.unpaidLeave"), value: "UL" },

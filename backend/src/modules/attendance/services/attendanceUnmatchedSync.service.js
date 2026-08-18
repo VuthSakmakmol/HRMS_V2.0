@@ -1,5 +1,6 @@
 import Employee from "../../employee/models/Employee.js"
 import AttendanceImportIssue from "../models/AttendanceImportIssue.js"
+import AttendanceRecord from "../models/AttendanceRecord.js"
 import { upsertAttendanceRecord } from "./attendance.service.js"
 import { clearCacheByPrefix } from "../../../shared/cache/memoryCache.js"
 import { assertAttendanceScope } from "../utils/attendanceScope.util.js"
@@ -23,6 +24,90 @@ function buildIssueFilter({ companyId, branchId, employeeCodes }) {
     if (codes.length) filter.employeeCode = { $in: codes }
 
     return filter
+}
+
+
+function hasConfirmedHrCorrection(record) {
+    return record?.lockStatus === "HR_VERIFIED" || (
+        record?.verificationStatus === "CORRECTED" &&
+        record?.correction?.reason &&
+        record.correction.reason !== "Manual correction"
+    )
+}
+
+async function upsertMonthlyIssue({ issue, employee, user }) {
+    if (!employee.departmentId || !employee.positionId || !employee.lineId || !employee.shiftId) {
+        const error = new Error("Employee Master must have Department, Position, Line, and Shift before monthly attendance can be synced.")
+        error.code = "ATTENDANCE_EMPLOYEE_ORG_INCOMPLETE"
+        throw error
+    }
+
+    const existing = await AttendanceRecord.findOne({
+        employeeId: employee._id,
+        attendanceDate: issue.attendanceDate,
+    }).lean()
+
+    if (["PAYROLL_LOCKED", "FINALIZED"].includes(existing?.lockStatus)) {
+        const error = new Error("Attendance is payroll-locked or finalized.")
+        error.code = "ATTENDANCE_RECORD_LOCKED"
+        throw error
+    }
+
+    if (hasConfirmedHrCorrection(existing)) return existing
+
+    const workingHours = Math.max(0, Number(issue.workingHours) || 0)
+    const expectedDayValue = Number.isFinite(Number(issue.expectedDayValue))
+        ? Math.max(0, Math.min(1, Number(issue.expectedDayValue)))
+        : 1
+    const absenceDayValue = Number.isFinite(Number(issue.absenceDayValue))
+        ? Math.max(0, Math.min(1, Number(issue.absenceDayValue)))
+        : (workingHours <= 0 ? 1 : 0)
+
+    return AttendanceRecord.findOneAndUpdate(
+        { employeeId: employee._id, attendanceDate: issue.attendanceDate },
+        {
+            $set: {
+                employeeCode: employee.employeeCode,
+                companyId: employee.companyId,
+                branchId: employee.branchId,
+                departmentId: employee.departmentId,
+                positionId: employee.positionId,
+                lineId: employee.lineId,
+                shiftId: employee.shiftId,
+                source: "EXCEL_IMPORT",
+                firstInAt: null,
+                lastOutAt: null,
+                workedMinutes: Math.round(workingHours * 60),
+                expectedDayValue,
+                absenceDayValue,
+                lateMinutes: 0,
+                earlyLeaveMinutes: 0,
+                leaveCode: null,
+                dayType: existing?.dayType || "WORKING_DAY",
+                status: workingHours > 0 ? "PRESENT" : "ABSENT",
+                verificationStatus: "VERIFIED",
+                issueCodes: [],
+                rawScanIds: [],
+                policySnapshot: existing?.policySnapshot || {},
+                calculationVersion: "MONTHLY_PAYROLL_V1",
+                lockStatus: existing?.lockStatus || "OPEN",
+                note: "Automatically matched from monthly Unmatched Attendance",
+                correction: {
+                    correctedByAccountId: null,
+                    correctedAt: null,
+                    reason: "",
+                    previousValues: null,
+                },
+                updatedByAccountId: user.accountId,
+            },
+            $setOnInsert: {
+                employeeId: employee._id,
+                attendanceDate: issue.attendanceDate,
+                createdByAccountId: user.accountId,
+            },
+        },
+        { upsert: true, returnDocument: "after", runValidators: true },
+    )
 }
 
 function clearAttendanceCaches() {
@@ -68,7 +153,7 @@ export async function syncUnmatchedAttendance({
         employeeCode: { $in: codes },
         recordStatus: { $ne: "ARCHIVED" },
     })
-        .select("_id employeeCode")
+        .select("_id employeeCode companyId branchId departmentId positionId lineId shiftId")
         .lean()
 
     const employeeByCode = new Map(
@@ -85,22 +170,26 @@ export async function syncUnmatchedAttendance({
         }
 
         try {
-            await upsertAttendanceRecord({
-                payload: {
-                    companyId,
-                    branchId,
-                    employeeCode,
-                    attendanceDate: issue.attendanceDate,
-                    firstInAt: issue.firstInAt || null,
-                    lastOutAt: issue.lastOutAt || null,
-                    leaveCode: issue.leaveCode || null,
-                    note: "Automatically matched from Unmatched Attendance",
-                },
-                user,
-                source: "EXCEL_IMPORT",
-                manualCorrection: false,
-                invalidateCache: false,
-            })
+            if (issue.inputMode === "MONTHLY_SUMMARY") {
+                await upsertMonthlyIssue({ issue, employee, user })
+            } else {
+                await upsertAttendanceRecord({
+                    payload: {
+                        companyId,
+                        branchId,
+                        employeeCode,
+                        attendanceDate: issue.attendanceDate,
+                        firstInAt: issue.firstInAt || null,
+                        lastOutAt: issue.lastOutAt || null,
+                        leaveCode: issue.leaveCode || null,
+                        note: "Automatically matched from Unmatched Attendance",
+                    },
+                    user,
+                    source: "EXCEL_IMPORT",
+                    manualCorrection: false,
+                    invalidateCache: false,
+                })
+            }
 
             await AttendanceImportIssue.updateOne(
                 { _id: issue._id, status: "NO_EMPLOYEE_MATCH" },

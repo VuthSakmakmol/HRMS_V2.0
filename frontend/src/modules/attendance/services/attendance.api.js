@@ -68,7 +68,13 @@ function delay(milliseconds, signal) {
 
 async function waitForImportJob(endpoint, jobId, { onProgress, signal } = {}) {
     while (true) {
-        const response = await apiClient.get(`${endpoint}/import-jobs/${jobId}`, { signal })
+        const response = await apiClient.get(`${endpoint}/import-jobs/${jobId}`, {
+            signal,
+            // Monthly attendance imports can keep Node busy while ExcelJS reads
+            // ~100k rows. Do not let Axios' 30-second global timeout turn a
+            // healthy background import into a false "Import failed" message.
+            timeout: 0,
+        })
         const job = response.data.data.job
         onProgress?.(job)
         if (job.status === "COMPLETED") return job.result

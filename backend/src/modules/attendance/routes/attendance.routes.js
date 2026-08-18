@@ -67,7 +67,7 @@ const router = Router()
 const upload = multer({
     storage: multer.memoryStorage(),
     limits: {
-        fileSize: 20 * 1024 * 1024,
+        fileSize: 50 * 1024 * 1024,
     },
 })
 const ATTENDANCE_RECORD_IMPORT_MODULE = "ATTENDANCE_RECORD"
@@ -118,13 +118,15 @@ function startDailyReportJob({ req, module, exportExcel = false }) {
 async function processAttendanceImportJob({ jobId, fileBuffer, user, workspace }) {
     try {
         updateImportJob(jobId, { status: "PROCESSING", phase: "READING_FILE", percent: 10 })
-        const { rows, errors } = await parseAttendanceWorkbook(fileBuffer)
+        const parsed = await parseAttendanceWorkbook(fileBuffer)
+        const { rows, errors } = parsed
         updateImportJob(jobId, { phase: "VALIDATING_ROWS", percent: 30, processedRows: 0, totalRows: rows.length + errors.length })
         const summary = await importAttendanceRows({
             rows,
             parseErrors: errors,
             user,
             workspace,
+            importMeta: parsed,
             onProgress: (progress) => updateImportJob(jobId, progress),
         })
         completeImportJob(jobId, summary)
@@ -638,9 +640,8 @@ router.post(
                 })
             }
 
-            const { rows, errors } = await parseAttendanceWorkbook(
-                req.file.buffer,
-            )
+            const parsed = await parseAttendanceWorkbook(req.file.buffer)
+            const { rows, errors } = parsed
             const summary = await importAttendanceRows({
                 rows,
                 parseErrors: errors,
@@ -649,6 +650,7 @@ router.post(
                     companyId: req.query.companyId || req.headers["x-workspace-company-id"],
                     branchId: req.query.branchId || req.headers["x-workspace-branch-id"],
                 },
+                importMeta: parsed,
             })
 
             res.status(summary.errorCount > 0 ? 207 : 200).json({

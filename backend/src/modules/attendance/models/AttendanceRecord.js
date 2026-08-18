@@ -48,11 +48,13 @@ const attendanceRecordSchema = new Schema(
         firstInAt: { type: Date, default: null },
         lastOutAt: { type: Date, default: null },
         workedMinutes: { type: Number, min: 0, default: 0 },
+        expectedDayValue: { type: Number, min: 0, max: 1, default: null },
+        absenceDayValue: { type: Number, min: 0, max: 1, default: null },
         lateMinutes: { type: Number, min: 0, default: 0 },
         earlyLeaveMinutes: { type: Number, min: 0, default: 0 },
         leaveCode: {
             type: String,
-            enum: ["AL", "ML", "SL", "UL", null],
+            enum: ["AL", "SP", "ML", "SL", "UL", null],
             default: null,
         },
         dayType: {

@@ -89,6 +89,10 @@ function downloadErrors() {
                 @change="changed"
             >
 
+            <small class="monthly-note">
+                Excome monthly format: Record Date, Employee No, Working Hours. Working Hours = 0 is Absent; any value above 0 is Present. Extra payroll columns are ignored because HRMS uses Employee Master.
+            </small>
+
             <div
                 v-if="importing"
                 class="progress-detail"
@@ -107,14 +111,34 @@ function downloadErrors() {
                 :severity="listedProblems.length ? 'warn' : 'success'"
                 :closable="false"
             >
-                Imported {{ result.successCount || 0 }} of {{ result.totalRows || 0 }}.
-                Annual: {{ result.annualLeaveCount || 0 }}.
-                Maternity: {{ result.maternityLeaveCount || 0 }}.
-                Sick: {{ result.sickLeaveCount || 0 }}.
-                Unpaid: {{ result.unpaidLeaveCount || 0 }}.
-                Absent: {{ result.absentCount || 0 }}.
-                Unmatched: {{ result.unmatchedCount || 0 }}.
-                Invalid: {{ result.errorCount || 0 }}.
+                <div class="import-result">
+                    <strong>
+                        {{ result.importMode === "MONTHLY_SUMMARY" ? "Monthly attendance imported" : "Attendance imported" }}
+                    </strong>
+                    <span>
+                        {{ result.successCount || 0 }} / {{ result.totalRows || 0 }} rows
+                        <template v-if="result.dateFrom && result.dateTo">
+                            · {{ result.dateFrom }} to {{ result.dateTo }}
+                        </template>
+                        <template v-if="result.uniqueEmployeeCount">
+                            · {{ result.uniqueEmployeeCount }} employees
+                        </template>
+                    </span>
+                    <span v-if="result.importMode === 'MONTHLY_SUMMARY'">
+                        Absent {{ Number(result.absentCount || 0).toFixed(2) }}
+                    </span>
+                    <span v-else>
+                        AB {{ Number(result.absentCount || 0).toFixed(2) }} ·
+                        AL {{ Number(result.annualLeaveCount || 0).toFixed(2) }} ·
+                        SP {{ Number(result.specialPermissionCount || 0).toFixed(2) }} ·
+                        ML {{ Number(result.maternityLeaveCount || 0).toFixed(2) }} ·
+                        SL {{ Number(result.sickLeaveCount || 0).toFixed(2) }} ·
+                        UL {{ Number(result.unpaidLeaveCount || 0).toFixed(2) }}
+                    </span>
+                    <span v-if="result.unmatchedCount || result.errorCount || result.duplicateCount">
+                        Unmatched {{ result.unmatchedCount || 0 }} · Invalid {{ result.errorCount || 0 }} · Duplicates {{ result.duplicateCount || 0 }}
+                    </span>
+                </div>
             </Message>
 
             <section
@@ -170,6 +194,18 @@ function downloadErrors() {
     gap: 1rem;
     color: var(--p-text-muted-color);
     font-size: 0.8rem;
+}
+
+.monthly-note {
+    color: var(--p-text-muted-color);
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.import-result {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.78rem;
 }
 
 .error-panel {

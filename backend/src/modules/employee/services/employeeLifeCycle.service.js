@@ -268,11 +268,17 @@ function attendanceRowKey(employeeId, dateValue) {
 }
 
 function isPresent(record) {
-    return Boolean(record?.firstInAt || record?.lastOutAt)
+    const status = String(record?.status || "").toUpperCase()
+    return Boolean(
+        record?.firstInAt ||
+        record?.lastOutAt ||
+        Number(record?.workedMinutes) > 0 ||
+        ["PRESENT", "LATE", "EARLY_LEAVE", "LATE_AND_EARLY_LEAVE", "MISSING_IN", "MISSING_OUT"].includes(status)
+    )
 }
 
 function isApprovedAttendanceLeave(record) {
-    return ["AL", "ML", "SL", "UL"].includes(String(record?.leaveCode || "").toUpperCase())
+    return ["AL", "SP", "ML", "SL", "UL"].includes(String(record?.leaveCode || "").toUpperCase())
 }
 
 function employeeAttendanceDateIsComplete({ dateKey, shift, now = new Date() }) {
@@ -320,7 +326,7 @@ export async function evaluateAbandonmentForWorkspace({ companyId, branchId, thr
                 $lte: endOfBusinessDay(throughKey),
             },
         })
-            .select("employeeId attendanceDate firstInAt lastOutAt leaveCode")
+            .select("employeeId attendanceDate firstInAt lastOutAt workedMinutes status leaveCode")
             .lean(),
         CalendarDay.find({
             status: "ACTIVE",

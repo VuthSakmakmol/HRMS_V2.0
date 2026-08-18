@@ -551,6 +551,7 @@ const summaryRows = computed(() => report.value ? [
     { label: "FACE SCAN", values: report.value.summary.faceScans, average: report.value.summary.averages.faceScans },
     { label: "- MATERNITY LEAVE", values: report.value.summary.leaves.ML, average: report.value.summary.averages.leaves.ML },
     { label: "- ANNUAL LEAVE", values: report.value.summary.leaves.AL, average: report.value.summary.averages.leaves.AL },
+    { label: "- SPECIAL PERMISSION", values: report.value.summary.leaves.SP, average: report.value.summary.averages.leaves.SP },
     { label: "- UNPAID LEAVE", values: report.value.summary.leaves.UL, average: report.value.summary.averages.leaves.UL },
     { label: "- SICK LEAVE", values: report.value.summary.leaves.SL, average: report.value.summary.averages.leaves.SL },
 ] : [])
