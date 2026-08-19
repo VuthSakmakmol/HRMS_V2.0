@@ -14,14 +14,28 @@ function endOfCurrentYear() {
 
 const dateStringSchema = z.string().date()
 
-const employeeTypeFilterKeySchema = z
+const employeeTypeFilterKeyValueSchema = z
     .string()
     .trim()
     .max(140)
     .regex(/^(TYPE|CHILD):[0-9a-fA-F]{24}(:[A-Z0-9_-]{2,30})?$/, {
         message: "Invalid employee type filter key.",
     })
-    .optional()
+
+const employeeTypeFilterKeySchema = employeeTypeFilterKeyValueSchema.optional()
+
+const employeeTypeFilterKeysSchema = z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined
+
+    const values = Array.isArray(value) ? value : String(value).split(",")
+
+    return [...new Set(
+        values
+            .flatMap((item) => String(item).split(","))
+            .map((item) => item.trim())
+            .filter(Boolean),
+    )]
+}, z.array(employeeTypeFilterKeyValueSchema).min(1).max(20).optional())
 
 const employeeTypeChildCodeSchema = z
     .string()
@@ -44,6 +58,7 @@ export const excomQuerySchema = z
         exitReasonId: objectIdSchema.optional(),
         employeeTypeChildCode: employeeTypeChildCodeSchema,
         employeeTypeFilterKey: employeeTypeFilterKeySchema,
+        employeeTypeFilterKeys: employeeTypeFilterKeysSchema,
         forceRefresh: z
             .enum(["true", "false"])
             .transform((value) => value === "true")

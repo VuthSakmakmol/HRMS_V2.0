@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n"
 
 import Button from "primevue/button"
 import Select from "primevue/select"
+import MultiSelect from "primevue/multiselect"
 
 import EnterpriseCalendarDatePicker from "@/shared/components/enterprise/EnterpriseCalendarDatePicker.vue"
 
@@ -45,52 +46,84 @@ const employeeTypeOptions = computed(() =>
     ),
 )
 
-const ALL_EMPLOYEE_TYPES_VALUE = "__ALL_EMPLOYEE_TYPES__"
+const employeeTypeParentOptions = computed(() =>
+    employeeTypeOptions.value.filter((item) => item.type === "TYPE"),
+)
 
-const employeeTypeParentOptions = computed(() => [
-    {
-        employeeTypeId: ALL_EMPLOYEE_TYPES_VALUE,
-        key: "ALL_EMPLOYEE_TYPES",
-        type: "ALL",
-        name: t("excom.filters.allEmployeeTypes"),
-        label: t("excom.filters.allEmployeeTypes"),
-    },
-    ...employeeTypeOptions.value.filter((item) => item.type === "TYPE"),
-])
+const selectedEmployeeTypeKeys = computed(() => {
+    const plural = Array.isArray(props.modelValue.employeeTypeFilterKeys)
+        ? props.modelValue.employeeTypeFilterKeys
+        : []
 
-const selectedEmployeeTypeOption = computed(() => {
-    if (!props.modelValue.employeeTypeFilterKey) return null
+    if (plural.length) return plural
+    if (props.modelValue.employeeTypeFilterKey) {
+        return [props.modelValue.employeeTypeFilterKey]
+    }
 
-    return employeeTypeOptions.value.find(
-        (item) => item.key === props.modelValue.employeeTypeFilterKey,
+    return []
+})
+
+const selectedEmployeeTypeOptions = computed(() => {
+    const optionMap = new Map(
+        employeeTypeOptions.value.map((item) => [item.key, item]),
+    )
+
+    return selectedEmployeeTypeKeys.value
+        .map((key) => optionMap.get(key))
+        .filter(Boolean)
+})
+
+// Parent MultiSelect always displays the selected parent(s). If a child is
+// selected, show its parent as selected in the first control and keep the
+// child in the second control.
+const selectedEmployeeTypeParentKeys = computed(() => {
+    const keys = selectedEmployeeTypeOptions.value.map((item) =>
+        item.type === "CHILD"
+            ? `TYPE:${item.employeeTypeId}`
+            : item.key,
+    )
+
+    return [...new Set(keys)]
+})
+
+const selectedSingleParentOption = computed(() => {
+    if (selectedEmployeeTypeParentKeys.value.length !== 1) return null
+
+    return employeeTypeParentOptions.value.find(
+        (item) => item.key === selectedEmployeeTypeParentKeys.value[0],
     ) || null
 })
 
-const selectedEmployeeTypeId = computed(() =>
-    selectedEmployeeTypeOption.value?.employeeTypeId || ALL_EMPLOYEE_TYPES_VALUE,
-)
+const employeeTypeChildOptions = computed(() => {
+    if (!selectedSingleParentOption.value) return []
 
-const employeeTypeChildOptions = computed(() =>
-    employeeTypeOptions.value.filter((item) =>
+    return employeeTypeOptions.value.filter((item) =>
         item.type === "CHILD" &&
-        item.employeeTypeId === selectedEmployeeTypeId.value,
+        item.employeeTypeId === selectedSingleParentOption.value.employeeTypeId,
+    )
+})
+
+const selectedEmployeeTypeChildKey = computed(() => {
+    if (selectedEmployeeTypeOptions.value.length !== 1) return undefined
+
+    const selected = selectedEmployeeTypeOptions.value[0]
+    return selected?.type === "CHILD" ? selected.key : undefined
+})
+
+const selectedEmployeeTypeAllowedPositionIds = computed(() =>
+    new Set(
+        selectedEmployeeTypeOptions.value.flatMap(
+            (item) => (item.positionIds || []).map(String),
+        ),
     ),
 )
 
-const selectedEmployeeTypeChildKey = computed(() =>
-    selectedEmployeeTypeOption.value?.type === "CHILD"
-        ? selectedEmployeeTypeOption.value.key
-        : undefined,
-)
-
-const selectedEmployeeTypeAllowedPositionIds = computed(() =>
-    new Set(selectedEmployeeTypeOption.value?.positionIds || []),
-)
-
 const selectedEmployeeTypeUsesAllPositions = computed(() => {
-    if (!selectedEmployeeTypeOption.value) return true
+    if (!selectedEmployeeTypeOptions.value.length) return true
 
-    return selectedEmployeeTypeOption.value.positionAssignmentMode === "ALL_POSITIONS"
+    return selectedEmployeeTypeOptions.value.some(
+        (item) => item.positionAssignmentMode === "ALL_POSITIONS",
+    )
 })
 
 const rawDepartmentOptions = computed(() =>
@@ -112,14 +145,14 @@ const rawPositionOptions = computed(() =>
 )
 
 function positionAllowedByEmployeeType(position) {
-    if (!selectedEmployeeTypeOption.value) return true
+    if (!selectedEmployeeTypeOptions.value.length) return true
     if (selectedEmployeeTypeUsesAllPositions.value) return true
 
-    return selectedEmployeeTypeAllowedPositionIds.value.has(position.id)
+    return selectedEmployeeTypeAllowedPositionIds.value.has(String(position.id))
 }
 
 function departmentAllowedByEmployeeType(department) {
-    if (!selectedEmployeeTypeOption.value) return true
+    if (!selectedEmployeeTypeOptions.value.length) return true
     if (selectedEmployeeTypeUsesAllPositions.value) return true
 
     return rawPositionOptions.value.some((position) =>
@@ -129,14 +162,14 @@ function departmentAllowedByEmployeeType(department) {
 }
 
 function lineAllowedByEmployeeType(line) {
-    if (!selectedEmployeeTypeOption.value) return true
+    if (!selectedEmployeeTypeOptions.value.length) return true
     if (selectedEmployeeTypeUsesAllPositions.value) return true
 
     const linePositionIds = line.positionIds || []
 
     if (linePositionIds.length > 0) {
         return linePositionIds.some((positionId) =>
-            selectedEmployeeTypeAllowedPositionIds.value.has(positionId),
+            selectedEmployeeTypeAllowedPositionIds.value.has(String(positionId)),
         )
     }
 
@@ -213,27 +246,29 @@ function updateField(field, value, dependentFields = []) {
     }
 }
 
-function updateEmployeeType(employeeTypeId) {
-    const isAll =
-        !employeeTypeId || employeeTypeId === ALL_EMPLOYEE_TYPES_VALUE
+function updateEmployeeTypes(keys) {
+    const normalizedKeys = [...new Set((keys || []).filter(Boolean))]
+    const nextValue = {
+        ...props.modelValue,
+        employeeTypeFilterKeys: normalizedKeys,
+        // Keep the legacy single key populated only for one selection. This
+        // makes old cached/front-end code harmless while the plural field is
+        // the source of truth for combined filtering.
+        employeeTypeFilterKey:
+            normalizedKeys.length === 1 ? normalizedKeys[0] : undefined,
+        departmentId: undefined,
+        positionId: undefined,
+        lineId: undefined,
+    }
 
-    updateField(
-        "employeeTypeFilterKey",
-        isAll ? undefined : `TYPE:${employeeTypeId}`,
-        ["departmentId", "positionId", "lineId"],
-    )
+    emit("update:modelValue", nextValue)
 }
 
 function updateEmployeeTypeChild(childKey) {
-    updateField(
-        "employeeTypeFilterKey",
-        childKey || (
-            selectedEmployeeTypeId.value
-                ? `TYPE:${selectedEmployeeTypeId.value}`
-                : undefined
-        ),
-        ["departmentId", "positionId", "lineId"],
-    )
+    const parentKey = selectedSingleParentOption.value?.key
+    const selectedKey = childKey || parentKey
+
+    updateEmployeeTypes(selectedKey ? [selectedKey] : [])
 }
 </script>
 
@@ -277,16 +312,18 @@ function updateEmployeeTypeChild(childKey) {
                 @update:model-value="updateField('endDate', $event)"
             />
 
-            <Select
+            <MultiSelect
                 class="dashboard-filter-field dashboard-filter-field--employee-type"
-                :model-value="selectedEmployeeTypeId"
+                :model-value="selectedEmployeeTypeParentKeys"
                 :options="employeeTypeParentOptions"
                 :option-label="employeeTypeOptionLabel"
-                option-value="employeeTypeId"
+                option-value="key"
                 :placeholder="t('excom.filters.allEmployeeTypes')"
+                display="chip"
                 filter
+                :max-selected-labels="2"
                 :loading="lookupLoading"
-                @update:model-value="updateEmployeeType"
+                @update:model-value="updateEmployeeTypes"
             />
 
             <Select
@@ -450,13 +487,14 @@ function updateEmployeeTypeChild(childKey) {
 
 .dashboard-filter-field--employee-type {
     flex-basis: 13rem;
-    max-width: 18rem;
+    max-width: 20rem;
 }
 
 :deep(.dashboard-filter-field),
 :deep(.dashboard-filter-field > .p-component),
 :deep(.dashboard-filter-field > .p-inputtext),
 :deep(.dashboard-filter-field > .p-select),
+:deep(.dashboard-filter-field > .p-multiselect),
 :deep(.dashboard-filter-field > .p-datepicker),
 :deep(.dashboard-filter-field .p-datepicker),
 :deep(.dashboard-filter-field .p-inputtext) {

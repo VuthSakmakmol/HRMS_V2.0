@@ -90,8 +90,10 @@ const rankingLabel = computed(() => {
 })
 
 const rows = computed(() => {
+    // Do not remove a department just because the focused month has zero
+    // headcount/exits. Excom's date filter is a focus for presentation; the
+    // whole Jan-Dec row must remain available for month-to-month comparison.
     const sortable = sourceRows.value
-        .filter((row) => rankingHeadcount(row) > 0 || rankingExits(row) > 0)
         .map((row) => ({
             row,
             score: rankingRate(row),

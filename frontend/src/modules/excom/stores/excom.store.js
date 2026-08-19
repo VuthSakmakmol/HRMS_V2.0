@@ -38,6 +38,13 @@ function cleanFilterValue(key, value) {
         return formatDate(value)
     }
 
+    // Keep the component state as an array, but send a compact CSV query
+    // parameter so Express/Zod receives the selection reliably on every PC.
+    if (key === "employeeTypeFilterKeys" && Array.isArray(value)) {
+        return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))]
+            .join(",")
+    }
+
     if (typeof value === "string") {
         return value.trim()
     }
@@ -49,7 +56,10 @@ function cleanFilters(filters) {
     return Object.fromEntries(
         Object.entries(filters)
             .filter(([, value]) =>
-                value !== "" && value !== null && value !== undefined,
+                value !== "" &&
+                value !== null &&
+                value !== undefined &&
+                (!Array.isArray(value) || value.length > 0),
             )
             .map(([key, value]) => [key, cleanFilterValue(key, value)]),
     )
@@ -84,6 +94,7 @@ export const useExcomStore = defineStore("excom", {
             companyId: undefined,
             branchId: undefined,
             employeeTypeFilterKey: undefined,
+            employeeTypeFilterKeys: [],
             departmentId: undefined,
             positionId: undefined,
             lineId: undefined,

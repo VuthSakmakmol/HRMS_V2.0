@@ -151,7 +151,15 @@ function buildAttendanceMatch(query, selectedYear, employees = [], startDate, en
         if (query[field]) match[field] = toObjectId(query[field])
     }
 
-    if (query.employeeTypeId || query.employeeTypeChildCode) {
+    const hasEmployeeTypeFilter = Boolean(
+        query.employeeTypeId ||
+        query.employeeTypeChildCode ||
+        query.employeeTypeFilterKey ||
+        (Array.isArray(query.employeeTypeFilterKeys) && query.employeeTypeFilterKeys.length) ||
+        (typeof query.employeeTypeFilterKeys === "string" && query.employeeTypeFilterKeys.trim()),
+    )
+
+    if (hasEmployeeTypeFilter) {
         const employeeIds = employees.map((employee) => employee._id).filter(Boolean)
         if (!employeeIds.length) return null
         match.employeeId = { $in: employeeIds }

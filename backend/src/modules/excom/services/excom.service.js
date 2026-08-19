@@ -229,30 +229,71 @@ function dateIsWithinRange(date, startDate, endDate) {
     return date >= startDate && date <= endDate
 }
 
+function parseEmployeeTypeFilterKey(filterKey) {
+    if (!filterKey) return null
+
+    const parts = String(filterKey).split(":")
+
+    if (parts[0] === "TYPE" && parts[1]) {
+        return {
+            key: `TYPE:${parts[1]}`,
+            employeeTypeId: parts[1],
+            employeeTypeChildCode: null,
+        }
+    }
+
+    if (parts[0] === "CHILD" && parts[1] && parts[2]) {
+        return {
+            key: `CHILD:${parts[1]}:${parts[2]}`,
+            employeeTypeId: parts[1],
+            employeeTypeChildCode: parts[2],
+        }
+    }
+
+    return null
+}
+
 function parseEmployeeTypeFilter(query = {}) {
-    const result = {
-        employeeTypeId: query.employeeTypeId || null,
-        employeeTypeChildCode: query.employeeTypeChildCode || null,
-        employeeTypeFilterKey: query.employeeTypeFilterKey || null,
+    const rawKeys = Array.isArray(query.employeeTypeFilterKeys)
+        ? query.employeeTypeFilterKeys
+        : query.employeeTypeFilterKeys
+            ? String(query.employeeTypeFilterKeys).split(",")
+            : query.employeeTypeFilterKey
+                ? [query.employeeTypeFilterKey]
+                : query.employeeTypeId
+                    ? [
+                        query.employeeTypeChildCode
+                            ? `CHILD:${query.employeeTypeId}:${query.employeeTypeChildCode}`
+                            : `TYPE:${query.employeeTypeId}`,
+                    ]
+                    : []
+
+    const employeeTypeFilters = [...new Set(
+        rawKeys.map((item) => String(item).trim()).filter(Boolean),
+    )]
+        .map(parseEmployeeTypeFilterKey)
+        .filter(Boolean)
+
+    // Keep the original single-value fields populated only when one Employee
+    // Type is selected. This preserves compatibility with the rest of Excom
+    // while allowing employeeTypeFilterKeys to represent a true OR/union.
+    const singleFilter = employeeTypeFilters.length === 1
+        ? employeeTypeFilters[0]
+        : null
+
+    return {
+        employeeTypeId:
+            singleFilter?.employeeTypeId ||
+            (!employeeTypeFilters.length ? query.employeeTypeId : null) ||
+            null,
+        employeeTypeChildCode:
+            singleFilter?.employeeTypeChildCode ||
+            (!employeeTypeFilters.length ? query.employeeTypeChildCode : null) ||
+            null,
+        employeeTypeFilterKey: singleFilter?.key || null,
+        employeeTypeFilterKeys: employeeTypeFilters.map((item) => item.key),
+        employeeTypeFilters,
     }
-
-    if (!query.employeeTypeFilterKey) {
-        return result
-    }
-
-    const parts = String(query.employeeTypeFilterKey).split(":")
-
-    if (parts[0] === "TYPE") {
-        result.employeeTypeId = parts[1]
-        result.employeeTypeChildCode = null
-    }
-
-    if (parts[0] === "CHILD") {
-        result.employeeTypeId = parts[1]
-        result.employeeTypeChildCode = parts[2]
-    }
-
-    return result
 }
 
 function normalizedQuery(query = {}) {
@@ -265,7 +306,50 @@ function normalizedQuery(query = {}) {
             employeeTypeFilter.employeeTypeChildCode || undefined,
         employeeTypeFilterKey:
             employeeTypeFilter.employeeTypeFilterKey || undefined,
+        employeeTypeFilterKeys: employeeTypeFilter.employeeTypeFilterKeys.length
+            ? employeeTypeFilter.employeeTypeFilterKeys
+            : undefined,
     }
+}
+
+function getEmployeeTypeFilterKeys(query = {}) {
+    return parseEmployeeTypeFilter(query).employeeTypeFilterKeys
+}
+
+function hasEmployeeTypeFilter(query = {}) {
+    return getEmployeeTypeFilterKeys(query).length > 0 ||
+        Boolean(query.employeeTypeId || query.employeeTypeChildCode)
+}
+
+function resolveEmployeeTypeOptions(query = {}, lookups = {}) {
+    const keys = getEmployeeTypeFilterKeys(query)
+
+    if (!keys.length) return []
+
+    const byKey = new Map(
+        (lookups.employeeTypes || []).map((item) => [item.key, item]),
+    )
+
+    return keys.map((key) => byKey.get(key)).filter(Boolean)
+}
+
+function resolveEmployeeTypePositionSet(query = {}, lookups = {}) {
+    const keys = getEmployeeTypeFilterKeys(query)
+
+    if (!keys.length) return null
+
+    const options = resolveEmployeeTypeOptions(query, lookups)
+    if (options.length !== keys.length) return new Set()
+
+    // If one selected Employee Type explicitly covers every position, the
+    // union also covers every position. Otherwise merge all mapped positions.
+    if (options.some((option) => option.positionAssignmentMode === "ALL_POSITIONS")) {
+        return null
+    }
+
+    return new Set(
+        options.flatMap((option) => (option.positionIds || []).map(String)),
+    )
 }
 
 function buildDimensionMatch(query, prefix = "") {
@@ -492,17 +576,43 @@ function sameId(left, right) {
     return String(left || "") === String(right)
 }
 
-function filterEmployeesForQuery(employees = [], query = {}) {
+function filterEmployeesForQuery(employees = [], query = {}, lookups = {}) {
     const filter = normalizedQuery(query)
 
+    // Employee Type is position-driven in HRMS Enterprise. For multi-select,
+    // combine the mapped positions from every selected type (OR/union). An
+    // employee that belongs to overlapping selections is still counted once
+    // because Employee Master is filtered as one unique employee list.
+    const allowedEmployeeTypePositionIds = !filter.positionId
+        ? resolveEmployeeTypePositionSet(filter, lookups)
+        : null
+
+    if (
+        hasEmployeeTypeFilter(filter) &&
+        !filter.positionId &&
+        allowedEmployeeTypePositionIds instanceof Set &&
+        !allowedEmployeeTypePositionIds.size
+    ) {
+        return []
+    }
+
     return employees.filter((employee) => {
-        for (const field of FILTER_FIELDS) {
+        // Employee Type is handled through Position assignment, so do not
+        // require deprecated employee.employeeTypeId fields here.
+        for (const field of [
+            "companyId",
+            "branchId",
+            "departmentId",
+            "positionId",
+            "lineId",
+            "shiftId",
+        ]) {
             if (filter[field] && !sameId(employee[field], filter[field])) return false
         }
 
         if (
-            filter.employeeTypeChildCode &&
-            String(employee.employeeTypeChildCode || "") !== String(filter.employeeTypeChildCode)
+            allowedEmployeeTypePositionIds instanceof Set &&
+            !allowedEmployeeTypePositionIds.has(String(employee.positionId || ""))
         ) {
             return false
         }
@@ -616,10 +726,8 @@ async function loadAttendanceRecords(query, startDate, endDate, employees) {
         attendanceDate: { $gte: startDate, $lte: endDate },
     }
 
-    const employeeTypeFilter = normalizedQuery(query)
-
-    if (employeeTypeFilter.employeeTypeId || employeeTypeFilter.employeeTypeChildCode) {
-        const employeeIds = employees.map((employee) => employee._id)
+    if (hasEmployeeTypeFilter(query)) {
+        const employeeIds = employees.map((employee) => employee._id).filter(Boolean)
 
         if (!employeeIds.length) return []
 
@@ -2190,10 +2298,10 @@ function buildTurnoverByDepartment({
         calculateTurnoverMonthRates(months)
         const summary = summarizeTurnoverMonths(months)
 
-        // Keep departments that had headcount in the selected period. This
-        // also keeps zero-turnover departments so the Low-to-High table is
-        // useful instead of showing only departments with resignations.
-        if (summary.averageHeadcount <= 0 && summary.exits <= 0) continue
+        // Keep every department represented by the filtered Employee Master.
+        // A manager may focus on a month with zero exits and still needs the
+        // department row to remain visible for Jan-Dec comparison.
+        if (!departmentEmployees.length) continue
 
         rows.push({
             departmentId,
@@ -2857,42 +2965,40 @@ function buildEmployeeTypeLookupOptions(employeeTypes = []) {
     )
 }
 
-function getSelectedEmployeeTypeLabel({ query, lookups }) {
-    const filter = normalizedQuery(query)
-    const employeeTypeOptions = lookups.employeeTypes || []
+function employeeTypeOptionTitle(option, employeeTypeOptions = []) {
+    if (!option) return ""
 
-    if (!filter.employeeTypeFilterKey) return "All Employee Types"
-
-    const selected = employeeTypeOptions.find(
-        (item) => item.key === filter.employeeTypeFilterKey,
-    )
-
-    if (!selected) return "Selected Employee Type"
-
-    // Excom titles use Employee Type codes only. Never use the employee
-    // type name as a fallback because the title must remain a stable,
-    // compact reporting label.
-    if (selected.type === "CHILD") {
+    if (option.type === "CHILD") {
         const parent = employeeTypeOptions.find(
             (item) =>
                 item.type === "TYPE" &&
                 String(item.employeeTypeId || item.id || "") ===
-                    String(selected.employeeTypeId || ""),
+                    String(option.employeeTypeId || ""),
         )
 
         const parentCode = String(parent?.code || "").trim()
-        const childCode = String(
-            selected.code || filter.employeeTypeChildCode || "",
-        ).trim()
+        const childCode = String(option.code || option.employeeTypeChildCode || "").trim()
 
         if (parentCode && childCode) return `${parentCode} + ${childCode}`
-        if (parentCode) return parentCode
-        if (childCode) return childCode
-
-        return "Selected Employee Type"
+        return parentCode || childCode
     }
 
-    return String(selected.code || "").trim() || "Selected Employee Type"
+    return String(option.code || option.name || option.label || "").trim()
+}
+
+function getSelectedEmployeeTypeLabel({ query, lookups }) {
+    const filter = normalizedQuery(query)
+    const employeeTypeOptions = lookups.employeeTypes || []
+    const selectedOptions = resolveEmployeeTypeOptions(filter, lookups)
+
+    if (!hasEmployeeTypeFilter(filter)) return "All Employee Types"
+    if (!selectedOptions.length) return "Selected Employee Type"
+
+    const labels = selectedOptions
+        .map((option) => employeeTypeOptionTitle(option, employeeTypeOptions))
+        .filter(Boolean)
+
+    return labels.length ? [...new Set(labels)].join(" + ") : "Selected Employee Type"
 }
 
 function findLookupName(items = [], id) {
@@ -2906,12 +3012,13 @@ function findLookupName(items = [], id) {
 function getSelectedMetricLabel({ query, lookups }) {
     const filter = normalizedQuery(query)
 
-    if (filter.employeeTypeFilterKey) {
-        const selected = lookups.employeeTypes.find(
-            (item) => item.key === filter.employeeTypeFilterKey,
-        )
+    if (hasEmployeeTypeFilter(filter)) {
+        const selected = resolveEmployeeTypeOptions(filter, lookups)
+        const labels = selected
+            .map((item) => item.name || item.label || item.code || "")
+            .filter(Boolean)
 
-        return selected?.name || selected?.label || "Selected"
+        return labels.length ? [...new Set(labels)].join(" + ") : "Selected"
     }
 
     if (filter.positionId) {
@@ -2938,26 +3045,28 @@ function buildGeneralTotalQuery(query = {}) {
 
 function filterPlansForQuery(plans = [], query = {}, lookups = {}) {
     const filter = normalizedQuery(query)
-    let allowedPositionIds = null
+    const allowedPositionIds = !filter.positionId
+        ? resolveEmployeeTypePositionSet(filter, lookups)
+        : null
 
-    if (!filter.positionId && filter.employeeTypeId) {
-        const lookupKey = filter.employeeTypeChildCode
-            ? `CHILD:${filter.employeeTypeId}:${filter.employeeTypeChildCode}`
-            : `TYPE:${filter.employeeTypeId}`
-        const option = (lookups.employeeTypes || []).find((item) => item.key === lookupKey)
-
-        if (!option) return []
-
-        if (option.positionAssignmentMode !== "ALL_POSITIONS") {
-            allowedPositionIds = new Set((option.positionIds || []).map(String))
-            if (!allowedPositionIds.size) return []
-        }
+    if (
+        hasEmployeeTypeFilter(filter) &&
+        !filter.positionId &&
+        allowedPositionIds instanceof Set &&
+        !allowedPositionIds.size
+    ) {
+        return []
     }
 
     return plans.filter((plan) => {
         if (filter.departmentId && !sameId(plan.departmentId, filter.departmentId)) return false
         if (filter.positionId && !sameId(plan.positionId, filter.positionId)) return false
-        if (allowedPositionIds && !allowedPositionIds.has(String(plan.positionId || ""))) return false
+        if (
+            allowedPositionIds instanceof Set &&
+            !allowedPositionIds.has(String(plan.positionId || ""))
+        ) {
+            return false
+        }
         return true
     })
 }
@@ -3203,7 +3312,11 @@ export async function getExcom({ query }) {
     // Employee Master for the company/branch is loaded once. Department,
     // position, line, shift and employee-type filters are cheap in-memory
     // operations over ~3,500 employees instead of a second MongoDB round-trip.
-    const employees = filterEmployeesForQuery(totalGeneralEmployees, cleanQuery)
+    const employees = filterEmployeesForQuery(
+        totalGeneralEmployees,
+        cleanQuery,
+        lookups,
+    )
     const plans = filterPlansForQuery(totalGeneralPlans, cleanQuery, lookups)
     const lines = lookups.lines || []
 
@@ -3282,6 +3395,7 @@ export async function getExcom({ query }) {
             employeeTypeId: cleanQuery.employeeTypeId || null,
             employeeTypeChildCode: cleanQuery.employeeTypeChildCode || null,
             employeeTypeFilterKey: cleanQuery.employeeTypeFilterKey || null,
+            employeeTypeFilterKeys: getEmployeeTypeFilterKeys(cleanQuery),
             exitReasonId: cleanQuery.exitReasonId || null,
             employeeTypeLabel: selectedEmployeeTypeLabel,
         },
