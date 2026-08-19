@@ -231,7 +231,7 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
             positionCodes: "QC,MECHANIC,PACKING",
             status: "ACTIVE",
             description:
-                "Child groups are optional and do not create a separate Excome category.",
+                "Child groups are optional and do not create a separate Excom category.",
         },
     ])
 
@@ -263,12 +263,12 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
         {
             field: "employeeTypeName",
             required: "Yes",
-            rule: "The Employee Type name shown dynamically in Excome Category.",
+            rule: "The Employee Type name shown dynamically in Excom Category.",
         },
         {
             field: "positionDisplayName",
             required: "No",
-            rule: "Short business-friendly text shown in the Excome Positions column, for example Sewer + Sewer-Jumper. Excome never auto-lists mapped positions.",
+            rule: "Short business-friendly text shown in the Excom Positions column, for example Sewer + Sewer-Jumper. Excom never auto-lists mapped positions.",
         },
         {
             field: "positionAssignmentMode",
@@ -278,7 +278,7 @@ export async function buildEmployeeTypeImportTemplateWorkbook() {
         {
             field: "childCode / childName",
             required: "No",
-            rule: "Optional child grouping inside the Employee Type. Excome Category still uses the parent Employee Type name.",
+            rule: "Optional child grouping inside the Employee Type. Excom Category still uses the parent Employee Type name.",
         },
         {
             field: "childPositionAssignmentMode",
@@ -853,7 +853,7 @@ export async function importEmployeeTypesFromRows({
     clearCacheByPrefix("employeeType:")
     clearCacheByPrefix("employee:list:")
     clearCacheByPrefix("hr-dashboard:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
     return {
         totalRows: rows.length,

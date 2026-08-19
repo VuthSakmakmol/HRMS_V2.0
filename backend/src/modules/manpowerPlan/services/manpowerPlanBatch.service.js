@@ -368,7 +368,7 @@ export async function saveManpowerPlanBatch({ payload, user }) {
     }
 
     clearCacheByPrefix("manpowerPlan:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
     return { matched, modified, upserted }
 }

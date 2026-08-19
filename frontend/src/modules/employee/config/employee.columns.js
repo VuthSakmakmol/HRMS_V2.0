@@ -60,7 +60,7 @@ export const EMPLOYEE_COLUMNS = Object.freeze([
     minWidth: "10rem",
   }),
   column("employment", "exitReason", "Exit Reason", { width: "13rem" }),
-  column("employment", "reportReadiness", "Excome Ready", {
+  column("employment", "reportReadiness", "Excom Ready", {
     width: "10rem",
     minWidth: "10rem",
   }),

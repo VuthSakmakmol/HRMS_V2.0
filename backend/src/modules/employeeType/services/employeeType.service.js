@@ -1048,7 +1048,7 @@ function clearEmployeeTypeRelatedCaches() {
     clearCacheByPrefix("employeeType:")
     clearCacheByPrefix("employee:list:")
     clearCacheByPrefix("hr-dashboard:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 }
 
 export async function listEmployeeTypes({ query, user }) {

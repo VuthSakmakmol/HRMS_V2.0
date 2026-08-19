@@ -654,7 +654,7 @@ export async function createShift({ payload, user }) {
         })
 
         clearCacheByPrefix("shift:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
         clearCacheByPrefix("shift:lookup:")
 
         return getShiftById({
@@ -722,7 +722,7 @@ export async function updateShift({ shiftId, payload, user }) {
         ).lean()
 
         clearCacheByPrefix("shift:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
         clearCacheByPrefix("shift:lookup:")
 
         return getShiftById({
@@ -770,7 +770,7 @@ export async function archiveShift({ shiftId, user }) {
     ).lean()
 
     clearCacheByPrefix("shift:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     clearCacheByPrefix("shift:lookup:")
 
     return getShiftById({

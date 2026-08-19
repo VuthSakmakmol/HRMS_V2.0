@@ -174,7 +174,7 @@ function rethrowMongoDuplicate(error) {
 
 function clearExitReasonCaches() {
     clearCacheByPrefix("exit-reason:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 }
 
 async function validateScope(payload, user) {

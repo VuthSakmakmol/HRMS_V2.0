@@ -601,7 +601,7 @@ export async function createDepartment({ payload, user }) {
         })
 
         clearCacheByPrefix("department:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
         return await getDepartmentById({
             departmentId: department._id.toString(),
@@ -684,7 +684,7 @@ export async function updateDepartment({ departmentId, payload, user }) {
         }
 
         clearCacheByPrefix("department:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
         return serializeDepartment(department)
     } catch (error) {
@@ -757,7 +757,7 @@ export async function archiveDepartment({ departmentId, user }) {
     }
 
     clearCacheByPrefix("department:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
     return serializeDepartment(department)
 }

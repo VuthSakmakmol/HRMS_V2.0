@@ -417,7 +417,7 @@ export async function createEmployeeMovement({ payload, user }) {
     })
 
     clearCacheByPrefix("employeeMovement:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return getEmployeeMovementById({ movementId: movement._id, user })
 }
 
@@ -448,7 +448,7 @@ export async function updateEmployeeMovement({ movementId, payload, user }) {
     const updated = await EmployeeMovement.findByIdAndUpdate(existing._id, { $set: updatePayload }, { new: true, runValidators: true, context: "query" }).lean()
 
     clearCacheByPrefix("employeeMovement:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return getEmployeeMovementById({ movementId: updated._id, user })
 }
 
@@ -463,7 +463,7 @@ export async function archiveEmployeeMovement({ movementId, user }) {
     const archived = await EmployeeMovement.findByIdAndUpdate(existing._id, { $set: { status: "ARCHIVED", updatedByAccountId: user.accountId } }, { new: true, runValidators: true, context: "query" }).lean()
 
     clearCacheByPrefix("employeeMovement:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return getEmployeeMovementById({ movementId: archived._id, user })
 }
 
@@ -497,7 +497,7 @@ export async function createAutomaticMovementForEmployeeCreate({ employee, user 
     })
 
     clearCacheByPrefix("employeeMovement:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return movement
 }
 
@@ -531,6 +531,6 @@ export async function createAutomaticMovementForEmployeeUpdate({
     })
 
     clearCacheByPrefix("employeeMovement:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return movement
 }

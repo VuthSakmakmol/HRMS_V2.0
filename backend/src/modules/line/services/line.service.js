@@ -609,7 +609,7 @@ export async function createLine({ payload, user }) {
         })
 
         clearCacheByPrefix("line:list:")
-        clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excom:")
 
         return getLineById({ lineId: line._id, user })
     } catch (error) {
@@ -705,7 +705,7 @@ export async function updateLine({ lineId, payload, user }) {
         ).lean()
 
         clearCacheByPrefix("line:list:")
-        clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excom:")
 
         return getLineById({ lineId: updatedLine._id, user })
     } catch (error) {
@@ -747,7 +747,7 @@ export async function archiveLine({ lineId, user }) {
     ).lean()
 
     clearCacheByPrefix("line:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
     return getLineById({ lineId: archivedLine._id, user })
 }

@@ -141,7 +141,7 @@ function positionsForChild(currentIndex) {
                         @input="clearFieldError('name')"
                     />
                     <small class="employee-type-form__help">
-                        {{ t("organization.employeeType.nameExcomeHelp") }}
+                        {{ t("organization.employeeType.nameExcomHelp") }}
                     </small>
                     <small v-if="message('name')">{{ message("name") }}</small>
                 </label>

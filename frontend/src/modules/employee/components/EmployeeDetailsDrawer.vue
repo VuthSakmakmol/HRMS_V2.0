@@ -203,7 +203,7 @@ const employmentSeverity = (status) =>
             <dd>{{ value(employee.recordStatus) }}</dd>
           </div>
           <div>
-            <dt>Excome Readiness</dt>
+            <dt>Excom Readiness</dt>
             <dd>
               <Tag
                 :value="employee.reportReadiness === 'READY' ? 'READY' : 'MISSING DATA'"

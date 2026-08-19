@@ -18,8 +18,8 @@ export const RECORD_STATUS_OPTIONS = Object.freeze([
 
 export const REPORT_READINESS_OPTIONS = Object.freeze([
   { label: "All reporting readiness", value: "ALL" },
-  { label: "Excome Ready", value: "READY" },
-  { label: "Missing Excome Data", value: "MISSING" },
+  { label: "Excom Ready", value: "READY" },
+  { label: "Missing Excom Data", value: "MISSING" },
 ]);
 
 export const GENDER_OPTIONS = Object.freeze([

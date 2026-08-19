@@ -345,7 +345,7 @@ onMounted(load)
             <footer class="workforce-ratio-card__footer">
                 <div>
                     <i class="pi pi-info-circle" />
-                    <span>{{ t("workforceRatio.excomeBehavior") }}</span>
+                    <span>{{ t("workforceRatio.excomBehavior") }}</span>
                 </div>
 
                 <Button

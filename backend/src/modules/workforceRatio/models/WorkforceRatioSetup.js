@@ -33,7 +33,7 @@ const workforceRatioSetupSchema = new Schema(
         ],
 
         // Annual I/D ratio budget shown beside the calculated workforce ratio
-        // in Excome. It is reporting configuration only and never changes
+        // in Excom. It is reporting configuration only and never changes
         // employee classification.
         budgetYear: {
             type: Number,

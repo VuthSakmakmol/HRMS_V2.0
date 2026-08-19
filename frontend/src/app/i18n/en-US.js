@@ -89,9 +89,9 @@ export default {
         "attendanceDailyReport": "Attendance Daily Report",
         "attendancePolicies": "Attendance Policies",
         "attendanceRawScans": "Raw Scan Import",
-        "excome": "Excome",
+        "excom": "Excom",
         "recruitmentChannels": "Recruitment Channels",
-        "hrDashboardTargets": "Excome Targets",
+        "hrDashboardTargets": "Excom Targets",
         "workforceRatioSetup": "Workforce Ratio Setup",
         "exitReasons": "Exit Reasons"
     },
@@ -155,7 +155,7 @@ export default {
         "template": "Sample Excel",
         "import": "Import Excel",
         "importTitle": "Import attendance",
-        "importDescription": "Monthly Excome import reads Record Date, Employee No, Working Hours, and Vacation. Working Hours = 0 with blank/Absent Vacation is uninformed Absent. Vacation descriptions are stored, and informed Vacation values do not build an abandonment streak. Extra payroll columns are ignored. The legacy Time1/Time2 format is still supported.",
+        "importDescription": "Monthly Excom import uses only Record Date, Employee No, and Working Hours. Working Hours = 0 is Absent; any value above 0 is Present. Extra payroll columns are ignored. The legacy Time1/Time2 format is still supported.",
         "vacation": "Vacation",
         "vacationFilter": {
             "all": "All vacations",
@@ -270,9 +270,9 @@ export default {
             }
         }
     },
-    "excome": {
+    "excom": {
         "eyebrow": "Phase 1 Workforce Analytics",
-        "title": "Excome",
+        "title": "Excom",
         "description": "General workforce data, manpower planning, and employee movement for the selected period.",
         "loadFailed": "Unable to load the HR dashboard.",
         "filters": {
@@ -304,7 +304,7 @@ export default {
             "attendanceByLine": "Attendance by Line",
             "manpower": "Manpower",
             "recruitmentChannels": "Recruitment Channels",
-            "hrDashboardTargets": "Excome Targets",
+            "hrDashboardTargets": "Excom Targets",
             "exitAnalysis": "Exit Analysis",
             "movement": "Movement",
             "turnover": "Turnover"
@@ -331,7 +331,7 @@ export default {
             "positions": "Positions",
             "selectedMonth": "Selected",
             "grandTotal": "Grand Total",
-            "unassignedEmployeeTypeWarning": "Employees with no Employee Type are excluded from this category table; Excome never guesses from Position or Department."
+            "unassignedEmployeeTypeWarning": "Employees with no Employee Type are excluded from this category table; Excom never guesses from Position or Department."
         },
         "manpower": {
             "item": "Item",
@@ -479,15 +479,20 @@ export default {
             "currentYear": "Current year",
             "exitCount": "Exit count",
             "averageHeadcount": "Average headcount",
-            "turnoverRate": "Turnover rate"
+            "turnoverRate": "Turnover rate",
+            "turnoverRatePercent": "Turnover rate (%)",
+            "department": "Department",
+            "separateByDepartment": "{employeeType} TURNOVER – Separate by department",
+            "wholeYear": "Whole Year",
+            "ytd": "YTD"
         }
     },
     "hrDashboardTarget": {
-        "title": "Excome Targets",
+        "title": "Excom Targets",
         "createTitle": "Create dashboard target",
         "editTitle": "Edit dashboard target",
         "archiveTitle": "Archive dashboard target",
-        "archiveConfirm": "Archive this dashboard target? It will no longer be used by Excome or Attendance.",
+        "archiveConfirm": "Archive this dashboard target? It will no longer be used by Excom or Attendance.",
         "allMetrics": "All metrics",
         "allMonths": "All months",
         "allScopes": "All target scopes",
@@ -1147,7 +1152,7 @@ export default {
             "laborDirect": "Direct",
             "laborIndirect": "Indirect",
             "laborOther": "Not Counted",
-            "laborClassificationHelp": "Marks this Employee Type for the Excome Indirect / Direct ratio. Not Counted is excluded from the ratio.",
+            "laborClassificationHelp": "Marks this Employee Type for the Excom Indirect / Direct ratio. Not Counted is excluded from the ratio.",
             "childLaborClassificationHelp": "This child group classification is the source of truth for employees assigned to this child group.",
             "structure": "Structure",
             "positions": "Positions",
@@ -1156,7 +1161,7 @@ export default {
             "directStructure": "Direct",
             "childStructure": "Child Groups",
             "childGroups": "Use child groups",
-            "childGroupsHelp": "Child groups are optional organization inside the Employee Type. Excome category always uses the parent Employee Type name.",
+            "childGroupsHelp": "Child groups are optional organization inside the Employee Type. Excom category always uses the parent Employee Type name.",
             "childGroupNumber": "Child Group {number}",
             "addChild": "Add Child",
             "childCode": "Child Code",
@@ -1249,11 +1254,11 @@ export default {
             "rowNumber": "Row",
             "field": "Field",
             "issue": "Issue",
-            "sourceOfTruthHelp": "Employee Type is the source of truth for Excome. Assign positions here; employees automatically inherit this Employee Type from their Position.",
-            "nameExcomeHelp": "This Employee Type name is shown directly as the Excome category. No Direct/Indirect/RD&MKT classification is required.",
+            "sourceOfTruthHelp": "Employee Type is the source of truth for Excom. Assign positions here; employees automatically inherit this Employee Type from their Position.",
+            "nameExcomHelp": "This Employee Type name is shown directly as the Excom category. No Direct/Indirect/RD&MKT classification is required.",
             "positionDisplayName": "Positions Display Name",
             "positionDisplayNamePlaceholder": "Example: Sewer + Sewer-Jumper",
-            "positionDisplayNameHelp": "Type a short business-friendly label for Excome. This text is displayed instead of listing every mapped Position.",
+            "positionDisplayNameHelp": "Type a short business-friendly label for Excom. This text is displayed instead of listing every mapped Position.",
             "positionsSourceHelp": "Any employee holding one of these positions is synchronized automatically into this Employee Type."
         },
         "location": {
@@ -1348,8 +1353,8 @@ export default {
                 "recruitmentChannelBranchMismatch": "Recruitment channel does not belong to the selected branch.",
                 "positionEmployeeTypeNotConfigured": "This position is not assigned to an Employee Type. Configure it in Employee Type first, or choose another position.",
                 "positionEmployeeTypeAmbiguous": "This position has conflicting Employee Type assignments. Fix the Employee Type setup before assigning it to an employee.",
-                "dateOfBirthRequired": "Date of Birth is required for Excome reporting.",
-                "recruitmentChannelRequired": "Recruitment Channel is required for Excome reporting.",
+                "dateOfBirthRequired": "Date of Birth is required for Excom reporting.",
+                "recruitmentChannelRequired": "Recruitment Channel is required for Excom reporting.",
                 "exitReasonRequired": "Exit Reason is required for this employment status.",
                 "exitDateBeforeJoinDate": "Exit Date cannot be earlier than Join Date."
             },
@@ -1637,7 +1642,7 @@ export default {
     "workforceRatio": {
         "module": "Reports",
         "title": "Workforce Ratio Setup",
-        "description": "Configure which Employee Types belong to Direct and Indirect for the independent Excome workforce ratio KPI.",
+        "description": "Configure which Employee Types belong to Direct and Indirect for the independent Excom workforce ratio KPI.",
         "company": "Company",
         "branch": "Branch",
         "direct": "Direct",
@@ -1649,15 +1654,15 @@ export default {
         "directHint": "Employee Types counted on the Direct side of the ratio.",
         "indirectHint": "Employee Types counted on the Indirect side of the ratio.",
         "budgetTitle": "Ratio Budget Plan",
-        "budgetHint": "Set the annual Indirect / Direct ratio budget shown in Excome beside the calculated result.",
+        "budgetHint": "Set the annual Indirect / Direct ratio budget shown in Excom beside the calculated result.",
         "budgetYear": "Budget Year",
         "budgetRatio": "Budget I/D Ratio",
-        "sourceOfTruthNote": "This setup does not change Employee Type. It only tells Excome which existing Employee Types belong to the Direct and Indirect ratio groups.",
-        "excomeBehavior": "Excome uses this setup independently from Employee Type, Child, Department, Position, Line and Shift filters. Company and Branch still apply.",
+        "sourceOfTruthNote": "This setup does not change Employee Type. It only tells Excom which existing Employee Types belong to the Direct and Indirect ratio groups.",
+        "excomBehavior": "Excom uses this setup independently from Employee Type, Child, Department, Position, Line and Shift filters. Company and Branch still apply.",
         "createTitle": "Create Workforce Ratio Setup",
         "editTitle": "Edit Workforce Ratio Setup",
         "archiveTitle": "Archive Workforce Ratio Setup",
-        "archiveMessage": "Archive this ratio setup? Excome will show the ratio as not configured until a setup is created again.",
+        "archiveMessage": "Archive this ratio setup? Excom will show the ratio as not configured until a setup is created again.",
         "workspaceRequired": "Select a Company and Branch",
         "workspaceRequiredHint": "Choose the workspace scope in the top bar before configuring the workforce ratio.",
         "notConfigured": "Workforce Ratio is not configured",

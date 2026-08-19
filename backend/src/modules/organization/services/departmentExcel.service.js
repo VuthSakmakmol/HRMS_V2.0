@@ -683,7 +683,7 @@ export async function importDepartmentsFromRows({
     }
 
     clearCacheByPrefix("department:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 
     return summary
 }

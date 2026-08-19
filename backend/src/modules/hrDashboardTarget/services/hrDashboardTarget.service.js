@@ -464,7 +464,7 @@ export async function createHrDashboardTarget({ payload, user }) {
 
         clearCacheByPrefix("hrDashboardTarget:list:")
         clearCacheByPrefix("hr-dashboard:data:")
-        clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excom:")
 
         return getHrDashboardTargetById({ targetId: target._id, user })
     } catch (error) {
@@ -532,7 +532,7 @@ export async function updateHrDashboardTarget({ targetId, payload, user }) {
 
         clearCacheByPrefix("hrDashboardTarget:list:")
         clearCacheByPrefix("hr-dashboard:data:")
-        clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excom:")
 
         return getHrDashboardTargetById({ targetId: updated._id, user })
     } catch (error) {
@@ -577,7 +577,7 @@ export async function archiveHrDashboardTarget({ targetId, user }) {
 
     clearCacheByPrefix("hrDashboardTarget:list:")
     clearCacheByPrefix("hr-dashboard:data:")
-        clearCacheByPrefix("excome:")
+        clearCacheByPrefix("excom:")
 
     return getHrDashboardTargetById({ targetId: archived._id, user })
 }

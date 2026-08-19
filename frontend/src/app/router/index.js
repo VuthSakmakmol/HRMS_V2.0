@@ -212,11 +212,11 @@ const router = createRouter({
                 },
 
                 {
-                    path: "reports/excome",
-                    name: "reports-excome",
-                    component: () => import("@/modules/excome/views/ExcomeDashboardView.vue"),
+                    path: "reports/excom",
+                    name: "reports-excom",
+                    component: () => import("@/modules/excom/views/ExcomDashboardView.vue"),
                     meta: {
-                        titleKey: "nav.excome",
+                        titleKey: "nav.excom",
                         permissionCode: "REPORT.HR_ANALYTICS.VIEW",
                     },
                 },
@@ -233,7 +233,7 @@ const router = createRouter({
                 },
 
                 {
-                    path: "reports/excome-targets",
+                    path: "reports/excom-targets",
                     name: "report-hr-dashboard-targets",
                     component: () =>
                         import("@/modules/hrDashboardTarget/views/HrDashboardTargetListView.vue"),

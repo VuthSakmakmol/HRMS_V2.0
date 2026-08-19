@@ -1069,7 +1069,7 @@ export async function importEmployeesFromRows({ rows, parseErrors, context, user
     }
 
     clearCacheByPrefix("employee:list:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
     return summary
 }
 

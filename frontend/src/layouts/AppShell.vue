@@ -28,7 +28,7 @@ const pageTitle = computed(() =>
 )
 
 const isFlushContentRoute = computed(() =>
-    ["reports-excome", "attendance-daily-report"].includes(route.name),
+    ["reports-excom", "attendance-daily-report"].includes(route.name),
 )
 
 const roleLabel = computed(() => {
@@ -229,10 +229,10 @@ const navGroups = computed(() => {
                 },
 
                 {
-                    labelKey: "nav.excome",
+                    labelKey: "nav.excom",
                     icon: "pi pi-chart-bar",
                     to: {
-                        name: "reports-excome",
+                        name: "reports-excom",
                     },
                     permissionCode: "REPORT.HR_ANALYTICS.VIEW",
                 },

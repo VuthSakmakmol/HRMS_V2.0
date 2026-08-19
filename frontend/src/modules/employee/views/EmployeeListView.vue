@@ -333,13 +333,13 @@ const REPORT_FIELD_LABELS = Object.freeze({
 
 function reportReadinessTitle(row) {
   if (row.reportReadiness === "READY")
-    return "All required Excome employee data is complete.";
+    return "All required Excom employee data is complete.";
   const missing = (row.missingReportFields || []).map(
     (key) => REPORT_FIELD_LABELS[key] || key,
   );
   return missing.length
     ? `Missing: ${missing.join(", ")}`
-    : "Required Excome data is incomplete.";
+    : "Required Excom data is incomplete.";
 }
 
 function rowActions(row) {
@@ -793,7 +793,7 @@ onMounted(initialize);
                 :options="MARITAL_STATUS_OPTIONS"
                 option-label="label"
                 option-value="value" /></EnterpriseFilterField
-            ><EnterpriseFilterField label="Excome Readiness"
+            ><EnterpriseFilterField label="Excom Readiness"
               ><Select
                 v-model="list.filters.reportReadiness"
                 :options="REPORT_READINESS_OPTIONS"

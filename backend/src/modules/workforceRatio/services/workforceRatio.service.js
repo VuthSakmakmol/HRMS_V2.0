@@ -138,7 +138,7 @@ function serializeSetup(document) {
 
 function clearWorkforceRatioCaches() {
     clearCacheByPrefix("workforce-ratio:")
-    clearCacheByPrefix("excome:")
+    clearCacheByPrefix("excom:")
 }
 
 async function validateScope({ companyId, branchId, user }) {
